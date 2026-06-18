@@ -2,8 +2,9 @@ import { Bell, Search, Plus, MapPin } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export function TopBar() {
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
+    setNow(new Date());
     const t = setInterval(() => setNow(new Date()), 1000 * 30);
     return () => clearInterval(t);
   }, []);
@@ -35,12 +36,12 @@ export function TopBar() {
           <Bell className="h-5 w-5" />
           <span className="absolute right-1.5 top-1.5 grid h-4 w-4 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">3</span>
         </button>
-        <div className="hidden lg:block border-l border-border pl-3 text-right text-xs leading-tight">
+        <div suppressHydrationWarning className="hidden lg:block border-l border-border pl-3 text-right text-xs leading-tight min-w-[80px]">
           <div className="font-mono font-semibold">
-            {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            {now ? now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "--:--"}
           </div>
           <div className="text-muted-foreground">
-            {now.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })}
+            {now ? now.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }) : ""}
           </div>
         </div>
       </div>
