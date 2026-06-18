@@ -38,10 +38,17 @@ function Customers() {
         <div className="flex items-center gap-3 p-4 border-b border-border">
           <div className="flex flex-1 items-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-sm">
             <Search className="h-4 w-4 text-muted-foreground" />
-            <input className="flex-1 bg-transparent outline-none" placeholder="Search by name, phone, plate…" />
+            <input
+              className="flex-1 bg-transparent outline-none"
+              placeholder="Search by name, phone, plate…"
+            />
           </div>
           <select className="rounded-md border border-input bg-background px-3 py-1.5 text-sm">
-            <option>All Tiers</option><option>Platinum</option><option>Gold</option><option>Silver</option><option>Bronze</option>
+            <option>All Tiers</option>
+            <option>Platinum</option>
+            <option>Gold</option>
+            <option>Silver</option>
+            <option>Bronze</option>
           </select>
         </div>
 
@@ -63,7 +70,11 @@ function Customers() {
                 <td className="px-5 py-3">
                   <div className="flex items-center gap-2.5">
                     <div className="grid h-8 w-8 place-items-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                      {c.name.split(" ").map((p) => p[0]).slice(0,2).join("")}
+                      {c.name
+                        .split(" ")
+                        .map((p) => p[0])
+                        .slice(0, 2)
+                        .join("")}
                     </div>
                     <div>
                       <div className="font-semibold">{c.name}</div>
@@ -73,10 +84,14 @@ function Customers() {
                 </td>
                 <td className="px-3 py-3 font-mono text-xs text-muted-foreground">{c.phone}</td>
                 <td className="px-3 py-3 text-right font-mono">{c.visits}</td>
-                <td className="px-3 py-3 text-right font-mono font-semibold">LKR {c.spend.toLocaleString()}</td>
+                <td className="px-3 py-3 text-right font-mono font-semibold">
+                  LKR {c.spend.toLocaleString()}
+                </td>
                 <td className="px-3 py-3 text-muted-foreground">{c.lastVisit}</td>
                 <td className="px-3 py-3 text-right font-mono">{c.vehicles}</td>
-                <td className="px-3 py-3"><StatusChip variant={TIER_TONE[c.tier]}>{c.tier}</StatusChip></td>
+                <td className="px-3 py-3">
+                  <StatusChip variant={TIER_TONE[c.tier]}>{c.tier}</StatusChip>
+                </td>
               </tr>
             ))}
           </tbody>

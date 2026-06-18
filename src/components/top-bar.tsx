@@ -21,7 +21,9 @@ export function TopBar() {
         <div className="flex items-center gap-2 rounded-md border border-input bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground">
           <Search className="h-4 w-4" />
           <span>Search customers, bookings, invoices…</span>
-          <kbd className="ml-auto rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[11px]">⌘K</kbd>
+          <kbd className="ml-auto rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[11px]">
+            ⌘K
+          </kbd>
         </div>
       </div>
 
@@ -34,14 +36,21 @@ export function TopBar() {
         </button>
         <button aria-label="Notifications" className="relative rounded-md p-2 hover:bg-accent">
           <Bell className="h-5 w-5" />
-          <span className="absolute right-1.5 top-1.5 grid h-4 w-4 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">3</span>
+          <span className="absolute right-1.5 top-1.5 grid h-4 w-4 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+            3
+          </span>
         </button>
-        <div suppressHydrationWarning className="hidden lg:block border-l border-border pl-3 text-right text-xs leading-tight min-w-[80px]">
+        <div
+          suppressHydrationWarning
+          className="hidden lg:block border-l border-border pl-3 text-right text-xs leading-tight min-w-[80px]"
+        >
           <div className="font-mono font-semibold">
             {now ? now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "--:--"}
           </div>
           <div className="text-muted-foreground">
-            {now ? now.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }) : ""}
+            {now
+              ? now.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })
+              : ""}
           </div>
         </div>
       </div>

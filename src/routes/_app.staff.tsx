@@ -34,17 +34,25 @@ function StaffPage() {
           const rev = [42, 88, 12, 0, 64, 51][idx] ?? 0;
           const onTime = [96, 92, 100, 88, 89, 94][idx] ?? 90;
           return (
-            <div key={s.id} className="rounded-xl border border-border bg-card p-4 shadow-card hover:shadow-elevated transition-shadow">
+            <div
+              key={s.id}
+              className="rounded-xl border border-border bg-card p-4 shadow-card hover:shadow-elevated transition-shadow"
+            >
               <div className="flex items-center gap-3">
                 <div
                   className="grid h-12 w-12 place-items-center rounded-full font-bold text-primary-foreground"
                   style={{ background: s.color }}
                 >
-                  {s.name.split(" ").map((p) => p[0]).join("")}
+                  {s.name
+                    .split(" ")
+                    .map((p) => p[0])
+                    .join("")}
                 </div>
                 <div className="flex-1">
                   <div className="font-display font-bold">{s.name}</div>
-                  <div className="text-xs text-muted-foreground uppercase tracking-wider">{s.role}</div>
+                  <div className="text-xs text-muted-foreground uppercase tracking-wider">
+                    {s.role}
+                  </div>
                 </div>
                 <StatusChip variant="success">Active</StatusChip>
               </div>
@@ -54,7 +62,9 @@ function StaffPage() {
                 <Stat label="On-time" value={`${onTime}%`} />
               </div>
               <div className="mt-3 flex justify-between text-[11px] text-muted-foreground border-t border-border pt-3">
-                <span>PIN · <span className="font-mono">●●●●●</span></span>
+                <span>
+                  PIN · <span className="font-mono">●●●●●</span>
+                </span>
                 <span>Shift · 08:00 – 18:00</span>
               </div>
             </div>

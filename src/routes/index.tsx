@@ -114,7 +114,10 @@ function PinLogin() {
                       className="grid h-12 w-12 place-items-center rounded-full text-sm font-bold text-primary-foreground"
                       style={{ background: s.color }}
                     >
-                      {s.name.split(" ").map((p) => p[0]).join("")}
+                      {s.name
+                        .split(" ")
+                        .map((p) => p[0])
+                        .join("")}
                     </div>
                     <div className="text-[11px] font-medium leading-tight text-center truncate w-full">
                       {s.name.split(" ")[0]}
@@ -153,7 +156,7 @@ function PinLogin() {
 
           {/* Numpad */}
           <div className="grid grid-cols-3 gap-2.5">
-            {["1","2","3","4","5","6","7","8","9"].map((d) => (
+            {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
               <NumKey key={d} onClick={() => press(d)} disabled={!selected || locked > 0 || busy}>
                 {d}
               </NumKey>
@@ -178,11 +181,15 @@ function PinLogin() {
             <button className="hover:text-foreground">Guest Checkout →</button>
           </div>
           <div className="mt-3 rounded-md border border-dashed border-border bg-muted/40 px-3 py-2 text-center text-[10px] text-muted-foreground">
-            Demo PIN for all roles: <span className="font-mono font-bold text-foreground">12345</span>
+            Demo PIN for all roles:{" "}
+            <span className="font-mono font-bold text-foreground">12345</span>
           </div>
         </div>
       </div>
-      <div suppressHydrationWarning className="pb-6 text-center font-mono text-xs text-white/40 min-h-[20px]">
+      <div
+        suppressHydrationWarning
+        className="pb-6 text-center font-mono text-xs text-white/40 min-h-[20px]"
+      >
         {now
           ? now.toLocaleString([], {
               weekday: "short",

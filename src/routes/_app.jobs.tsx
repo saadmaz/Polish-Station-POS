@@ -29,19 +29,24 @@ const CAT_COLORS: Record<string, string> = {
 function ActiveJobs() {
   return (
     <div className="p-6 h-full flex flex-col">
-      <PageHeader
-        title="Active Jobs"
-        subtitle="Kanban board · drag cards to update status"
-      />
+      <PageHeader title="Active Jobs" subtitle="Kanban board · drag cards to update status" />
 
       <div className="flex-1 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 min-h-0">
         {COLUMNS.map((col) => {
           const items = JOBS.filter((j) => j.status === col.status);
           return (
-            <div key={col.status} className={cn("flex flex-col rounded-xl border-t-[3px] bg-card border-border", col.tone)}>
+            <div
+              key={col.status}
+              className={cn(
+                "flex flex-col rounded-xl border-t-[3px] bg-card border-border",
+                col.tone,
+              )}
+            >
               <div className="flex items-center justify-between px-3 pt-3 pb-2">
                 <h3 className="text-xs font-bold uppercase tracking-wider">{col.status}</h3>
-                <span className="text-[11px] font-mono text-muted-foreground bg-muted rounded-full px-2 py-0.5">{items.length}</span>
+                <span className="text-[11px] font-mono text-muted-foreground bg-muted rounded-full px-2 py-0.5">
+                  {items.length}
+                </span>
               </div>
               <div className="flex-1 overflow-auto px-2 pb-2 space-y-2">
                 {items.map((j) => {
@@ -63,11 +68,15 @@ function ActiveJobs() {
                       </div>
                       <div className="mt-2 text-[11px] line-clamp-2">{j.service}</div>
                       <div className="mt-2 flex items-center justify-between text-[11px]">
-                        <span className="text-muted-foreground">{j.tech} · {j.bay}</span>
-                        <span className={cn(
-                          "inline-flex items-center gap-1 font-mono font-semibold",
-                          overdue ? "text-primary" : "text-muted-foreground",
-                        )}>
+                        <span className="text-muted-foreground">
+                          {j.tech} · {j.bay}
+                        </span>
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-1 font-mono font-semibold",
+                            overdue ? "text-primary" : "text-muted-foreground",
+                          )}
+                        >
                           <Clock className="h-3 w-3" />
                           {j.elapsedMin}m
                         </span>
@@ -96,19 +105,31 @@ function ActiveJobs() {
             { name: "Niro D.", done: 0, status: "Idle" },
             { name: "Tharu K.", done: 0, status: "Break" },
           ].map((t) => (
-            <div key={t.name} className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5">
+            <div
+              key={t.name}
+              className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5"
+            >
               <div className="grid h-7 w-7 place-items-center rounded-full bg-primary/15 text-[11px] font-bold text-primary">
-                {t.name.split(" ").map((p) => p[0]).join("")}
+                {t.name
+                  .split(" ")
+                  .map((p) => p[0])
+                  .join("")}
               </div>
               <div className="leading-tight">
                 <div className="text-xs font-semibold">{t.name}</div>
-                <div className="text-[10px] text-muted-foreground">{t.done} jobs · {t.status}</div>
+                <div className="text-[10px] text-muted-foreground">
+                  {t.done} jobs · {t.status}
+                </div>
               </div>
             </div>
           ))}
           <div className="ml-auto flex gap-1.5">
-            <button className="rounded-md border border-input p-1.5 hover:bg-accent" title="Pause"><Pause className="h-3.5 w-3.5" /></button>
-            <button className="rounded-md border border-input p-1.5 hover:bg-accent" title="Flag"><Flag className="h-3.5 w-3.5" /></button>
+            <button className="rounded-md border border-input p-1.5 hover:bg-accent" title="Pause">
+              <Pause className="h-3.5 w-3.5" />
+            </button>
+            <button className="rounded-md border border-input p-1.5 hover:bg-accent" title="Flag">
+              <Flag className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
       </div>

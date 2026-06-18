@@ -29,7 +29,9 @@ function Bookings() {
                   onClick={() => setView(v)}
                   className={cn(
                     "rounded-md px-3 py-1.5 capitalize",
-                    view === v ? "bg-charcoal text-charcoal-foreground" : "text-muted-foreground hover:text-foreground",
+                    view === v
+                      ? "bg-charcoal text-charcoal-foreground"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   {v}
@@ -46,9 +48,13 @@ function Bookings() {
       <div className="rounded-xl border border-border bg-card shadow-card">
         <div className="flex items-center justify-between px-5 py-3 border-b border-border">
           <div className="flex items-center gap-3">
-            <button className="rounded-md p-1.5 hover:bg-muted"><ChevronLeft className="h-4 w-4" /></button>
+            <button className="rounded-md p-1.5 hover:bg-muted">
+              <ChevronLeft className="h-4 w-4" />
+            </button>
             <div className="font-display font-bold">Today · Wed, Jun 17</div>
-            <button className="rounded-md p-1.5 hover:bg-muted"><ChevronRight className="h-4 w-4" /></button>
+            <button className="rounded-md p-1.5 hover:bg-muted">
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
           <div className="text-xs text-muted-foreground">5 bays · 6 staff on shift</div>
         </div>
@@ -58,7 +64,10 @@ function Bookings() {
             <div>
               <div className="h-10 border-b border-border" />
               {HOURS.map((h) => (
-                <div key={h} className="h-16 border-b border-border px-2 py-1 text-[11px] font-mono text-muted-foreground">
+                <div
+                  key={h}
+                  className="h-16 border-b border-border px-2 py-1 text-[11px] font-mono text-muted-foreground"
+                >
                   {String(h).padStart(2, "0")}:00
                 </div>
               ))}
@@ -84,9 +93,13 @@ function Bookings() {
                         title={`${b.customer} — ${b.service}`}
                       >
                         <div className="text-[11px] font-bold truncate">{b.customer}</div>
-                        <div className="text-[10px] text-muted-foreground truncate">{b.service}</div>
+                        <div className="text-[10px] text-muted-foreground truncate">
+                          {b.service}
+                        </div>
                         {heightPx > 50 && (
-                          <div className="text-[10px] text-muted-foreground mt-0.5">{b.tech} · {idx % 2 === 0 ? "60m" : "30m"}</div>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">
+                            {b.tech} · {idx % 2 === 0 ? "60m" : "30m"}
+                          </div>
                         )}
                       </div>
                     );
@@ -117,7 +130,9 @@ function Bookings() {
                   <td className="px-3 py-3 text-muted-foreground">{b.vehicle}</td>
                   <td className="px-3 py-3">{b.service}</td>
                   <td className="px-3 py-3 text-muted-foreground">{b.tech}</td>
-                  <td className="px-3 py-3"><StatusChip variant={statusVariant(b.status)}>{b.status}</StatusChip></td>
+                  <td className="px-3 py-3">
+                    <StatusChip variant={statusVariant(b.status)}>{b.status}</StatusChip>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -130,7 +145,10 @@ function Bookings() {
               <div>
                 <div className="h-10 border-b border-border" />
                 {HOURS.map((h) => (
-                  <div key={h} className="h-14 border-b border-border px-2 py-1 text-[11px] font-mono text-muted-foreground">
+                  <div
+                    key={h}
+                    className="h-14 border-b border-border px-2 py-1 text-[11px] font-mono text-muted-foreground"
+                  >
                     {String(h).padStart(2, "0")}:00
                   </div>
                 ))}
@@ -138,28 +156,33 @@ function Bookings() {
               {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day, dayIdx) => (
                 <div key={day} className="relative">
                   <div className="h-10 border-b border-border bg-muted/40 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {day} <span className="text-foreground/60 normal-case font-mono">{15 + dayIdx}</span>
+                    {day}{" "}
+                    <span className="text-foreground/60 normal-case font-mono">{15 + dayIdx}</span>
                   </div>
                   <div className="relative">
                     {HOURS.map((h) => (
                       <div key={h} className="h-14 border-b border-border" />
                     ))}
-                    {BOOKINGS.filter((_, i) => (i + dayIdx) % 7 < 3).slice(0, 3).map((b) => {
-                      const [h, m] = b.time.split(":").map(Number);
-                      const startPx = (h - 8) * 56 + (m / 60) * 56;
-                      const heightPx = Math.max(24, (b.durationMin / 60) * 56 - 4);
-                      return (
-                        <div
-                          key={b.id + day}
-                          className="absolute left-1 right-1 rounded-md border-l-[3px] border-primary bg-primary/10 px-1.5 py-1 hover:bg-primary/20 cursor-pointer overflow-hidden"
-                          style={{ top: startPx, height: heightPx }}
-                          title={`${b.customer} — ${b.service}`}
-                        >
-                          <div className="text-[10px] font-bold truncate">{b.customer}</div>
-                          <div className="text-[10px] text-muted-foreground truncate">{b.service}</div>
-                        </div>
-                      );
-                    })}
+                    {BOOKINGS.filter((_, i) => (i + dayIdx) % 7 < 3)
+                      .slice(0, 3)
+                      .map((b) => {
+                        const [h, m] = b.time.split(":").map(Number);
+                        const startPx = (h - 8) * 56 + (m / 60) * 56;
+                        const heightPx = Math.max(24, (b.durationMin / 60) * 56 - 4);
+                        return (
+                          <div
+                            key={b.id + day}
+                            className="absolute left-1 right-1 rounded-md border-l-[3px] border-primary bg-primary/10 px-1.5 py-1 hover:bg-primary/20 cursor-pointer overflow-hidden"
+                            style={{ top: startPx, height: heightPx }}
+                            title={`${b.customer} — ${b.service}`}
+                          >
+                            <div className="text-[10px] font-bold truncate">{b.customer}</div>
+                            <div className="text-[10px] text-muted-foreground truncate">
+                              {b.service}
+                            </div>
+                          </div>
+                        );
+                      })}
                   </div>
                 </div>
               ))}

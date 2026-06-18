@@ -52,9 +52,7 @@ export function AppSidebar() {
             <div className="text-xs font-semibold tracking-[0.18em] text-sidebar-foreground/70">
               POLISH
             </div>
-            <div className="-mt-0.5 text-sm font-bold text-sidebar-foreground">
-              STATION OS
-            </div>
+            <div className="-mt-0.5 text-sm font-bold text-sidebar-foreground">STATION OS</div>
           </div>
         )}
       </div>
@@ -85,12 +83,17 @@ export function AppSidebar() {
 
       <div className="mt-auto border-t border-sidebar-border p-2">
         {staff && (
-          <div className={cn("flex items-center gap-2 rounded-md p-2", collapsed && "justify-center")}>
+          <div
+            className={cn("flex items-center gap-2 rounded-md p-2", collapsed && "justify-center")}
+          >
             <div
               className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-semibold text-primary-foreground"
               style={{ background: staff.color }}
             >
-              {staff.name.split(" ").map((p) => p[0]).join("")}
+              {staff.name
+                .split(" ")
+                .map((p) => p[0])
+                .join("")}
             </div>
             {!collapsed && (
               <div className="min-w-0 flex-1 leading-tight">
@@ -118,7 +121,13 @@ export function AppSidebar() {
           onClick={() => setCollapsed((c) => !c)}
           className="mt-1 flex w-full items-center justify-center gap-2 rounded-md py-2 text-xs text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
         >
-          {collapsed ? <ChevronsRight className="h-4 w-4" /> : <><ChevronsLeft className="h-4 w-4" /> Collapse</>}
+          {collapsed ? (
+            <ChevronsRight className="h-4 w-4" />
+          ) : (
+            <>
+              <ChevronsLeft className="h-4 w-4" /> Collapse
+            </>
+          )}
         </button>
       </div>
     </aside>

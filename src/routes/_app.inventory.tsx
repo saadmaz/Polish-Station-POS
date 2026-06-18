@@ -37,13 +37,25 @@ function Inventory() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         {[
           { label: "Total SKUs", value: INVENTORY.length },
-          { label: "Low Stock", value: INVENTORY.filter((i) => i.stock > 0 && i.stock <= i.reorder).length, tone: "text-warning-foreground" },
-          { label: "Out of Stock", value: INVENTORY.filter((i) => i.stock === 0).length, tone: "text-primary" },
+          {
+            label: "Low Stock",
+            value: INVENTORY.filter((i) => i.stock > 0 && i.stock <= i.reorder).length,
+            tone: "text-warning-foreground",
+          },
+          {
+            label: "Out of Stock",
+            value: INVENTORY.filter((i) => i.stock === 0).length,
+            tone: "text-primary",
+          },
           { label: "Stock Value", value: `LKR ${totalValue.toLocaleString()}` },
         ].map((s) => (
           <div key={s.label} className="rounded-xl border border-border bg-card p-4 shadow-card">
-            <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{s.label}</div>
-            <div className={"mt-1.5 font-display text-xl font-bold " + (s.tone ?? "")}>{s.value}</div>
+            <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+              {s.label}
+            </div>
+            <div className={"mt-1.5 font-display text-xl font-bold " + (s.tone ?? "")}>
+              {s.value}
+            </div>
           </div>
         ))}
       </div>
@@ -70,11 +82,17 @@ function Inventory() {
                   <td className="px-5 py-3 font-medium">{i.name}</td>
                   <td className="px-3 py-3 font-mono text-xs text-muted-foreground">{i.sku}</td>
                   <td className="px-3 py-3 text-muted-foreground">{i.category}</td>
-                  <td className="px-3 py-3 text-right font-mono font-semibold">{i.stock} {i.unit}</td>
-                  <td className="px-3 py-3 text-right font-mono text-muted-foreground">{i.reorder}</td>
+                  <td className="px-3 py-3 text-right font-mono font-semibold">
+                    {i.stock} {i.unit}
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono text-muted-foreground">
+                    {i.reorder}
+                  </td>
                   <td className="px-3 py-3 text-right font-mono">LKR {i.cost.toLocaleString()}</td>
                   <td className="px-3 py-3 text-muted-foreground">{i.supplier}</td>
-                  <td className="px-3 py-3"><StatusChip variant={st.variant}>{st.label}</StatusChip></td>
+                  <td className="px-3 py-3">
+                    <StatusChip variant={st.variant}>{st.label}</StatusChip>
+                  </td>
                 </tr>
               );
             })}

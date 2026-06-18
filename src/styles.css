@@ -72,8 +72,8 @@
   --radius: 0.5rem;
 
   /* Core neutral palette */
-  --background: oklch(0.985 0 0);            /* near-white */
-  --foreground: oklch(0.22 0.01 270);        /* charcoal text */
+  --background: oklch(0.985 0 0); /* near-white */
+  --foreground: oklch(0.22 0.01 270); /* charcoal text */
 
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.22 0.01 270);
@@ -94,7 +94,7 @@
   --muted: oklch(0.96 0.004 270);
   --muted-foreground: oklch(0.48 0.01 270);
 
-  --accent: oklch(0.95 0.04 27);              /* faint red tint */
+  --accent: oklch(0.95 0.04 27); /* faint red tint */
   --accent-foreground: oklch(0.4 0.18 27);
 
   --destructive: oklch(0.55 0.21 27);
@@ -163,7 +163,8 @@
     border-color: var(--color-border);
   }
 
-  html, body {
+  html,
+  body {
     font-family: var(--font-display);
     background-color: var(--color-background);
     color: var(--color-foreground);

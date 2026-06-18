@@ -92,11 +92,15 @@ function Dashboard() {
                     </div>
                   </div>
                   <div className="text-xs text-muted-foreground hidden md:block">{j.tech}</div>
-                  <div className="text-xs text-muted-foreground w-14 text-right hidden sm:block">{j.bay}</div>
-                  <div className={cn(
-                    "font-mono text-xs w-14 text-right",
-                    overdue ? "text-primary font-bold" : "text-muted-foreground",
-                  )}>
+                  <div className="text-xs text-muted-foreground w-14 text-right hidden sm:block">
+                    {j.bay}
+                  </div>
+                  <div
+                    className={cn(
+                      "font-mono text-xs w-14 text-right",
+                      overdue ? "text-primary font-bold" : "text-muted-foreground",
+                    )}
+                  >
                     {j.elapsedMin}m
                   </div>
                   <StatusChip variant={statusVariant(j.status)}>{j.status}</StatusChip>

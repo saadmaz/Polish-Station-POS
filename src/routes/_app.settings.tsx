@@ -24,14 +24,49 @@ export const Route = createFileRoute("/_app/settings")({
 });
 
 const SECTIONS = [
-  { id: "business", icon: Building2, name: "Business", desc: "Name, logo, hours, tax rate, receipt header" },
-  { id: "catalog", icon: Tag, name: "Services Catalog", desc: "Services, add-ons, bundles, pricing tiers" },
-  { id: "bays", icon: ParkingMeter, name: "Bays & Capacity", desc: "Bay types, capacity rules, maintenance" },
-  { id: "booking", icon: Calendar, name: "Booking Rules", desc: "Lead time, deposits, cancellation policy" },
-  { id: "access", icon: ShieldCheck, name: "Staff & Access", desc: "Roles, PIN length, timeout, lockout" },
+  {
+    id: "business",
+    icon: Building2,
+    name: "Business",
+    desc: "Name, logo, hours, tax rate, receipt header",
+  },
+  {
+    id: "catalog",
+    icon: Tag,
+    name: "Services Catalog",
+    desc: "Services, add-ons, bundles, pricing tiers",
+  },
+  {
+    id: "bays",
+    icon: ParkingMeter,
+    name: "Bays & Capacity",
+    desc: "Bay types, capacity rules, maintenance",
+  },
+  {
+    id: "booking",
+    icon: Calendar,
+    name: "Booking Rules",
+    desc: "Lead time, deposits, cancellation policy",
+  },
+  {
+    id: "access",
+    icon: ShieldCheck,
+    name: "Staff & Access",
+    desc: "Roles, PIN length, timeout, lockout",
+  },
   { id: "notify", icon: Bell, name: "Notifications", desc: "SMS, Email, WhatsApp templates" },
-  { id: "integrations", icon: Link2, name: "Integrations", desc: "Payment terminal, QuickBooks, Google Calendar" },
-  { id: "audit", icon: ScrollText, name: "Audit Log", desc: "All admin/manager actions, exportable" },
+  {
+    id: "integrations",
+    icon: Link2,
+    name: "Integrations",
+    desc: "Payment terminal, QuickBooks, Google Calendar",
+  },
+  {
+    id: "audit",
+    icon: ScrollText,
+    name: "Audit Log",
+    desc: "All admin/manager actions, exportable",
+  },
 ] as const;
 
 type SectionId = (typeof SECTIONS)[number]["id"];
@@ -87,7 +122,9 @@ function SectionTitle({ title, desc }: { title: string; desc: string }) {
 function Field({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <label className="block">
-      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
       <input
         defaultValue={value}
         className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
@@ -100,7 +137,10 @@ function Field({ label, value, hint }: { label: string; value: string; hint?: st
 function BusinessPanel() {
   return (
     <>
-      <SectionTitle title="Business" desc="Information used on invoices and customer-facing communications." />
+      <SectionTitle
+        title="Business"
+        desc="Information used on invoices and customer-facing communications."
+      />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Business Name" value="Polish Station (Pvt) Ltd" />
         <Field label="Trading Name" value="Polish Station" />
@@ -113,7 +153,9 @@ function BusinessPanel() {
       </div>
       <div className="mt-6 flex gap-2 justify-end">
         <button className="rounded-md border border-input px-4 py-2 text-sm">Cancel</button>
-        <button className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red">Save Changes</button>
+        <button className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red">
+          Save Changes
+        </button>
       </div>
     </>
   );
@@ -139,7 +181,9 @@ function CatalogPanel() {
               <td className="py-3 font-medium">{s.name}</td>
               <td className="py-3 text-muted-foreground">{s.category}</td>
               <td className="py-3 text-right font-mono">{s.durationMin}m</td>
-              <td className="py-3 text-right font-mono font-semibold">LKR {s.price.toLocaleString()}</td>
+              <td className="py-3 text-right font-mono font-semibold">
+                LKR {s.price.toLocaleString()}
+              </td>
               <td className="py-3 text-right">
                 <button className="text-xs text-primary hover:underline">Edit</button>
               </td>
@@ -161,15 +205,23 @@ function BaysPanel() {
   ];
   return (
     <>
-      <SectionTitle title="Bays & Capacity" desc="Configure service bays and their daily capacity rules." />
+      <SectionTitle
+        title="Bays & Capacity"
+        desc="Configure service bays and their daily capacity rules."
+      />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {bays.map((b) => (
-          <div key={b.id} className="flex items-center justify-between rounded-lg border border-border p-3">
+          <div
+            key={b.id}
+            className="flex items-center justify-between rounded-lg border border-border p-3"
+          >
             <div>
               <div className="font-display font-bold">{b.id}</div>
               <div className="text-xs text-muted-foreground">{b.type}</div>
             </div>
-            <StatusChip variant={b.status === "Active" ? "success" : "warning"}>{b.status}</StatusChip>
+            <StatusChip variant={b.status === "Active" ? "success" : "warning"}>
+              {b.status}
+            </StatusChip>
           </div>
         ))}
       </div>
@@ -188,7 +240,10 @@ function BookingRulesPanel() {
   ];
   return (
     <>
-      <SectionTitle title="Booking Rules" desc="Policies enforced at the point of booking and cancellation." />
+      <SectionTitle
+        title="Booking Rules"
+        desc="Policies enforced at the point of booking and cancellation."
+      />
       <div className="divide-y divide-border">
         {rules.map(([k, v]) => (
           <div key={k} className="flex items-center justify-between py-3">
@@ -207,7 +262,9 @@ function AccessPanel() {
       <SectionTitle title="Staff & Access" desc="Roles, PIN policy and session controls." />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         <div className="rounded-lg border border-border p-3">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">PIN Length</div>
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            PIN Length
+          </div>
           <div className="font-display text-xl font-bold">5 digits</div>
         </div>
         <div className="rounded-lg border border-border p-3">
@@ -215,7 +272,9 @@ function AccessPanel() {
           <div className="font-display text-xl font-bold font-mono">{DEMO_PIN}</div>
         </div>
         <div className="rounded-lg border border-border p-3">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Session Timeout</div>
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            Session Timeout
+          </div>
           <div className="font-display text-xl font-bold">15 min</div>
         </div>
         <div className="rounded-lg border border-border p-3">
@@ -238,7 +297,9 @@ function AccessPanel() {
               <td className="py-2.5 font-medium">{s.name}</td>
               <td className="py-2.5 text-muted-foreground">{s.role}</td>
               <td className="py-2.5 font-mono">●●●●●</td>
-              <td className="py-2.5"><StatusChip variant="success">Active</StatusChip></td>
+              <td className="py-2.5">
+                <StatusChip variant="success">Active</StatusChip>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -262,14 +323,18 @@ function NotifyPanel() {
         {channels.map((c) => (
           <div key={c.name} className="flex items-center justify-between py-3">
             <span className="text-sm">{c.name}</span>
-            <span className={cn(
-              "inline-flex h-6 w-11 items-center rounded-full p-0.5 transition-colors",
-              c.on ? "bg-primary" : "bg-muted",
-            )}>
-              <span className={cn(
-                "h-5 w-5 rounded-full bg-white shadow transition-transform",
-                c.on ? "translate-x-5" : "translate-x-0",
-              )} />
+            <span
+              className={cn(
+                "inline-flex h-6 w-11 items-center rounded-full p-0.5 transition-colors",
+                c.on ? "bg-primary" : "bg-muted",
+              )}
+            >
+              <span
+                className={cn(
+                  "h-5 w-5 rounded-full bg-white shadow transition-transform",
+                  c.on ? "translate-x-5" : "translate-x-0",
+                )}
+              />
             </span>
           </div>
         ))}
@@ -291,7 +356,10 @@ function IntegrationsPanel() {
       <SectionTitle title="Integrations" desc="Connect Polish Station OS to external services." />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {apps.map((a) => (
-          <div key={a.name} className="flex items-center justify-between rounded-lg border border-border p-4">
+          <div
+            key={a.name}
+            className="flex items-center justify-between rounded-lg border border-border p-4"
+          >
             <div>
               <div className="font-display font-bold">{a.name}</div>
               <div className="text-xs text-muted-foreground">{a.desc}</div>
@@ -322,7 +390,10 @@ function AuditPanel() {
   ];
   return (
     <>
-      <SectionTitle title="Audit Log" desc="All admin and manager actions are recorded immutably." />
+      <SectionTitle
+        title="Audit Log"
+        desc="All admin and manager actions are recorded immutably."
+      />
       <table className="w-full text-sm">
         <thead className="text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
           <tr>
@@ -337,7 +408,9 @@ function AuditPanel() {
             <tr key={i}>
               <td className="py-2.5 font-mono text-xs text-muted-foreground">{e.t}</td>
               <td className="py-2.5 font-medium">{e.who}</td>
-              <td className="py-2.5"><StatusChip variant="neutral">{e.role}</StatusChip></td>
+              <td className="py-2.5">
+                <StatusChip variant="neutral">{e.role}</StatusChip>
+              </td>
               <td className="py-2.5">{e.action}</td>
             </tr>
           ))}
