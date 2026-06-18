@@ -23,9 +23,10 @@ function PinLogin() {
   const [fails, setFails] = useState(0);
   const [locked, setLocked] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState<Date | null>(null);
 
   useEffect(() => {
+    setNow(new Date());
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
@@ -38,7 +39,7 @@ function PinLogin() {
 
   if (active) return <Navigate to="/dashboard" />;
 
-  const pinLen = selected?.role === "Admin" ? 6 : 4;
+  const pinLen = 5;
 
   function press(d: string) {
     if (!selected || locked > 0 || busy) return;
@@ -176,17 +177,22 @@ function PinLogin() {
             <button className="hover:text-foreground">Forgot PIN?</button>
             <button className="hover:text-foreground">Guest Checkout →</button>
           </div>
+          <div className="mt-3 rounded-md border border-dashed border-border bg-muted/40 px-3 py-2 text-center text-[10px] text-muted-foreground">
+            Demo PIN for all roles: <span className="font-mono font-bold text-foreground">12345</span>
+          </div>
         </div>
       </div>
-      <div className="pb-6 text-center font-mono text-xs text-white/40">
-        {now.toLocaleString([], {
-          weekday: "short",
-          day: "numeric",
-          month: "short",
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        })}
+      <div suppressHydrationWarning className="pb-6 text-center font-mono text-xs text-white/40 min-h-[20px]">
+        {now
+          ? now.toLocaleString([], {
+              weekday: "short",
+              day: "numeric",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            })
+          : ""}
       </div>
 
       <style>{`
