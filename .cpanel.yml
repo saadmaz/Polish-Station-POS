@@ -1,5 +1,5 @@
 ---
 deployment:
   tasks:
-    - export DEPLOYPATH=/home/polishst/public_html
+    - export DEPLOYPATH=/home/polishst/public_html/pos
     - /bin/cp -R * $DEPLOYPATH

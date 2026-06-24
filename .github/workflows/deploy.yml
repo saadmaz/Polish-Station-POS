@@ -1,0 +1,15 @@
+name: Auto Deploy to Zircon
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger cPanel Git Pull
+        run: |
+          curl -H "Authorization: cpanel ${{ secrets.CPANEL_USERNAME }}:${{ secrets.CPANEL_TOKEN }}" \
+          "https://${{ secrets.CPANEL_DOMAIN }}:2083/execute/VersionControl/update?repository_root=/home/${{ secrets.CPANEL_USERNAME }}/public_html/pos"
