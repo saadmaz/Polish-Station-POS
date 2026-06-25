@@ -1,4 +1,14 @@
 ---
 deployment:
   tasks:
-    - echo "Deployment complete"
+    - echo "=== Polish Station POS deploy ==="
+    - echo "RemoveHandler .php .php5 .php7 .php8" > /home/polishst/pos.polishstation.lk/.htaccess
+    - echo "RemoveType application/x-httpd-php .php" >> /home/polishst/pos.polishstation.lk/.htaccess
+    - echo "PassengerEnabled on" >> /home/polishst/pos.polishstation.lk/.htaccess
+    - echo "PassengerBaseURI /" >> /home/polishst/pos.polishstation.lk/.htaccess
+    - echo "PassengerNodejs /home/polishst/nodevenv/pos.polishstation.lk/20/bin/node" >> /home/polishst/pos.polishstation.lk/.htaccess
+    - echo "PassengerAppRoot /home/polishst/pos.polishstation.lk" >> /home/polishst/pos.polishstation.lk/.htaccess
+    - echo "PassengerAppType node" >> /home/polishst/pos.polishstation.lk/.htaccess
+    - echo "PassengerStartupFile start.mjs" >> /home/polishst/pos.polishstation.lk/.htaccess
+    - chmod 644 /home/polishst/pos.polishstation.lk/.htaccess
+    - echo "=== .htaccess written ==="
