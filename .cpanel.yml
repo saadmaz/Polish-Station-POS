@@ -1,7 +1,5 @@
 ---
 deployment:
   tasks:
-    - export DEPLOYPATH=/home/polishst/public_html/pos
     - /usr/local/bin/npm install
     - /usr/local/bin/npm run build
-    - cp -r dist/. $DEPLOYPATH
