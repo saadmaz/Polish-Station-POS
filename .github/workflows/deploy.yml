@@ -12,4 +12,4 @@ jobs:
       - name: Trigger cPanel Git Pull
         run: |
           curl -H "Authorization: cpanel ${{ secrets.CPANEL_USERNAME }}:${{ secrets.CPANEL_TOKEN }}" \
-          "https://${{ secrets.CPANEL_DOMAIN }}:2083/execute/VersionControl/update?repository_root=/home/${{ secrets.CPANEL_USERNAME }}/public_html/pos"
+          "https://${{ secrets.CPANEL_DOMAIN }}:2083/execute/VersionControl/update?repository_root=/home/${{ secrets.CPANEL_USERNAME }}/pos.polishstation.lk"
