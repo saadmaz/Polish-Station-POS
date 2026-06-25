@@ -1,5 +1,0 @@
-PassengerEnabled on
-PassengerNodejs /home/polishst/nodevenv/pos.polishstation.lk/20/bin/node
-PassengerStartupFile start.mjs
-PassengerAppRoot /home/polishst/pos.polishstation.lk
-PassengerAppType node
