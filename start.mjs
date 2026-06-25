@@ -27,7 +27,8 @@ const MIME_TYPES = {
 
 const { default: handler } = await import("./dist/server/server.js");
 
-const port = process.env.PORT || 3000;
+const portOrSocket = process.env.PORT || 3000;
+const isSocket = typeof portOrSocket === "string" && portOrSocket.startsWith("/");
 const host = process.env.HOST || "0.0.0.0";
 
 const server = createServer(async (req, res) => {
@@ -80,6 +81,12 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(port, host, () => {
-  console.log(`Polish Station POS running at http://${host}:${port}`);
-});
+if (isSocket) {
+  server.listen(portOrSocket, () => {
+    console.log(`Polish Station POS running on socket ${portOrSocket}`);
+  });
+} else {
+  server.listen(Number(portOrSocket), host, () => {
+    console.log(`Polish Station POS running at http://${host}:${portOrSocket}`);
+  });
+}
