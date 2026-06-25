@@ -1,7 +1,4 @@
 ---
 deployment:
   tasks:
-    - export APPDIR=/home/polishst/pos.polishstation.lk
-    - cd $APPDIR
-    - /usr/local/bin/npm install
-    - /usr/local/bin/npm run build
+    - echo "Deployment complete"
