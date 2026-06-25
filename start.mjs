@@ -1,5 +1,5 @@
 import { createServer } from "http";
-import { createReadStream, existsSync } from "fs";
+import { createReadStream, existsSync, statSync } from "fs";
 import { join, extname } from "path";
 import { fileURLToPath } from "url";
 import { Readable } from "stream";
@@ -35,7 +35,7 @@ const server = createServer(async (req, res) => {
   const urlPath = new URL(req.url, "http://localhost").pathname;
   const filePath = join(CLIENT_DIR, urlPath);
 
-  if (existsSync(filePath) && !filePath.endsWith("/")) {
+  if (existsSync(filePath) && statSync(filePath).isFile()) {
     const ext = extname(filePath);
     const contentType = MIME_TYPES[ext] || "application/octet-stream";
     res.setHeader("Content-Type", contentType);
