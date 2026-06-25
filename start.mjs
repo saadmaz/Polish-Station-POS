@@ -1,5 +1,5 @@
 import { createServer } from "http";
-import { createReadStream, existsSync, statSync } from "fs";
+import { createReadStream, existsSync, statSync, unlinkSync } from "fs";
 import { join, extname } from "path";
 import { fileURLToPath } from "url";
 import { Readable } from "stream";
@@ -16,6 +16,7 @@ process.on("unhandledRejection", (reason) => {
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const CLIENT_DIR = join(__dirname, "dist", "client");
+const SERVER_ENTRY = new URL("./dist/server/server.js", import.meta.url).href;
 
 const MIME_TYPES = {
   ".js": "application/javascript",
@@ -23,6 +24,7 @@ const MIME_TYPES = {
   ".css": "text/css",
   ".html": "text/html",
   ".json": "application/json",
+  ".map": "application/json",
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -40,12 +42,22 @@ async function main() {
   console.log("[startup] Node version:", process.version);
   console.log("[startup] PORT:", process.env.PORT);
   console.log("[startup] CWD:", process.cwd());
+  console.log("[startup] __dirname:", __dirname);
+  console.log("[startup] CLIENT_DIR:", CLIENT_DIR, "- exists:", existsSync(CLIENT_DIR));
+  console.log("[startup] SERVER_ENTRY:", SERVER_ENTRY);
 
-  console.log("[startup] Loading SSR handler...");
   let handler;
   try {
-    const mod = await import("./dist/server/server.js");
+    const mod = await import(SERVER_ENTRY);
     handler = mod.default;
+    if (!handler || typeof handler.fetch !== "function") {
+      console.error(
+        "[startup] SSR handler missing .fetch method. Got:",
+        typeof handler,
+        handler ? Object.keys(handler) : "(null)",
+      );
+      process.exit(1);
+    }
     console.log("[startup] SSR handler loaded OK");
   } catch (err) {
     console.error("[startup] FAILED to load SSR handler:", err.stack || err);
@@ -69,16 +81,23 @@ async function main() {
       }
 
       const protocol = req.socket.encrypted ? "https" : "http";
-      const url = new URL(req.url, `${protocol}://${req.headers.host}`);
+      const host = req.headers.host || "localhost";
+      const url = new URL(req.url, `${protocol}://${host}`);
+
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
-      const body = chunks.length ? Buffer.concat(chunks) : undefined;
+      const bodyBuffer = chunks.length ? Buffer.concat(chunks) : null;
 
-      const request = new Request(url, {
+      const hasBody =
+        bodyBuffer &&
+        bodyBuffer.length > 0 &&
+        req.method !== "GET" &&
+        req.method !== "HEAD";
+
+      const request = new Request(url.href, {
         method: req.method,
         headers: req.headers,
-        body: body && body.length ? body : undefined,
-        duplex: "half",
+        ...(hasBody ? { body: bodyBuffer } : {}),
       });
 
       const response = await handler.fetch(request, {}, {});
@@ -86,21 +105,42 @@ async function main() {
       response.headers.forEach((value, key) => res.setHeader(key, value));
 
       if (response.body) {
-        Readable.fromWeb(response.body).pipe(res);
+        const readable = Readable.fromWeb(response.body);
+        readable.on("error", (streamErr) => {
+          console.error("[stream] Response body error:", streamErr.message);
+          if (!res.writableEnded) res.destroy(streamErr);
+        });
+        readable.pipe(res);
       } else {
         res.end();
       }
     } catch (err) {
       console.error("[request] Error:", err.stack || err);
-      res.statusCode = 500;
-      res.end("Internal Server Error");
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.end("Internal Server Error");
+      }
     }
   });
 
-  const portOrSocket = process.env.PORT || 3000;
-  const isSocket = typeof portOrSocket === "string" && portOrSocket.startsWith("/");
+  server.on("error", (err) => {
+    console.error("[server] Listen error:", err.stack || err);
+    process.exit(1);
+  });
+
+  const portOrSocket = process.env.PORT || "3000";
+  const isSocket =
+    typeof portOrSocket === "string" && portOrSocket.startsWith("/");
 
   if (isSocket) {
+    try {
+      if (existsSync(portOrSocket)) {
+        unlinkSync(portOrSocket);
+        console.log("[startup] Removed stale socket:", portOrSocket);
+      }
+    } catch (e) {
+      console.warn("[startup] Could not remove stale socket:", e.message);
+    }
     server.listen(portOrSocket, () => {
       console.log("[startup] Listening on socket:", portOrSocket);
     });

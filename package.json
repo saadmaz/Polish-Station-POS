@@ -1,6 +1,7 @@
 {
   "name": "polish-station-pos",
   "private": true,
+  "main": "start.mjs",
   "sideEffects": false,
   "type": "module",
   "engines": {
