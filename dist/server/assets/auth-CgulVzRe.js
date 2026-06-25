@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { jsx } from "react/jsx-runtime";
+import { a as __toESM, n as require_react, t as require_jsx_runtime } from "./jsx-runtime-DqHqdqSU.js";
 //#region src/lib/auth.tsx
+var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
+var import_jsx_runtime = require_jsx_runtime();
 var DEMO_PIN = "12345";
 var STAFF = [
 	{
@@ -46,11 +47,11 @@ var STAFF = [
 		color: "oklch(0.5 0.18 30)"
 	}
 ];
-var AuthContext = createContext(null);
+var AuthContext = (0, import_react.createContext)(null);
 var STORAGE_KEY = "ps_active_staff_id";
 function AuthProvider({ children }) {
-	const [staff, setStaff] = useState(null);
-	useEffect(() => {
+	const [staff, setStaff] = (0, import_react.useState)(null);
+	(0, import_react.useEffect)(() => {
 		if (typeof window === "undefined") return;
 		const id = window.localStorage.getItem(STORAGE_KEY);
 		if (id) {
@@ -58,7 +59,7 @@ function AuthProvider({ children }) {
 			if (found) setStaff(found);
 		}
 	}, []);
-	const value = useMemo(() => ({
+	const value = (0, import_react.useMemo)(() => ({
 		staff,
 		login: (s) => {
 			window.localStorage.setItem(STORAGE_KEY, s.id);
@@ -69,13 +70,13 @@ function AuthProvider({ children }) {
 			setStaff(null);
 		}
 	}), [staff]);
-	return /* @__PURE__ */ jsx(AuthContext.Provider, {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(AuthContext.Provider, {
 		value,
 		children
 	});
 }
 function useAuth() {
-	const ctx = useContext(AuthContext);
+	const ctx = (0, import_react.useContext)(AuthContext);
 	if (!ctx) throw new Error("useAuth outside provider");
 	return ctx;
 }

@@ -1,9 +1,43 @@
+import { t as require_jsx_runtime } from "./jsx-runtime-DqHqdqSU.js";
+import { r as createLucideIcon, t as cn } from "./utils-CkbI-8f8.js";
+import { t as ChevronRight } from "./chevron-right-_3FgaiGr.js";
+import { t as Clock } from "./clock-CYhRY6l7.js";
 import { a as JOBS } from "./mock-data-DAOLHDOp.js";
-import { t as cn } from "./utils-C_uf36nf.js";
-import { t as PageHeader } from "./page-header-CuwnNFAY.js";
-import { jsx, jsxs } from "react/jsx-runtime";
-import { ChevronRight, Clock, Flag, Pause } from "lucide-react";
+import { t as PageHeader } from "./page-header-DOu5wNGM.js";
+/**
+* @license lucide-react v0.575.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
+var Flag = createLucideIcon("flag", [["path", {
+	d: "M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528",
+	key: "1jaruq"
+}]]);
+/**
+* @license lucide-react v0.575.0 - ISC
+*
+* This source code is licensed under the ISC license.
+* See the LICENSE file in the root directory of this source tree.
+*/
+var Pause = createLucideIcon("pause", [["rect", {
+	x: "14",
+	y: "3",
+	width: "5",
+	height: "18",
+	rx: "1",
+	key: "kaeet6"
+}], ["rect", {
+	x: "5",
+	y: "3",
+	width: "5",
+	height: "18",
+	rx: "1",
+	key: "1wsw3u"
+}]]);
+//#endregion
 //#region src/routes/_app.jobs.tsx?tsr-split=component
+var import_jsx_runtime = require_jsx_runtime();
 var COLUMNS = [
 	{
 		status: "Queue",
@@ -38,73 +72,73 @@ var CAT_COLORS = {
 	Coating: "var(--charcoal)"
 };
 function ActiveJobs() {
-	return /* @__PURE__ */ jsxs("div", {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "p-6 h-full flex flex-col",
 		children: [
-			/* @__PURE__ */ jsx(PageHeader, {
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(PageHeader, {
 				title: "Active Jobs",
 				subtitle: "Kanban board · drag cards to update status"
 			}),
-			/* @__PURE__ */ jsx("div", {
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 				className: "flex-1 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 min-h-0",
 				children: COLUMNS.map((col) => {
 					const items = JOBS.filter((j) => j.status === col.status);
-					return /* @__PURE__ */ jsxs("div", {
+					return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: cn("flex flex-col rounded-xl border-t-[3px] bg-card border-border", col.tone),
-						children: [/* @__PURE__ */ jsxs("div", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "flex items-center justify-between px-3 pt-3 pb-2",
-							children: [/* @__PURE__ */ jsx("h3", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", {
 								className: "text-xs font-bold uppercase tracking-wider",
 								children: col.status
-							}), /* @__PURE__ */ jsx("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 								className: "text-[11px] font-mono text-muted-foreground bg-muted rounded-full px-2 py-0.5",
 								children: items.length
 							})]
-						}), /* @__PURE__ */ jsxs("div", {
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "flex-1 overflow-auto px-2 pb-2 space-y-2",
 							children: [items.map((j) => {
 								const overdue = j.elapsedMin > j.estimateMin;
-								return /* @__PURE__ */ jsxs("div", {
+								return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 									className: "rounded-lg border border-border bg-background p-2.5 hover:shadow-card cursor-pointer transition-shadow border-l-[3px]",
 									style: { borderLeftColor: CAT_COLORS[j.category] ?? "var(--primary)" },
 									children: [
-										/* @__PURE__ */ jsxs("div", {
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 											className: "flex items-start justify-between gap-2",
-											children: [/* @__PURE__ */ jsxs("div", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 												className: "min-w-0",
-												children: [/* @__PURE__ */ jsx("div", {
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 													className: "text-sm font-semibold truncate",
 													children: j.customer
-												}), /* @__PURE__ */ jsxs("div", {
+												}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 													className: "text-[11px] text-muted-foreground truncate",
 													children: [
 														j.vehicle,
 														" · ",
-														/* @__PURE__ */ jsx("span", {
+														/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 															className: "font-mono",
 															children: j.plate
 														})
 													]
 												})]
-											}), /* @__PURE__ */ jsx(ChevronRight, { className: "h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" })]
+											}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronRight, { className: "h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" })]
 										}),
-										/* @__PURE__ */ jsx("div", {
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 											className: "mt-2 text-[11px] line-clamp-2",
 											children: j.service
 										}),
-										/* @__PURE__ */ jsxs("div", {
+										/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 											className: "mt-2 flex items-center justify-between text-[11px]",
-											children: [/* @__PURE__ */ jsxs("span", {
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 												className: "text-muted-foreground",
 												children: [
 													j.tech,
 													" · ",
 													j.bay
 												]
-											}), /* @__PURE__ */ jsxs("span", {
+											}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 												className: cn("inline-flex items-center gap-1 font-mono font-semibold", overdue ? "text-primary" : "text-muted-foreground"),
 												children: [
-													/* @__PURE__ */ jsx(Clock, { className: "h-3 w-3" }),
+													/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Clock, { className: "h-3 w-3" }),
 													j.elapsedMin,
 													"m"
 												]
@@ -112,7 +146,7 @@ function ActiveJobs() {
 										})
 									]
 								}, j.id);
-							}), items.length === 0 && /* @__PURE__ */ jsx("div", {
+							}), items.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 								className: "text-center text-[11px] text-muted-foreground py-6",
 								children: "Empty"
 							})]
@@ -120,12 +154,12 @@ function ActiveJobs() {
 					}, col.status);
 				})
 			}),
-			/* @__PURE__ */ jsx("div", {
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 				className: "mt-4 rounded-xl border border-border bg-card shadow-card p-3",
-				children: /* @__PURE__ */ jsxs("div", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 					className: "flex flex-wrap items-center gap-3",
 					children: [
-						/* @__PURE__ */ jsx("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 							className: "text-xs font-bold uppercase tracking-wider text-muted-foreground mr-2",
 							children: "On Shift"
 						}),
@@ -150,17 +184,17 @@ function ActiveJobs() {
 								done: 0,
 								status: "Break"
 							}
-						].map((t) => /* @__PURE__ */ jsxs("div", {
+						].map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "flex items-center gap-2 rounded-md border border-border px-3 py-1.5",
-							children: [/* @__PURE__ */ jsx("div", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 								className: "grid h-7 w-7 place-items-center rounded-full bg-primary/15 text-[11px] font-bold text-primary",
 								children: t.name.split(" ").map((p) => p[0]).join("")
-							}), /* @__PURE__ */ jsxs("div", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 								className: "leading-tight",
-								children: [/* @__PURE__ */ jsx("div", {
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 									className: "text-xs font-semibold",
 									children: t.name
-								}), /* @__PURE__ */ jsxs("div", {
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 									className: "text-[10px] text-muted-foreground",
 									children: [
 										t.done,
@@ -170,16 +204,16 @@ function ActiveJobs() {
 								})]
 							})]
 						}, t.name)),
-						/* @__PURE__ */ jsxs("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "ml-auto flex gap-1.5",
-							children: [/* @__PURE__ */ jsx("button", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 								className: "rounded-md border border-input p-1.5 hover:bg-accent",
 								title: "Pause",
-								children: /* @__PURE__ */ jsx(Pause, { className: "h-3.5 w-3.5" })
-							}), /* @__PURE__ */ jsx("button", {
+								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Pause, { className: "h-3.5 w-3.5" })
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 								className: "rounded-md border border-input p-1.5 hover:bg-accent",
 								title: "Flag",
-								children: /* @__PURE__ */ jsx(Flag, { className: "h-3.5 w-3.5" })
+								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Flag, { className: "h-3.5 w-3.5" })
 							})]
 						})
 					]

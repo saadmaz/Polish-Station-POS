@@ -1,6 +1,7 @@
-import { t as cn } from "./utils-C_uf36nf.js";
-import { jsx, jsxs } from "react/jsx-runtime";
+import { t as require_jsx_runtime } from "./jsx-runtime-DqHqdqSU.js";
+import { t as cn } from "./utils-CkbI-8f8.js";
 //#region src/components/status-chip.tsx
+var import_jsx_runtime = require_jsx_runtime();
 var STYLES = {
 	success: "bg-success/15 text-success border-success/30",
 	warning: "bg-warning/20 text-warning-foreground border-warning/40",
@@ -10,9 +11,9 @@ var STYLES = {
 	brand: "bg-primary text-primary-foreground border-primary"
 };
 function StatusChip({ children, variant = "neutral", className }) {
-	return /* @__PURE__ */ jsxs("span", {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 		className: cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider", STYLES[variant], className),
-		children: [/* @__PURE__ */ jsx("span", { className: "h-1.5 w-1.5 rounded-full bg-current opacity-80" }), children]
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "h-1.5 w-1.5 rounded-full bg-current opacity-80" }), children]
 	});
 }
 function statusVariant(status) {
