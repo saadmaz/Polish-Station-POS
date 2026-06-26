@@ -4,8 +4,10 @@ import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { PageHeader } from "@/components/page-header";
 import { cn } from "@/lib/utils";
-import { Clock, ChevronRight, X, Check, ArrowRight, Trash2, Plus } from "lucide-react";
+import { Clock, ChevronRight, X, Check, ArrowRight, Trash2, Plus, FileText } from "lucide-react";
 import type { Job, JobStatus } from "@/lib/db";
+import { downloadQuotationPDF } from "@/lib/pdf";
+import { newId } from "@/lib/db";
 
 export const Route = createFileRoute("/_app/jobs")({
   head: () => ({ meta: [{ title: "Active Jobs — Polish Station OS" }] }),
@@ -149,6 +151,23 @@ function JobDetail({ job, onClose }: { job: Job; onClose: () => void }) {
             Place On Hold
           </button>
         )}
+        <button
+          onClick={() => {
+            downloadQuotationPDF({
+              id: newId("QUO"),
+              customerName: job.customerName,
+              phone: job.phone,
+              plate: job.plate,
+              vehicleModel: job.vehicleModel,
+              lines: [{ name: job.serviceName, qty: 1, unitPrice: job.price, discount: 0 }],
+              notes: job.notes || undefined,
+            });
+            toast.success("Quotation PDF downloaded");
+          }}
+          className="w-full flex items-center justify-center gap-2 rounded-md border border-border py-2 text-sm text-muted-foreground hover:text-foreground hover:border-border"
+        >
+          <FileText className="h-3.5 w-3.5" /> Download Quotation PDF
+        </button>
         <button
           onClick={remove}
           className="w-full flex items-center justify-center gap-2 rounded-md border border-border py-2 text-sm text-muted-foreground hover:text-primary hover:border-primary/40"

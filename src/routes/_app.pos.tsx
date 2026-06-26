@@ -317,14 +317,26 @@ function POS() {
                       <StatusChip variant={statusVariant(i.status)}>{i.status}</StatusChip>
                     </td>
                     <td className="px-2 py-2.5">
-                      {i.status !== "Void" && (
+                      <div className="flex items-center gap-2 justify-end">
                         <button
-                          onClick={() => { if (confirm(`Void ${i.id}?`)) { voidInvoice(i.id); toast.success(`${i.id} voided`); } }}
-                          className="text-[11px] text-muted-foreground hover:text-primary underline underline-offset-2"
+                          onClick={() => {
+                            const job = i.jobId ? jobs.find((j) => j.id === i.jobId) : undefined;
+                            downloadInvoicePDF(i, job);
+                          }}
+                          title="Download PDF"
+                          className="text-muted-foreground hover:text-primary"
                         >
-                          Void
+                          <FileDown className="h-3.5 w-3.5" />
                         </button>
-                      )}
+                        {i.status !== "Void" && (
+                          <button
+                            onClick={() => { if (confirm(`Void ${i.id}?`)) { voidInvoice(i.id); toast.success(`${i.id} voided`); } }}
+                            className="text-[11px] text-muted-foreground hover:text-primary underline underline-offset-2"
+                          >
+                            Void
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
