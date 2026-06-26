@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, ChevronLeft, ChevronRight, LogIn, X, Trash2, CheckCircle2, Banknote } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, LogIn, X, Trash2, CheckCircle2, Banknote, Globe, Copy, Check } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { BookingSheet } from "@/components/booking-sheet";
 import { StatusChip, statusVariant } from "@/components/status-chip";
@@ -142,6 +142,18 @@ function Bookings() {
   const [currentDate, setCurrentDate] = useState(new Date().toISOString().slice(0, 10));
   const [bookingOpen, setBookingOpen] = useState(false);
   const [activeCard, setActiveCard] = useState<string | null>(null);
+  const [widgetOpen, setWidgetOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const widgetUrl = typeof window !== "undefined" ? `${window.location.origin}/book` : "/book";
+  const embedCode = `<iframe src="${widgetUrl}?embed=true" width="100%" height="720" frameborder="0" style="border-radius:12px;border:1px solid #e5e7eb;"></iframe>`;
+
+  function copyEmbed() {
+    navigator.clipboard.writeText(embedCode).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
 
   const todayBookings = bookings.filter((b) => b.date === currentDate).sort((a, b) => a.time.localeCompare(b.time));
 
@@ -277,6 +289,12 @@ function Bookings() {
                 </button>
               ))}
             </div>
+            <button
+              onClick={() => setWidgetOpen(true)}
+              className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+            >
+              <Globe className="h-4 w-4" /> Online Widget
+            </button>
             <button
               onClick={() => setBookingOpen(true)}
               className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90"
@@ -437,6 +455,76 @@ function Bookings() {
       </div>
 
       <BookingSheet open={bookingOpen} onOpenChange={setBookingOpen} />
+
+      {/* Online Widget modal */}
+      {widgetOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setWidgetOpen(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-elevated"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="font-display font-bold text-foreground">Online Booking Widget</h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Share the link or embed the widget on your website.
+                </p>
+              </div>
+              <button onClick={() => setWidgetOpen(false)} className="rounded-md p-1.5 hover:bg-muted">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Direct Link
+                </label>
+                <div className="flex gap-2">
+                  <a
+                    href={widgetUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 truncate rounded-lg border border-input bg-muted/40 px-3 py-2 text-sm text-foreground hover:bg-muted"
+                  >
+                    {widgetUrl}
+                  </a>
+                  <a
+                    href={widgetUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 rounded-lg border border-input bg-background px-3 py-2 text-xs font-medium hover:bg-muted"
+                  >
+                    <Globe className="h-3.5 w-3.5" /> Open
+                  </a>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Embed Code (iFrame)
+                </label>
+                <div className="relative rounded-lg border border-input bg-muted/40 p-3 font-mono text-xs text-muted-foreground">
+                  <pre className="whitespace-pre-wrap break-all">{embedCode}</pre>
+                  <button
+                    onClick={copyEmbed}
+                    className="absolute top-2 right-2 flex items-center gap-1 rounded-md bg-background border border-input px-2 py-1 text-xs font-medium hover:bg-muted"
+                  >
+                    {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
+                    {copied ? "Copied!" : "Copy"}
+                  </button>
+                </div>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Paste this snippet into your website's HTML to embed the booking form.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
