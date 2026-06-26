@@ -150,7 +150,10 @@ export interface Job {
   qcItems?: QCItem[];
   qcCompletedBy?: string;
   qcCompletedAt?: string;
+  depositPaid?: number;
 }
+
+export type DepositStatus = "none" | "required" | "paid";
 
 export interface Booking {
   id: string;
@@ -171,6 +174,8 @@ export interface Booking {
   status: BookingStatus;
   notes: string;
   createdAt: string;
+  depositAmount?: number;
+  depositStatus?: DepositStatus;
 }
 
 export interface InvoiceLine {
@@ -194,6 +199,7 @@ export interface Invoice {
   status: InvoiceStatus;
   sessionId: string | null;
   createdAt: string;
+  depositApplied?: number;
 }
 
 export interface InventoryItem {

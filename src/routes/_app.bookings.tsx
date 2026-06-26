@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, ChevronLeft, ChevronRight, LogIn, X, Trash2, CheckCircle2 } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, LogIn, X, Trash2, CheckCircle2, Banknote } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { BookingSheet } from "@/components/booking-sheet";
 import { StatusChip, statusVariant } from "@/components/status-chip";
@@ -36,16 +36,38 @@ function formatDate(dateStr: string): string {
 
 // ─── Booking detail popover ───────────────────────────────────────────────────
 
-function BookingCard({ booking, onCheckin, onCancel, onDelete }: { booking: Booking; onCheckin: () => void; onCancel: () => void; onDelete: () => void }) {
+function BookingCard({
+  booking,
+  onCheckin,
+  onCancel,
+  onDelete,
+  onMarkDepositPaid,
+}: {
+  booking: Booking;
+  onCheckin: () => void;
+  onCancel: () => void;
+  onDelete: () => void;
+  onMarkDepositPaid: () => void;
+}) {
+  const hasDeposit = booking.depositStatus && booking.depositStatus !== "none";
+  const depositPaid = booking.depositStatus === "paid";
+  const depositRequired = booking.depositStatus === "required";
+
   return (
-    <div className="absolute inset-0 z-10 rounded-xl border border-border bg-card shadow-elevated p-4 space-y-3 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="absolute inset-0 z-10 rounded-xl border border-border bg-card shadow-elevated p-4 space-y-3 overflow-y-auto"
+      onClick={(e) => e.stopPropagation()}
+    >
       <div className="flex items-start justify-between">
         <div>
           <div className="font-semibold">{booking.customerName}</div>
           <div className="text-xs text-muted-foreground font-mono">{booking.plate}</div>
         </div>
-        <button onClick={onDelete} className="text-muted-foreground hover:text-primary p-1"><X className="h-4 w-4" /></button>
+        <button onClick={onDelete} className="text-muted-foreground hover:text-primary p-1">
+          <X className="h-4 w-4" />
+        </button>
       </div>
+
       <div className="text-sm space-y-1">
         <div><span className="text-muted-foreground">Service:</span> {booking.serviceName}</div>
         <div><span className="text-muted-foreground">Time:</span> {booking.time} · {booking.durationMin}m</div>
@@ -53,18 +75,58 @@ function BookingCard({ booking, onCheckin, onCancel, onDelete }: { booking: Book
         <div><span className="text-muted-foreground">Price:</span> LKR {booking.price.toLocaleString()}</div>
         {booking.notes && <div><span className="text-muted-foreground">Notes:</span> {booking.notes}</div>}
       </div>
+
+      {/* Deposit status */}
+      {hasDeposit && (
+        <div className={cn(
+          "flex items-center justify-between rounded-md px-3 py-2 text-xs",
+          depositPaid
+            ? "bg-success/10 border border-success/30 text-success"
+            : "bg-warning/10 border border-warning/30 text-warning",
+        )}>
+          <div className="flex items-center gap-1.5">
+            <Banknote className="h-3.5 w-3.5" />
+            <span className="font-semibold">
+              Deposit LKR {(booking.depositAmount ?? 0).toLocaleString()}
+            </span>
+            <span>·</span>
+            <span>{depositPaid ? "Paid" : "Required"}</span>
+          </div>
+          {depositPaid && <CheckCircle2 className="h-3.5 w-3.5" />}
+        </div>
+      )}
+
       <div className="flex flex-col gap-1.5">
+        {/* Mark deposit paid */}
+        {depositRequired && (
+          <button
+            onClick={onMarkDepositPaid}
+            className="flex items-center justify-center gap-1.5 w-full rounded-md bg-warning/10 border border-warning/30 text-warning py-1.5 text-xs font-semibold hover:bg-warning/20"
+          >
+            <Banknote className="h-3.5 w-3.5" /> Mark Deposit Received
+          </button>
+        )}
+
         {(booking.status === "Confirmed" || booking.status === "Pending") && (
-          <button onClick={onCheckin} className="flex items-center justify-center gap-1.5 w-full rounded-md bg-success/10 border border-success/30 text-success py-1.5 text-xs font-semibold hover:bg-success/20">
+          <button
+            onClick={onCheckin}
+            className="flex items-center justify-center gap-1.5 w-full rounded-md bg-success/10 border border-success/30 text-success py-1.5 text-xs font-semibold hover:bg-success/20"
+          >
             <LogIn className="h-3.5 w-3.5" /> Check In → Create Job
           </button>
         )}
         {booking.status !== "Cancelled" && booking.status !== "Checked-In" && (
-          <button onClick={onCancel} className="w-full rounded-md border border-border py-1.5 text-xs text-muted-foreground hover:text-primary hover:border-primary/40">
+          <button
+            onClick={onCancel}
+            className="w-full rounded-md border border-border py-1.5 text-xs text-muted-foreground hover:text-primary hover:border-primary/40"
+          >
             Cancel Booking
           </button>
         )}
-        <button onClick={onDelete} className="flex items-center justify-center gap-1 w-full rounded-md border border-border py-1.5 text-xs text-muted-foreground hover:text-primary hover:border-primary/40">
+        <button
+          onClick={onDelete}
+          className="flex items-center justify-center gap-1 w-full rounded-md border border-border py-1.5 text-xs text-muted-foreground hover:text-primary hover:border-primary/40"
+        >
           <Trash2 className="h-3 w-3" /> Delete
         </button>
       </div>
@@ -75,7 +137,7 @@ function BookingCard({ booking, onCheckin, onCancel, onDelete }: { booking: Book
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 function Bookings() {
-  const { bookings, updateBooking, deleteBooking, checkinBooking } = useStore();
+  const { bookings, updateBooking, deleteBooking, checkinBooking, markDepositPaid } = useStore();
   const [view, setView] = useState<"day" | "week" | "list">("day");
   const [currentDate, setCurrentDate] = useState(new Date().toISOString().slice(0, 10));
   const [bookingOpen, setBookingOpen] = useState(false);
@@ -111,6 +173,11 @@ function Bookings() {
     deleteBooking(id);
     toast.error("Booking deleted");
     setActiveCard(null);
+  }
+
+  function handleMarkDepositPaid(id: string) {
+    markDepositPaid(id);
+    toast.success("Deposit marked as received");
   }
 
   // Day view calendar grid
@@ -167,6 +234,7 @@ function Bookings() {
                         onCheckin={() => handleCheckin(b.id)}
                         onCancel={() => handleStatusChange(b.id, "Cancelled")}
                         onDelete={() => handleDelete(b.id)}
+                        onMarkDepositPaid={() => handleMarkDepositPaid(b.id)}
                       />
                     ) : (
                       <>
@@ -299,6 +367,7 @@ function Bookings() {
                 <th className="text-left px-3 py-2.5">Service</th>
                 <th className="text-left px-3 py-2.5">Tech</th>
                 <th className="text-right px-3 py-2.5">Price</th>
+                <th className="text-left px-3 py-2.5">Deposit</th>
                 <th className="text-left px-3 py-2.5">Status</th>
                 <th className="w-28 px-3 py-2.5" />
               </tr>
@@ -319,10 +388,30 @@ function Bookings() {
                   <td className="px-3 py-3 text-muted-foreground">{b.tech}</td>
                   <td className="px-3 py-3 text-right font-mono font-semibold">LKR {b.price.toLocaleString()}</td>
                   <td className="px-3 py-3">
+                    {b.depositStatus && b.depositStatus !== "none" && (
+                      <span className={cn(
+                        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                        b.depositStatus === "paid" ? "bg-success/10 text-success" : "bg-warning/10 text-warning",
+                      )}>
+                        <Banknote className="h-3 w-3" />
+                        {b.depositStatus === "paid" ? "Dep. Paid" : "Dep. Req."}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-3">
                     <StatusChip variant={statusVariant(b.status)}>{b.status}</StatusChip>
                   </td>
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-1">
+                      {b.depositStatus === "required" && (
+                        <button
+                          onClick={() => handleMarkDepositPaid(b.id)}
+                          className="rounded p-1.5 text-warning hover:bg-warning/10"
+                          title="Mark deposit received"
+                        >
+                          <Banknote className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                       {(b.status === "Confirmed" || b.status === "Pending") && (
                         <button
                           onClick={() => handleCheckin(b.id)}

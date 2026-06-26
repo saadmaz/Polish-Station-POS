@@ -63,9 +63,12 @@ function POS() {
     setLines((ls) => ls.filter((l) => l.key !== key));
   }
 
+  const depositPaid = selectedJob?.depositPaid ?? 0;
+
   const subtotal = lines.reduce((s, l) => s + l.unitPrice * l.qty - l.discount, 0);
   const tax = Math.round(subtotal * 0.18);
   const total = subtotal + tax + tip;
+  const balanceDue = Math.max(0, total - depositPaid);
 
   function handleSaveQuote() {
     if (lines.length === 0) { toast.error("Add at least one line item"); return; }
@@ -96,8 +99,9 @@ function POS() {
       tip,
       total,
       method,
-      status: "Paid",
+      status: depositPaid > 0 && balanceDue === 0 ? "Paid" : depositPaid > 0 ? "Partially Paid" : "Paid",
       sessionId: openShift?.id ?? null,
+      depositApplied: depositPaid > 0 ? depositPaid : undefined,
     });
 
     // Mark the job Done Today
@@ -366,13 +370,29 @@ function POS() {
           <Row label="Subtotal" value={`LKR ${subtotal.toLocaleString()}`} />
           <Row label="VAT 18%" value={`LKR ${tax.toLocaleString()}`} />
           <Row label="Tip" value={`LKR ${tip.toLocaleString()}`} />
+          {depositPaid > 0 && (
+            <div className="flex justify-between text-success font-medium pt-1 border-t border-border">
+              <span className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-success inline-block" />
+                Deposit Received
+              </span>
+              <span className="font-mono">− LKR {depositPaid.toLocaleString()}</span>
+            </div>
+          )}
         </div>
         <div className="flex items-baseline justify-between py-4">
-          <span className="text-sm font-semibold uppercase tracking-wider">Total</span>
+          <span className="text-sm font-semibold uppercase tracking-wider">
+            {depositPaid > 0 ? "Balance Due" : "Total"}
+          </span>
           <span className="font-display text-2xl font-extrabold text-primary">
-            LKR {total.toLocaleString()}
+            LKR {(depositPaid > 0 ? balanceDue : total).toLocaleString()}
           </span>
         </div>
+        {depositPaid > 0 && (
+          <div className="text-xs text-muted-foreground text-center -mt-2 mb-2">
+            Full total LKR {total.toLocaleString()} · deposit LKR {depositPaid.toLocaleString()} already paid
+          </div>
+        )}
 
         <div className="grid grid-cols-3 gap-2 mb-3">
           {[150, 300, 500].map((amt) => (
@@ -421,7 +441,11 @@ function POS() {
           disabled={charging || lines.length === 0}
           className="w-full rounded-md gradient-brand py-3 text-sm font-bold uppercase tracking-wider text-primary-foreground shadow-red hover:opacity-95 disabled:opacity-50"
         >
-          {charging ? "Processing…" : `Charge LKR ${total.toLocaleString()}`}
+          {charging
+            ? "Processing…"
+            : depositPaid > 0
+              ? `Collect LKR ${balanceDue.toLocaleString()} Balance`
+              : `Charge LKR ${total.toLocaleString()}`}
         </button>
 
         <button

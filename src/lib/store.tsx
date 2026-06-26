@@ -68,6 +68,7 @@ interface Store {
   updateBooking: (b: Booking) => void;
   deleteBooking: (id: string) => void;
   checkinBooking: (id: string) => void;
+  markDepositPaid: (bookingId: string) => void;
 
   // Services
   upsertService: (s: Service) => void;
@@ -279,7 +280,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     (id: string) => {
       const b = db.bookings.get(id);
       if (!b) return;
-      // Mark booking as checked-in and create a job
       db.bookings.upsert({ ...b, status: "Checked-In" });
       const j: Job = {
         id: db.jobs.nextId(),
@@ -303,8 +303,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         createdAt: new Date().toISOString(),
         startedAt: null,
         completedAt: null,
+        depositPaid: b.depositStatus === "paid" ? (b.depositAmount ?? 0) : 0,
       };
       db.jobs.upsert(j);
+      refresh();
+    },
+    [refresh],
+  );
+
+  const markDepositPaid = useCallback(
+    (bookingId: string) => {
+      const b = db.bookings.get(bookingId);
+      if (!b) return;
+      db.bookings.upsert({ ...b, depositStatus: "paid" });
       refresh();
     },
     [refresh],
@@ -477,6 +488,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateBooking,
     deleteBooking,
     checkinBooking,
+    markDepositPaid,
     upsertService,
     deleteService,
     upsertInventoryItem,
