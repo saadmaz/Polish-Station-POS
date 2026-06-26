@@ -17,6 +17,7 @@ import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppReportsRouteImport } from './routes/_app.reports'
 import { Route as AppPurchaseOrdersRouteImport } from './routes/_app.purchase-orders'
 import { Route as AppPosRouteImport } from './routes/_app.pos'
+import { Route as AppNotificationsRouteImport } from './routes/_app.notifications'
 import { Route as AppJobsRouteImport } from './routes/_app.jobs'
 import { Route as AppInventoryRouteImport } from './routes/_app.inventory'
 import { Route as AppEquipmentRouteImport } from './routes/_app.equipment'
@@ -62,6 +63,11 @@ const AppPurchaseOrdersRoute = AppPurchaseOrdersRouteImport.update({
 const AppPosRoute = AppPosRouteImport.update({
   id: '/pos',
   path: '/pos',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppNotificationsRoute = AppNotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
   getParentRoute: () => AppRoute,
 } as any)
 const AppJobsRoute = AppJobsRouteImport.update({
@@ -110,6 +116,7 @@ export interface FileRoutesByFullPath {
   '/equipment': typeof AppEquipmentRoute
   '/inventory': typeof AppInventoryRoute
   '/jobs': typeof AppJobsRoute
+  '/notifications': typeof AppNotificationsRoute
   '/pos': typeof AppPosRoute
   '/purchase-orders': typeof AppPurchaseOrdersRoute
   '/reports': typeof AppReportsRoute
@@ -126,6 +133,7 @@ export interface FileRoutesByTo {
   '/equipment': typeof AppEquipmentRoute
   '/inventory': typeof AppInventoryRoute
   '/jobs': typeof AppJobsRoute
+  '/notifications': typeof AppNotificationsRoute
   '/pos': typeof AppPosRoute
   '/purchase-orders': typeof AppPurchaseOrdersRoute
   '/reports': typeof AppReportsRoute
@@ -144,6 +152,7 @@ export interface FileRoutesById {
   '/_app/equipment': typeof AppEquipmentRoute
   '/_app/inventory': typeof AppInventoryRoute
   '/_app/jobs': typeof AppJobsRoute
+  '/_app/notifications': typeof AppNotificationsRoute
   '/_app/pos': typeof AppPosRoute
   '/_app/purchase-orders': typeof AppPurchaseOrdersRoute
   '/_app/reports': typeof AppReportsRoute
@@ -162,6 +171,7 @@ export interface FileRouteTypes {
     | '/equipment'
     | '/inventory'
     | '/jobs'
+    | '/notifications'
     | '/pos'
     | '/purchase-orders'
     | '/reports'
@@ -178,6 +188,7 @@ export interface FileRouteTypes {
     | '/equipment'
     | '/inventory'
     | '/jobs'
+    | '/notifications'
     | '/pos'
     | '/purchase-orders'
     | '/reports'
@@ -195,6 +206,7 @@ export interface FileRouteTypes {
     | '/_app/equipment'
     | '/_app/inventory'
     | '/_app/jobs'
+    | '/_app/notifications'
     | '/_app/pos'
     | '/_app/purchase-orders'
     | '/_app/reports'
@@ -266,6 +278,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPosRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/notifications': {
+      id: '/_app/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof AppNotificationsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/jobs': {
       id: '/_app/jobs'
       path: '/jobs'
@@ -326,6 +345,7 @@ interface AppRouteChildren {
   AppEquipmentRoute: typeof AppEquipmentRoute
   AppInventoryRoute: typeof AppInventoryRoute
   AppJobsRoute: typeof AppJobsRoute
+  AppNotificationsRoute: typeof AppNotificationsRoute
   AppPosRoute: typeof AppPosRoute
   AppPurchaseOrdersRoute: typeof AppPurchaseOrdersRoute
   AppReportsRoute: typeof AppReportsRoute
@@ -341,6 +361,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppEquipmentRoute: AppEquipmentRoute,
   AppInventoryRoute: AppInventoryRoute,
   AppJobsRoute: AppJobsRoute,
+  AppNotificationsRoute: AppNotificationsRoute,
   AppPosRoute: AppPosRoute,
   AppPurchaseOrdersRoute: AppPurchaseOrdersRoute,
   AppReportsRoute: AppReportsRoute,

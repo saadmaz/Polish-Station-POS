@@ -4,19 +4,31 @@ import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip, statusVariant } from "@/components/status-chip";
-import { Plus, Trash2, Banknote, CreditCard, ArrowRightLeft, Search, FileDown, FileText } from "lucide-react";
+import { Plus, Trash2, Banknote, CreditCard, ArrowRightLeft, Search, FileDown, FileText, MessageCircle, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { PaymentMethod, InvoiceLine } from "@/lib/db";
 import { downloadInvoicePDF, downloadQuotationPDF } from "@/lib/pdf";
 import { newId } from "@/lib/db";
+import { buildWALink, fillTemplate } from "@/lib/notifications";
 
 export const Route = createFileRoute("/_app/pos")({
   head: () => ({ meta: [{ title: "POS / Checkout — Polish Station OS" }] }),
   component: POS,
 });
 
+interface ChargedInfo {
+  customerName: string;
+  phone: string;
+  customerId: string | null;
+  jobId: string | null;
+  vehicleModel: string;
+  plate: string;
+  serviceName: string;
+  invoiceId: string;
+}
+
 function POS() {
-  const { services, customers, jobs, invoices, openShift, addInvoice, moveJob, voidInvoice } = useStore();
+  const { services, customers, jobs, invoices, openShift, addInvoice, moveJob, voidInvoice, notificationSettingsData, recordNotification } = useStore();
 
   // Customer / job selection
   const [customerSearch, setCustomerSearch] = useState("");
@@ -31,6 +43,7 @@ function POS() {
   const [tip, setTip] = useState(0);
   const [method, setMethod] = useState<PaymentMethod>("Card");
   const [charging, setCharging] = useState(false);
+  const [chargedInfo, setChargedInfo] = useState<ChargedInfo | null>(null);
 
   const selectedJob = jobs.find((j) => j.id === selectedJobId);
   const customerName = selectedJob?.customerName ?? manualCustomer;
@@ -111,6 +124,17 @@ function POS() {
 
     toast.success(`Payment received`, {
       description: `${inv.id} · LKR ${total.toLocaleString()} · ${method}`,
+    });
+
+    setChargedInfo({
+      customerName: customerName || "Guest",
+      phone: selectedJob?.phone ?? "",
+      customerId,
+      jobId: selectedJobId,
+      vehicleModel: selectedJob?.vehicleModel ?? "",
+      plate: selectedJob?.plate ?? "",
+      serviceName: selectedJob?.serviceName ?? lines[0]?.name ?? "",
+      invoiceId: inv.id,
     });
 
     // Reset
@@ -435,6 +459,46 @@ function POS() {
             </button>
           ))}
         </div>
+
+        {chargedInfo && (
+          <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800/40 dark:bg-green-900/20 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-green-700 dark:text-green-400 flex items-center gap-1.5">
+                <Star className="h-4 w-4" /> Payment complete — {chargedInfo.invoiceId}
+              </p>
+              <button onClick={() => setChargedInfo(null)} className="text-green-600 hover:text-green-800 dark:text-green-400">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="text-xs text-green-700 dark:text-green-300">Ask {chargedInfo.customerName.split(" ")[0]} for a Google review?</p>
+            {chargedInfo.phone && notificationSettingsData.googleReviewLink ? (
+              <a
+                href={buildWALink(
+                  chargedInfo.phone,
+                  fillTemplate(notificationSettingsData.reviewRequestTemplate, {
+                    customerName: chargedInfo.customerName.split(" ")[0],
+                    vehicle: chargedInfo.vehicleModel,
+                    plate: chargedInfo.plate,
+                    serviceName: chargedInfo.serviceName,
+                    daysSinceVisit: "",
+                    reviewLink: notificationSettingsData.googleReviewLink,
+                  }),
+                )}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => {
+                  recordNotification({ type: "review_request", customerId: chargedInfo.customerId, jobId: chargedInfo.jobId, customerName: chargedInfo.customerName, phone: chargedInfo.phone });
+                  setChargedInfo(null);
+                }}
+                className="flex w-full items-center justify-center gap-2 rounded-md bg-green-600 py-2 text-sm font-medium text-white hover:bg-green-700"
+              >
+                <MessageCircle className="h-4 w-4" /> Send Review Request via WhatsApp
+              </a>
+            ) : !notificationSettingsData.googleReviewLink ? (
+              <p className="text-xs text-amber-600">Set your Google Review link in Notifications → Templates.</p>
+            ) : null}
+          </div>
+        )}
 
         <button
           onClick={handleCharge}

@@ -23,11 +23,13 @@ import type {
   JobPhoto,
   JobStatus,
   MaintenanceLog,
+  NotificationSettings,
   PaymentMethod,
   POLine,
   POStatus,
   PurchaseOrder,
   QCItem,
+  SentNotification,
   Service,
   Shift,
 } from "./db";
@@ -69,6 +71,14 @@ interface Store {
   updatePurchaseOrder: (po: PurchaseOrder) => void;
   deletePurchaseOrder: (id: string) => void;
   receivePO: (poId: string, receivedLines: { inventoryItemId: string; qtyReceived: number }[]) => void;
+
+  // Notifications
+  notificationSettingsData: NotificationSettings;
+  sentNotificationsList: SentNotification[];
+  customersNeedingReminder: Customer[];
+  jobsNeedingReview: Job[];
+  saveNotificationSettings: (s: NotificationSettings) => void;
+  recordNotification: (n: Omit<SentNotification, "id" | "sentAt">) => SentNotification;
 
   // Jobs
   addJob: (j: Omit<Job, "id" | "createdAt" | "startedAt" | "completedAt" | "elapsedMin">) => Job;
@@ -161,6 +171,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (eq.status === "Retired" || !eq.lastServiceDate) return false;
     const nextService = new Date(eq.lastServiceDate).getTime() + eq.serviceIntervalDays * 86400000;
     return nextService < Date.now();
+  });
+
+  const notificationSettingsData = db.notificationSettings.get();
+  const sentNotificationsListData = db.sentNotifications.list();
+  const customersNeedingReminder = customersList.filter((c) => {
+    if (!c.lastVisit) return false;
+    const daysSince = Math.floor((Date.now() - new Date(c.lastVisit).getTime()) / 86400000);
+    if (daysSince < notificationSettingsData.reminderIntervalDays) return false;
+    const recentReminder = sentNotificationsListData.find(
+      (n) => n.type === "service_reminder" && n.customerId === c.id &&
+      Date.now() - new Date(n.sentAt).getTime() < notificationSettingsData.reminderIntervalDays * 86400000,
+    );
+    return !recentReminder;
+  });
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+  const jobsNeedingReview = jobsList.filter((j) => {
+    if (j.status !== "Done Today" && !j.completedAt) return false;
+    if (j.completedAt && j.completedAt < sevenDaysAgo) return false;
+    return !sentNotificationsListData.find((n) => n.type === "review_request" && n.jobId === j.id);
   });
 
   // ── Job mutations ─────────────────────────────────────────────────────────
@@ -568,6 +597,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  // ── Notification mutations ───────────────────────────────────────────────
+
+  const saveNotificationSettings = useCallback(
+    (s: NotificationSettings) => { db.notificationSettings.set(s); refresh(); },
+    [refresh],
+  );
+
+  const recordNotification = useCallback(
+    (n: Omit<SentNotification, "id" | "sentAt">): SentNotification => {
+      const entry = db.sentNotifications.add(n);
+      refresh();
+      return entry;
+    },
+    [refresh],
+  );
+
   const refreshAll = useCallback(() => refresh(), [refresh]);
 
   const value: Store = {
@@ -596,6 +641,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updatePurchaseOrder,
     deletePurchaseOrder,
     receivePO,
+    notificationSettingsData,
+    sentNotificationsList: sentNotificationsListData,
+    customersNeedingReminder,
+    jobsNeedingReview,
+    saveNotificationSettings,
+    recordNotification,
     addJob,
     updateJob,
     deleteJob,

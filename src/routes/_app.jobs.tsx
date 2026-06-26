@@ -17,10 +17,12 @@ import {
   ClipboardCheck,
   Info,
   ZoomIn,
+  MessageCircle,
 } from "lucide-react";
 import type { Job, JobStatus, JobPhoto, QCItem } from "@/lib/db";
 import { downloadQuotationPDF } from "@/lib/pdf";
 import { newId } from "@/lib/db";
+import { buildWALink, fillTemplate } from "@/lib/notifications";
 
 export const Route = createFileRoute("/_app/jobs")({
   head: () => ({ meta: [{ title: "Active Jobs — Polish Station OS" }] }),
@@ -413,7 +415,7 @@ function DetailsTab({
 type DetailTab = "details" | "photos" | "qc";
 
 function JobDetail({ job, onClose }: { job: Job; onClose: () => void }) {
-  const { moveJob, deleteJob, openShift } = useStore();
+  const { moveJob, deleteJob, openShift, notificationSettingsData, recordNotification } = useStore();
   const [tech, setTech] = useState(job.tech);
   const [bay, setBay] = useState(job.bay);
   const [tab, setTab] = useState<DetailTab>("details");
@@ -531,6 +533,27 @@ function JobDetail({ job, onClose }: { job: Job; onClose: () => void }) {
           >
             Place On Hold
           </button>
+        )}
+        {(job.status === "Ready" || job.status === "Done Today") && job.phone && (
+          <a
+            href={buildWALink(
+              job.phone,
+              fillTemplate(notificationSettingsData.jobReadyTemplate, {
+                customerName: job.customerName.split(" ")[0],
+                vehicle: job.vehicleModel,
+                plate: job.plate,
+                serviceName: job.serviceName,
+                daysSinceVisit: "",
+                reviewLink: notificationSettingsData.googleReviewLink,
+              }),
+            )}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => recordNotification({ type: "job_ready", customerId: job.customerId, jobId: job.id, customerName: job.customerName, phone: job.phone })}
+            className="w-full flex items-center justify-center gap-2 rounded-md bg-green-600 py-2.5 text-sm font-semibold text-white hover:bg-green-700"
+          >
+            <MessageCircle className="h-4 w-4" /> Notify Customer — Car Ready
+          </a>
         )}
         <button
           onClick={() => {

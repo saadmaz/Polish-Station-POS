@@ -15,9 +15,11 @@ import {
   MonitorPlay,
   Hammer,
   ShoppingCart,
+  Bell,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth, type StaffRole } from "@/lib/auth";
+import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -35,8 +37,9 @@ const NAV: NavItem[] = [
   { to: "/customers", label: "Customers",    icon: Users,           roles: [] },
   { to: "/inventory",       label: "Inventory",        icon: Boxes,         roles: ["Admin", "Manager", "Advisor"] },
   { to: "/equipment",      label: "Equipment",        icon: Hammer,        roles: ["Admin", "Manager", "Advisor"] },
-  { to: "/purchase-orders", label: "Purchase Orders", icon: ShoppingCart,  roles: ["Admin", "Manager"] },
-  { to: "/pos",             label: "POS / Checkout",  icon: CreditCard,    roles: ["Admin", "Manager", "Cashier", "Advisor"] },
+  { to: "/purchase-orders",  label: "Purchase Orders",   icon: ShoppingCart, roles: ["Admin", "Manager"] },
+  { to: "/notifications",    label: "Notifications",     icon: Bell,         roles: ["Admin", "Manager", "Advisor"] },
+  { to: "/pos",              label: "POS / Checkout",    icon: CreditCard,   roles: ["Admin", "Manager", "Cashier", "Advisor"] },
   { to: "/staff",     label: "Staff",        icon: UserCog,         roles: ["Admin", "Manager"] },
   { to: "/reports",   label: "Reports",      icon: BarChart3,       roles: ["Admin", "Manager"] },
   { to: "/settings",  label: "Settings",     icon: Settings,        roles: ["Admin"] },
@@ -47,8 +50,10 @@ export function AppSidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { staff, logout } = useAuth();
   const navigate = useNavigate();
+  const { customersNeedingReminder, jobsNeedingReview } = useStore();
 
   const role = staff?.role;
+  const notificationCount = customersNeedingReminder.length + jobsNeedingReview.length;
 
   const visibleNav = NAV.filter(
     (item) => item.roles.length === 0 || (role && item.roles.includes(role)),
@@ -79,6 +84,8 @@ export function AppSidebar() {
       <nav className="flex-1 space-y-0.5 px-2 pt-2">
         {visibleNav.map(({ to, label, icon: Icon }) => {
           const active = pathname.startsWith(to);
+          const isNotifications = to === "/notifications";
+          const badge = isNotifications && notificationCount > 0 ? notificationCount : null;
           return (
             <Link
               key={to}
@@ -93,8 +100,24 @@ export function AppSidebar() {
               {active && (
                 <span className="absolute inset-y-1 left-0 w-1 rounded-r bg-sidebar-primary" />
               )}
-              <Icon className="h-5 w-5 shrink-0" />
-              {!collapsed && <span className="truncate">{label}</span>}
+              <div className="relative shrink-0">
+                <Icon className="h-5 w-5" />
+                {badge !== null && collapsed && (
+                  <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 text-[8px] font-bold text-white">
+                    {badge > 9 ? "9+" : badge}
+                  </span>
+                )}
+              </div>
+              {!collapsed && (
+                <>
+                  <span className="truncate flex-1">{label}</span>
+                  {badge !== null && (
+                    <span className="ml-auto rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                      {badge}
+                    </span>
+                  )}
+                </>
+              )}
             </Link>
           );
         })}

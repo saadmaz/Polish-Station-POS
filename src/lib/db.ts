@@ -1,5 +1,6 @@
 // Typed localStorage database layer.
 // All writes go through these functions so the store context can invalidate queries.
+import { DEFAULT_TEMPLATES } from "./notifications";
 
 export type JobStatus = "Queue" | "In Bay" | "On Hold" | "Awaiting QC" | "Ready" | "Done Today";
 export type BookingStatus = "Pending" | "Confirmed" | "Checked-In" | "No-Show" | "Cancelled";
@@ -313,6 +314,26 @@ export interface PurchaseOrder {
   createdBy: string;
 }
 
+export interface NotificationSettings {
+  googleReviewLink: string;
+  reminderIntervalDays: number;
+  jobReadyTemplate: string;
+  serviceReminderTemplate: string;
+  reviewRequestTemplate: string;
+}
+
+export type SentNotificationType = "job_ready" | "service_reminder" | "review_request";
+
+export interface SentNotification {
+  id: string;
+  type: SentNotificationType;
+  customerId: string | null;
+  jobId: string | null;
+  customerName: string;
+  phone: string;
+  sentAt: string;
+}
+
 // ─── Storage keys ───────────────────────────────────────────────────────────
 
 const KEYS = {
@@ -328,6 +349,8 @@ const KEYS = {
   equipment: "ps_equipment",
   maintenanceLogs: "ps_maintenance_logs",
   purchaseOrders: "ps_purchase_orders",
+  notificationSettings: "ps_notification_settings",
+  sentNotifications: "ps_sent_notifications",
   seeded: "ps_seeded_v3",
 } as const;
 
@@ -765,5 +788,43 @@ export const purchaseOrders = {
   nextId: (): string => {
     const nums = purchaseOrders.list().map((p) => parseInt(p.id.replace("PO-", ""), 10)).filter((n) => !isNaN(n));
     return `PO-${(nums.length > 0 ? Math.max(...nums) : 1000) + 1}`;
+  },
+};
+
+// ─── Notification Settings ───────────────────────────────────────────────────
+
+const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  googleReviewLink: "",
+  reminderIntervalDays: 30,
+  jobReadyTemplate: DEFAULT_TEMPLATES.jobReady,
+  serviceReminderTemplate: DEFAULT_TEMPLATES.serviceReminder,
+  reviewRequestTemplate: DEFAULT_TEMPLATES.reviewRequest,
+};
+
+export const notificationSettings = {
+  get: (): NotificationSettings => {
+    if (typeof window === "undefined") return DEFAULT_NOTIFICATION_SETTINGS;
+    try {
+      const raw = window.localStorage.getItem(KEYS.notificationSettings);
+      return raw ? { ...DEFAULT_NOTIFICATION_SETTINGS, ...JSON.parse(raw) } : DEFAULT_NOTIFICATION_SETTINGS;
+    } catch { return DEFAULT_NOTIFICATION_SETTINGS; }
+  },
+  set: (s: NotificationSettings): void => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(KEYS.notificationSettings, JSON.stringify(s));
+  },
+};
+
+// ─── Sent Notifications ──────────────────────────────────────────────────────
+
+export const sentNotifications = {
+  list: (): SentNotification[] => load<SentNotification>(KEYS.sentNotifications, []),
+  add: (n: Omit<SentNotification, "id" | "sentAt">): SentNotification => {
+    const all = sentNotifications.list();
+    const entry: SentNotification = { ...n, id: newId("sn"), sentAt: new Date().toISOString() };
+    all.unshift(entry);
+    if (all.length > 500) all.splice(500);
+    save(KEYS.sentNotifications, all);
+    return entry;
   },
 };
