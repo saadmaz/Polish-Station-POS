@@ -1,10 +1,11 @@
-import { Search, Plus, MapPin, Activity } from "lucide-react";
+import { Search, Plus, MapPin, Activity, Banknote } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SearchPalette } from "@/components/search-palette";
 import { WalkInSheet } from "@/components/walk-in-sheet";
 import { BookingSheet } from "@/components/booking-sheet";
 import { NotificationsPopover } from "@/components/notifications-popover";
 import { ShiftModal } from "@/components/shift-modal";
+import { ExpenseModal } from "@/components/expense-modal";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +15,7 @@ export function TopBar() {
   const [walkInOpen, setWalkInOpen] = useState(false);
   const [bookingOpen, setBookingOpen] = useState(false);
   const [shiftOpen, setShiftOpen] = useState(false);
+  const [expenseOpen, setExpenseOpen] = useState(false);
 
   const { openShift, lowStockItems } = useStore();
 
@@ -60,6 +62,16 @@ export function TopBar() {
             {openShift ? `Shift Open · ${openShift.staffName.split(" ")[0]}` : "No Shift"}
           </button>
 
+          {openShift && (
+            <button
+              onClick={() => setExpenseOpen(true)}
+              title="Record cash out / bank deposit"
+              className="hidden sm:inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <Banknote className="h-3.5 w-3.5" /> Cash Out
+            </button>
+          )}
+
           {lowStockItems.length > 0 && (
             <span className="hidden md:inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground" title={`${lowStockItems.length} low/out-of-stock items`}>
               {lowStockItems.length}
@@ -101,6 +113,7 @@ export function TopBar() {
       <WalkInSheet open={walkInOpen} onOpenChange={setWalkInOpen} />
       <BookingSheet open={bookingOpen} onOpenChange={setBookingOpen} />
       <ShiftModal open={shiftOpen} onOpenChange={setShiftOpen} />
+      <ExpenseModal open={expenseOpen} onClose={() => setExpenseOpen(false)} />
     </>
   );
 }
