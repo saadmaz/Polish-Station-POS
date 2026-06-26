@@ -14,26 +14,39 @@ import {
   ChevronsRight,
 } from "lucide-react";
 import { useState } from "react";
-import { useAuth } from "@/lib/auth";
+import { useAuth, type StaffRole } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
-const NAV = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/bookings", label: "Bookings", icon: Calendar },
-  { to: "/jobs", label: "Active Jobs", icon: Wrench },
-  { to: "/customers", label: "Customers", icon: Users },
-  { to: "/inventory", label: "Inventory", icon: Boxes },
-  { to: "/pos", label: "POS / Checkout", icon: CreditCard },
-  { to: "/staff", label: "Staff", icon: UserCog },
-  { to: "/reports", label: "Reports", icon: BarChart3 },
-  { to: "/settings", label: "Settings", icon: Settings },
-] as const;
+interface NavItem {
+  to: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  roles: StaffRole[]; // empty = all roles
+}
+
+const NAV: NavItem[] = [
+  { to: "/dashboard", label: "Dashboard",    icon: LayoutDashboard, roles: [] },
+  { to: "/bookings",  label: "Bookings",     icon: Calendar,        roles: [] },
+  { to: "/jobs",      label: "Active Jobs",  icon: Wrench,          roles: [] },
+  { to: "/customers", label: "Customers",    icon: Users,           roles: [] },
+  { to: "/inventory", label: "Inventory",    icon: Boxes,           roles: ["Admin", "Manager", "Advisor"] },
+  { to: "/pos",       label: "POS / Checkout", icon: CreditCard,   roles: ["Admin", "Manager", "Cashier", "Advisor"] },
+  { to: "/staff",     label: "Staff",        icon: UserCog,         roles: ["Admin", "Manager"] },
+  { to: "/reports",   label: "Reports",      icon: BarChart3,       roles: ["Admin", "Manager"] },
+  { to: "/settings",  label: "Settings",     icon: Settings,        roles: ["Admin"] },
+];
 
 export function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { staff, logout } = useAuth();
   const navigate = useNavigate();
+
+  const role = staff?.role;
+
+  const visibleNav = NAV.filter(
+    (item) => item.roles.length === 0 || (role && item.roles.includes(role)),
+  );
 
   return (
     <aside
@@ -58,7 +71,7 @@ export function AppSidebar() {
       </div>
 
       <nav className="flex-1 space-y-0.5 px-2 pt-2">
-        {NAV.map(({ to, label, icon: Icon }) => {
+        {visibleNav.map(({ to, label, icon: Icon }) => {
           const active = pathname.startsWith(to);
           return (
             <Link

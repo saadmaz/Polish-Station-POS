@@ -2,7 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
-import { SERVICES } from "@/lib/mock-data";
+import { useStore } from "@/lib/store";
+import * as db from "@/lib/db";
+import type { Service, ServiceCategory } from "@/lib/db";
 import { STAFF, DEMO_PIN } from "@/lib/auth";
 import {
   Building2,
@@ -161,10 +163,66 @@ function BusinessPanel() {
   );
 }
 
+const BLANK_SERVICE: Omit<Service, "id"> = { name: "", category: "Exterior", durationMin: 60, price: 0 };
+const CATEGORIES: ServiceCategory[] = ["Exterior", "Interior", "Full Detail", "Paint Protection", "Coating"];
+
 function CatalogPanel() {
+  const { services, upsertService, deleteService } = useStore();
+  const [editing, setEditing] = useState<Service | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState<Omit<Service, "id">>(BLANK_SERVICE);
+
+  function openAdd() { setForm(BLANK_SERVICE); setAdding(true); setEditing(null); }
+  function openEdit(s: Service) { setForm({ name: s.name, category: s.category, durationMin: s.durationMin, price: s.price }); setEditing(s); setAdding(false); }
+  function closeForm() { setAdding(false); setEditing(null); }
+
+  function saveForm() {
+    if (!form.name.trim()) return;
+    if (editing) {
+      upsertService({ ...editing, ...form });
+    } else {
+      upsertService({ id: db.newId("svc"), ...form });
+    }
+    closeForm();
+  }
+
   return (
     <>
       <SectionTitle title="Services Catalog" desc="Add, edit and price the services on offer." />
+
+      {(adding || editing) && (
+        <div className="mb-5 rounded-lg border border-border bg-muted/30 p-4 grid grid-cols-2 gap-3">
+          <label className="block col-span-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Service Name</span>
+            <input className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+              value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+          </label>
+          <label className="block">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Category</span>
+            <select className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value as ServiceCategory }))}>
+              {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Duration (min)</span>
+            <input type="number" min={5} step={5} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={form.durationMin} onChange={(e) => setForm((f) => ({ ...f, durationMin: Number(e.target.value) }))} />
+          </label>
+          <label className="block col-span-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Price (LKR)</span>
+            <input type="number" min={0} step={100} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={form.price} onChange={(e) => setForm((f) => ({ ...f, price: Number(e.target.value) }))} />
+          </label>
+          <div className="col-span-2 flex gap-2 justify-end">
+            <button onClick={closeForm} className="rounded-md border border-input px-4 py-2 text-sm">Cancel</button>
+            <button onClick={saveForm} className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red">
+              {editing ? "Save Changes" : "Add Service"}
+            </button>
+          </div>
+        </div>
+      )}
+
       <table className="w-full text-sm">
         <thead className="text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
           <tr>
@@ -176,21 +234,27 @@ function CatalogPanel() {
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
-          {SERVICES.map((s) => (
+          {services.map((s) => (
             <tr key={s.id}>
               <td className="py-3 font-medium">{s.name}</td>
               <td className="py-3 text-muted-foreground">{s.category}</td>
               <td className="py-3 text-right font-mono">{s.durationMin}m</td>
-              <td className="py-3 text-right font-mono font-semibold">
-                LKR {s.price.toLocaleString()}
-              </td>
-              <td className="py-3 text-right">
-                <button className="text-xs text-primary hover:underline">Edit</button>
+              <td className="py-3 text-right font-mono font-semibold">LKR {s.price.toLocaleString()}</td>
+              <td className="py-3 text-right flex gap-2 justify-end">
+                <button onClick={() => openEdit(s)} className="text-xs text-primary hover:underline">Edit</button>
+                <button onClick={() => { if (confirm(`Delete "${s.name}"?`)) deleteService(s.id); }}
+                  className="text-xs text-destructive hover:underline">Del</button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+      <div className="mt-4 flex justify-end">
+        <button onClick={openAdd}
+          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red">
+          + Add Service
+        </button>
+      </div>
     </>
   );
 }
@@ -381,41 +445,41 @@ function IntegrationsPanel() {
 }
 
 function AuditPanel() {
-  const events = [
-    { t: "09:42", who: "Ravi M.", action: "Adjusted price on INV-2090", role: "Manager" },
-    { t: "09:31", who: "Asha P.", action: "Created new staff: Tharu K.", role: "Admin" },
-    { t: "09:14", who: "Niro D.", action: "Cancelled booking B-207", role: "Advisor" },
-    { t: "08:50", who: "Asha P.", action: "Changed VAT rate to 18%", role: "Admin" },
-    { t: "08:32", who: "Ravi M.", action: "Voided INV-2084", role: "Manager" },
-  ];
+  const events = [...db.audit.list()].reverse();
   return (
     <>
       <SectionTitle
         title="Audit Log"
         desc="All admin and manager actions are recorded immutably."
       />
-      <table className="w-full text-sm">
-        <thead className="text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
-          <tr>
-            <th className="text-left py-2">Time</th>
-            <th className="text-left py-2">User</th>
-            <th className="text-left py-2">Role</th>
-            <th className="text-left py-2">Action</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {events.map((e, i) => (
-            <tr key={i}>
-              <td className="py-2.5 font-mono text-xs text-muted-foreground">{e.t}</td>
-              <td className="py-2.5 font-medium">{e.who}</td>
-              <td className="py-2.5">
-                <StatusChip variant="neutral">{e.role}</StatusChip>
-              </td>
-              <td className="py-2.5">{e.action}</td>
+      {events.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-6 text-center">No audit events recorded yet.</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead className="text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
+            <tr>
+              <th className="text-left py-2">Time</th>
+              <th className="text-left py-2">User</th>
+              <th className="text-left py-2">Entity</th>
+              <th className="text-left py-2">Action</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {events.slice(0, 50).map((e) => (
+              <tr key={e.id}>
+                <td className="py-2.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
+                  {new Date(e.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </td>
+                <td className="py-2.5 font-medium">{e.staffName || e.staffId || "—"}</td>
+                <td className="py-2.5">
+                  <StatusChip variant="neutral">{e.entity}</StatusChip>
+                </td>
+                <td className="py-2.5 text-muted-foreground">{e.action.replace(/_/g, " ")}{e.entityId ? ` · ${e.entityId}` : ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </>
   );
 }

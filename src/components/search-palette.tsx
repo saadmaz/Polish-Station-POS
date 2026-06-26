@@ -10,7 +10,7 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
-import { CUSTOMERS, BOOKINGS, INVOICES } from "@/lib/mock-data";
+import { useStore } from "@/lib/store";
 
 interface SearchPaletteProps {
   open: boolean;
@@ -19,6 +19,7 @@ interface SearchPaletteProps {
 
 export function SearchPalette({ open, onOpenChange }: SearchPaletteProps) {
   const navigate = useNavigate();
+  const { customers, bookings, invoices } = useStore();
   const [query, setQuery] = useState("");
 
   useEffect(() => {
@@ -34,23 +35,24 @@ export function SearchPalette({ open, onOpenChange }: SearchPaletteProps) {
 
   const q = query.toLowerCase();
 
-  const matchedCustomers = CUSTOMERS.filter(
+  const matchedCustomers = customers.filter(
     (c) =>
       c.name.toLowerCase().includes(q) ||
       c.phone.includes(q) ||
       c.email.toLowerCase().includes(q),
   );
 
-  const matchedBookings = BOOKINGS.filter(
+  const matchedBookings = bookings.filter(
     (b) =>
-      b.customer.toLowerCase().includes(q) ||
-      b.service.toLowerCase().includes(q) ||
-      b.id.toLowerCase().includes(q),
+      b.customerName.toLowerCase().includes(q) ||
+      b.serviceName.toLowerCase().includes(q) ||
+      b.id.toLowerCase().includes(q) ||
+      b.plate.toLowerCase().includes(q),
   );
 
-  const matchedInvoices = INVOICES.filter(
+  const matchedInvoices = invoices.filter(
     (i) =>
-      i.customer.toLowerCase().includes(q) ||
+      i.customerName.toLowerCase().includes(q) ||
       i.id.toLowerCase().includes(q) ||
       i.status.toLowerCase().includes(q),
   );
@@ -73,7 +75,7 @@ export function SearchPalette({ open, onOpenChange }: SearchPaletteProps) {
 
         {matchedCustomers.length > 0 && (
           <CommandGroup heading="Customers">
-            {matchedCustomers.map((c) => (
+            {matchedCustomers.slice(0, 5).map((c) => (
               <CommandItem key={c.id} value={c.id + c.name} onSelect={() => go("/customers")}>
                 <User className="mr-2 h-4 w-4 text-muted-foreground" />
                 <span className="font-medium">{c.name}</span>
@@ -89,13 +91,13 @@ export function SearchPalette({ open, onOpenChange }: SearchPaletteProps) {
 
         {matchedBookings.length > 0 && (
           <CommandGroup heading="Bookings">
-            {matchedBookings.map((b) => (
-              <CommandItem key={b.id} value={b.id + b.customer} onSelect={() => go("/bookings")}>
+            {matchedBookings.slice(0, 5).map((b) => (
+              <CommandItem key={b.id} value={b.id + b.customerName} onSelect={() => go("/bookings")}>
                 <Calendar className="mr-2 h-4 w-4 text-muted-foreground" />
                 <span className="font-medium">{b.id}</span>
-                <span className="ml-2 text-sm">{b.customer}</span>
+                <span className="ml-2 text-sm">{b.customerName}</span>
                 <span className="ml-2 text-xs text-muted-foreground">
-                  {b.time} · {b.service}
+                  {b.date} {b.time} · {b.serviceName}
                 </span>
               </CommandItem>
             ))}
@@ -106,13 +108,13 @@ export function SearchPalette({ open, onOpenChange }: SearchPaletteProps) {
 
         {matchedInvoices.length > 0 && (
           <CommandGroup heading="Invoices">
-            {matchedInvoices.map((i) => (
-              <CommandItem key={i.id} value={i.id + i.customer} onSelect={() => go("/pos")}>
+            {matchedInvoices.slice(0, 5).map((i) => (
+              <CommandItem key={i.id} value={i.id + i.customerName} onSelect={() => go("/pos")}>
                 <FileText className="mr-2 h-4 w-4 text-muted-foreground" />
                 <span className="font-medium">{i.id}</span>
-                <span className="ml-2 text-sm">{i.customer}</span>
+                <span className="ml-2 text-sm">{i.customerName}</span>
                 <span className="ml-2 text-xs text-muted-foreground">
-                  Rs {i.total.toLocaleString()} · {i.status}
+                  LKR {i.total.toLocaleString()} · {i.status}
                 </span>
               </CommandItem>
             ))}
