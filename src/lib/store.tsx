@@ -15,13 +15,18 @@ import * as db from "./db";
 import type {
   Booking,
   Customer,
+  Equipment,
   Expense,
   InventoryItem,
   Invoice,
   Job,
   JobPhoto,
   JobStatus,
+  MaintenanceLog,
   PaymentMethod,
+  POLine,
+  POStatus,
+  PurchaseOrder,
   QCItem,
   Service,
   Shift,
@@ -39,15 +44,31 @@ interface Store {
   inventory: InventoryItem[];
   expenses: Expense[];
   shifts: Shift[];
+  equipmentList: Equipment[];
+  maintenanceLogsList: MaintenanceLog[];
+  purchaseOrdersList: PurchaseOrder[];
 
   // computed
   openShift: Shift | undefined;
   lowStockItems: InventoryItem[];
+  overdueEquipment: Equipment[];
   todayRevenue: number;
   todayJobs: number;
 
   // mutations — every one calls refresh() internally
   refreshAll: () => void;
+
+  // Equipment
+  upsertEquipment: (eq: Equipment) => void;
+  deleteEquipment: (id: string) => void;
+  addMaintenanceLog: (log: Omit<MaintenanceLog, "id" | "createdAt">) => MaintenanceLog;
+  deleteMaintenanceLog: (id: string) => void;
+
+  // Purchase Orders
+  addPurchaseOrder: (po: Omit<PurchaseOrder, "id" | "poNumber" | "createdAt">) => PurchaseOrder;
+  updatePurchaseOrder: (po: PurchaseOrder) => void;
+  deletePurchaseOrder: (id: string) => void;
+  receivePO: (poId: string, receivedLines: { inventoryItemId: string; qtyReceived: number }[]) => void;
 
   // Jobs
   addJob: (j: Omit<Job, "id" | "createdAt" | "startedAt" | "completedAt" | "elapsedMin">) => Job;
@@ -122,6 +143,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const inventoryList = db.inventory.list();
   const expensesList = db.expenses.list();
   const shiftsList = db.shifts.list();
+  const equipmentListData = db.equipment.list();
+  const maintenanceLogsListData = db.maintenanceLogs.list();
+  const purchaseOrdersListData = db.purchaseOrders.list();
 
   const openShift = shiftsList.find((s) => s.status === "OPEN");
 
@@ -133,6 +157,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   ).length;
 
   const lowStockItems = inventoryList.filter((i) => i.stock <= i.reorder);
+  const overdueEquipment = equipmentListData.filter((eq) => {
+    if (eq.status === "Retired" || !eq.lastServiceDate) return false;
+    const nextService = new Date(eq.lastServiceDate).getTime() + eq.serviceIntervalDays * 86400000;
+    return nextService < Date.now();
+  });
 
   // ── Job mutations ─────────────────────────────────────────────────────────
 
@@ -458,6 +487,87 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  // ── Equipment mutations ──────────────────────────────────────────────────
+
+  const upsertEquipment = useCallback(
+    (eq: Equipment) => { db.equipment.upsert(eq); refresh(); },
+    [refresh],
+  );
+
+  const deleteEquipment = useCallback(
+    (id: string) => { db.equipment.delete(id); refresh(); },
+    [refresh],
+  );
+
+  const addMaintenanceLog = useCallback(
+    (data: Omit<MaintenanceLog, "id" | "createdAt">): MaintenanceLog => {
+      const m: MaintenanceLog = { ...data, id: db.newId("ml"), createdAt: new Date().toISOString() };
+      db.maintenanceLogs.upsert(m);
+      // Update lastServiceDate on the equipment
+      const eq = db.equipment.get(data.equipmentId);
+      if (eq && (eq.lastServiceDate === null || data.date > eq.lastServiceDate)) {
+        db.equipment.upsert({ ...eq, lastServiceDate: data.date });
+      }
+      refresh();
+      return m;
+    },
+    [refresh],
+  );
+
+  const deleteMaintenanceLog = useCallback(
+    (id: string) => { db.maintenanceLogs.delete(id); refresh(); },
+    [refresh],
+  );
+
+  // ── Purchase Order mutations ──────────────────────────────────────────────
+
+  const addPurchaseOrder = useCallback(
+    (data: Omit<PurchaseOrder, "id" | "poNumber" | "createdAt">): PurchaseOrder => {
+      const id = db.purchaseOrders.nextId();
+      const po: PurchaseOrder = { ...data, id, poNumber: id, createdAt: new Date().toISOString() };
+      db.purchaseOrders.upsert(po);
+      refresh();
+      return po;
+    },
+    [refresh],
+  );
+
+  const updatePurchaseOrder = useCallback(
+    (po: PurchaseOrder) => { db.purchaseOrders.upsert(po); refresh(); },
+    [refresh],
+  );
+
+  const deletePurchaseOrder = useCallback(
+    (id: string) => { db.purchaseOrders.delete(id); refresh(); },
+    [refresh],
+  );
+
+  const receivePO = useCallback(
+    (poId: string, receivedLines: { inventoryItemId: string; qtyReceived: number }[]) => {
+      const po = db.purchaseOrders.get(poId);
+      if (!po) return;
+      const updatedLines: POLine[] = po.lines.map((l) => {
+        const recv = receivedLines.find((r) => r.inventoryItemId === l.inventoryItemId);
+        const qtyReceived = recv ? recv.qtyReceived : l.qtyReceived;
+        if (qtyReceived > l.qtyReceived) {
+          db.inventory.adjust(l.inventoryItemId, qtyReceived - l.qtyReceived);
+        }
+        return { ...l, qtyReceived };
+      });
+      const allReceived = updatedLines.every((l) => l.qtyReceived >= l.qtyOrdered);
+      const anyReceived = updatedLines.some((l) => l.qtyReceived > 0);
+      const status: POStatus = allReceived ? "Received" : anyReceived ? "Partially Received" : po.status;
+      db.purchaseOrders.upsert({
+        ...po,
+        lines: updatedLines,
+        status,
+        receivedAt: allReceived ? new Date().toISOString() : po.receivedAt,
+      });
+      refresh();
+    },
+    [refresh],
+  );
+
   const refreshAll = useCallback(() => refresh(), [refresh]);
 
   const value: Store = {
@@ -469,11 +579,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     inventory: inventoryList,
     expenses: expensesList,
     shifts: shiftsList,
+    equipmentList: equipmentListData,
+    maintenanceLogsList: maintenanceLogsListData,
+    purchaseOrdersList: purchaseOrdersListData,
     openShift,
     lowStockItems,
+    overdueEquipment,
     todayRevenue,
     todayJobs,
     refreshAll,
+    upsertEquipment,
+    deleteEquipment,
+    addMaintenanceLog,
+    deleteMaintenanceLog,
+    addPurchaseOrder,
+    updatePurchaseOrder,
+    deletePurchaseOrder,
+    receivePO,
     addJob,
     updateJob,
     deleteJob,

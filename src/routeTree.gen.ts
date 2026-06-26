@@ -15,13 +15,15 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppStaffRouteImport } from './routes/_app.staff'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppReportsRouteImport } from './routes/_app.reports'
+import { Route as AppPurchaseOrdersRouteImport } from './routes/_app.purchase-orders'
 import { Route as AppPosRouteImport } from './routes/_app.pos'
 import { Route as AppJobsRouteImport } from './routes/_app.jobs'
 import { Route as AppInventoryRouteImport } from './routes/_app.inventory'
+import { Route as AppEquipmentRouteImport } from './routes/_app.equipment'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppCustomersRouteImport } from './routes/_app.customers'
-import { Route as AppBayBoardRouteImport } from './routes/_app.bay-board'
 import { Route as AppBookingsRouteImport } from './routes/_app.bookings'
+import { Route as AppBayBoardRouteImport } from './routes/_app.bay-board'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -52,6 +54,11 @@ const AppReportsRoute = AppReportsRouteImport.update({
   path: '/reports',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPurchaseOrdersRoute = AppPurchaseOrdersRouteImport.update({
+  id: '/purchase-orders',
+  path: '/purchase-orders',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppPosRoute = AppPosRouteImport.update({
   id: '/pos',
   path: '/pos',
@@ -67,6 +74,11 @@ const AppInventoryRoute = AppInventoryRouteImport.update({
   path: '/inventory',
   getParentRoute: () => AppRoute,
 } as any)
+const AppEquipmentRoute = AppEquipmentRouteImport.update({
+  id: '/equipment',
+  path: '/equipment',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -77,14 +89,14 @@ const AppCustomersRoute = AppCustomersRouteImport.update({
   path: '/customers',
   getParentRoute: () => AppRoute,
 } as any)
-const AppBayBoardRoute = AppBayBoardRouteImport.update({
-  id: '/bay-board',
-  path: '/bay-board',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppBookingsRoute = AppBookingsRouteImport.update({
   id: '/bookings',
   path: '/bookings',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppBayBoardRoute = AppBayBoardRouteImport.update({
+  id: '/bay-board',
+  path: '/bay-board',
   getParentRoute: () => AppRoute,
 } as any)
 
@@ -95,9 +107,11 @@ export interface FileRoutesByFullPath {
   '/bookings': typeof AppBookingsRoute
   '/customers': typeof AppCustomersRoute
   '/dashboard': typeof AppDashboardRoute
+  '/equipment': typeof AppEquipmentRoute
   '/inventory': typeof AppInventoryRoute
   '/jobs': typeof AppJobsRoute
   '/pos': typeof AppPosRoute
+  '/purchase-orders': typeof AppPurchaseOrdersRoute
   '/reports': typeof AppReportsRoute
   '/settings': typeof AppSettingsRoute
   '/staff': typeof AppStaffRoute
@@ -109,9 +123,11 @@ export interface FileRoutesByTo {
   '/bookings': typeof AppBookingsRoute
   '/customers': typeof AppCustomersRoute
   '/dashboard': typeof AppDashboardRoute
+  '/equipment': typeof AppEquipmentRoute
   '/inventory': typeof AppInventoryRoute
   '/jobs': typeof AppJobsRoute
   '/pos': typeof AppPosRoute
+  '/purchase-orders': typeof AppPurchaseOrdersRoute
   '/reports': typeof AppReportsRoute
   '/settings': typeof AppSettingsRoute
   '/staff': typeof AppStaffRoute
@@ -125,9 +141,11 @@ export interface FileRoutesById {
   '/_app/bookings': typeof AppBookingsRoute
   '/_app/customers': typeof AppCustomersRoute
   '/_app/dashboard': typeof AppDashboardRoute
+  '/_app/equipment': typeof AppEquipmentRoute
   '/_app/inventory': typeof AppInventoryRoute
   '/_app/jobs': typeof AppJobsRoute
   '/_app/pos': typeof AppPosRoute
+  '/_app/purchase-orders': typeof AppPurchaseOrdersRoute
   '/_app/reports': typeof AppReportsRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/staff': typeof AppStaffRoute
@@ -141,9 +159,11 @@ export interface FileRouteTypes {
     | '/bookings'
     | '/customers'
     | '/dashboard'
+    | '/equipment'
     | '/inventory'
     | '/jobs'
     | '/pos'
+    | '/purchase-orders'
     | '/reports'
     | '/settings'
     | '/staff'
@@ -155,9 +175,11 @@ export interface FileRouteTypes {
     | '/bookings'
     | '/customers'
     | '/dashboard'
+    | '/equipment'
     | '/inventory'
     | '/jobs'
     | '/pos'
+    | '/purchase-orders'
     | '/reports'
     | '/settings'
     | '/staff'
@@ -170,9 +192,11 @@ export interface FileRouteTypes {
     | '/_app/bookings'
     | '/_app/customers'
     | '/_app/dashboard'
+    | '/_app/equipment'
     | '/_app/inventory'
     | '/_app/jobs'
     | '/_app/pos'
+    | '/_app/purchase-orders'
     | '/_app/reports'
     | '/_app/settings'
     | '/_app/staff'
@@ -228,6 +252,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppReportsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/purchase-orders': {
+      id: '/_app/purchase-orders'
+      path: '/purchase-orders'
+      fullPath: '/purchase-orders'
+      preLoaderRoute: typeof AppPurchaseOrdersRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/pos': {
       id: '/_app/pos'
       path: '/pos'
@@ -249,6 +280,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppInventoryRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/equipment': {
+      id: '/_app/equipment'
+      path: '/equipment'
+      fullPath: '/equipment'
+      preLoaderRoute: typeof AppEquipmentRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/dashboard': {
       id: '/_app/dashboard'
       path: '/dashboard'
@@ -263,18 +301,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCustomersRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/bay-board': {
-      id: '/_app/bay-board'
-      path: '/bay-board'
-      fullPath: '/bay-board'
-      preLoaderRoute: typeof AppBayBoardRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/bookings': {
       id: '/_app/bookings'
       path: '/bookings'
       fullPath: '/bookings'
       preLoaderRoute: typeof AppBookingsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/bay-board': {
+      id: '/_app/bay-board'
+      path: '/bay-board'
+      fullPath: '/bay-board'
+      preLoaderRoute: typeof AppBayBoardRouteImport
       parentRoute: typeof AppRoute
     }
   }
@@ -285,9 +323,11 @@ interface AppRouteChildren {
   AppBookingsRoute: typeof AppBookingsRoute
   AppCustomersRoute: typeof AppCustomersRoute
   AppDashboardRoute: typeof AppDashboardRoute
+  AppEquipmentRoute: typeof AppEquipmentRoute
   AppInventoryRoute: typeof AppInventoryRoute
   AppJobsRoute: typeof AppJobsRoute
   AppPosRoute: typeof AppPosRoute
+  AppPurchaseOrdersRoute: typeof AppPurchaseOrdersRoute
   AppReportsRoute: typeof AppReportsRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppStaffRoute: typeof AppStaffRoute
@@ -298,9 +338,11 @@ const AppRouteChildren: AppRouteChildren = {
   AppBookingsRoute: AppBookingsRoute,
   AppCustomersRoute: AppCustomersRoute,
   AppDashboardRoute: AppDashboardRoute,
+  AppEquipmentRoute: AppEquipmentRoute,
   AppInventoryRoute: AppInventoryRoute,
   AppJobsRoute: AppJobsRoute,
   AppPosRoute: AppPosRoute,
+  AppPurchaseOrdersRoute: AppPurchaseOrdersRoute,
   AppReportsRoute: AppReportsRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppStaffRoute: AppStaffRoute,

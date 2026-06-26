@@ -258,6 +258,61 @@ export interface AuditLog {
   createdAt: string;
 }
 
+export type EquipmentStatus = "Active" | "In Maintenance" | "Retired";
+
+export interface Equipment {
+  id: string;
+  name: string;
+  type: string;
+  make: string;
+  model: string;
+  serial: string;
+  purchasedAt: string | null;
+  status: EquipmentStatus;
+  serviceIntervalDays: number;
+  lastServiceDate: string | null;
+  notes: string;
+  createdAt: string;
+}
+
+export type MaintenanceType = "Service" | "Repair" | "Inspection" | "Replacement";
+
+export interface MaintenanceLog {
+  id: string;
+  equipmentId: string;
+  type: MaintenanceType;
+  description: string;
+  performedBy: string;
+  cost: number;
+  date: string;
+  createdAt: string;
+}
+
+export type POStatus = "Draft" | "Sent" | "Received" | "Partially Received" | "Cancelled";
+
+export interface POLine {
+  inventoryItemId: string;
+  itemName: string;
+  sku: string;
+  unit: string;
+  qtyOrdered: number;
+  unitCost: number;
+  qtyReceived: number;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  poNumber: string;
+  supplier: string;
+  status: POStatus;
+  lines: POLine[];
+  notes: string;
+  createdAt: string;
+  sentAt: string | null;
+  receivedAt: string | null;
+  createdBy: string;
+}
+
 // ─── Storage keys ───────────────────────────────────────────────────────────
 
 const KEYS = {
@@ -270,6 +325,9 @@ const KEYS = {
   expenses: "ps_expenses",
   shifts: "ps_shifts",
   audit: "ps_audit",
+  equipment: "ps_equipment",
+  maintenanceLogs: "ps_maintenance_logs",
+  purchaseOrders: "ps_purchase_orders",
   seeded: "ps_seeded_v3",
 } as const;
 
@@ -370,6 +428,89 @@ const SEED_JOBS: Job[] = [
   { id: "J-1046", customerId: "c5", customerName: "Lakmal Perera", phone: "+94 77 100 5523", plate: "WP CAB-2204", vehicleModel: "Nissan X-Trail 2017", vehicleColor: "Gunmetal", serviceId: "sv6", serviceName: "Paint Correction", category: "Paint Protection", price: 28000, tech: "Imran S.", bay: "Bay 3", status: "On Hold", elapsedMin: 75, estimateMin: 300, sessionId: null, notes: "", createdAt: new Date().toISOString(), startedAt: new Date(Date.now() - 75 * 60000).toISOString(), completedAt: null },
   { id: "J-1047", customerId: "c6", customerName: "Anjali Mendis", phone: "+94 78 442 1100", plate: "CAR-9087", vehicleModel: "Mazda CX-5 2022", vehicleColor: "Soul Red", serviceId: "sv1", serviceName: "Express Exterior Wash", category: "Exterior", price: 2500, tech: "Dilshan H.", bay: "Bay 5", status: "Ready", elapsedMin: 28, estimateMin: 30, sessionId: null, notes: "", createdAt: new Date().toISOString(), startedAt: new Date(Date.now() - 28 * 60000).toISOString(), completedAt: null },
   { id: "J-1041", customerId: "c7", customerName: "Roshan Karu", phone: "+94 75 220 9981", plate: "CAR-2210", vehicleModel: "Toyota Prius 2016", vehicleColor: "Silver", serviceId: "sv2", serviceName: "Premium Hand Wash", category: "Exterior", price: 4500, tech: "Imran S.", bay: "Bay 2", status: "Done Today", elapsedMin: 55, estimateMin: 60, sessionId: null, notes: "", createdAt: new Date().toISOString(), startedAt: new Date(Date.now() - 120 * 60000).toISOString(), completedAt: new Date(Date.now() - 65 * 60000).toISOString() },
+];
+
+const SEED_EQUIPMENT: Equipment[] = [
+  {
+    id: "eq1", name: "RUPES LHR21 Mark III", type: "Polishing Machine", make: "RUPES", model: "LHR21 Mark III",
+    serial: "RU-LHR21-0044", purchasedAt: "2022-03-10", status: "Active", serviceIntervalDays: 90,
+    lastServiceDate: new Date(Date.now() - 45 * 86400000).toISOString().slice(0, 10),
+    notes: "Primary polisher for paint correction jobs", createdAt: "2022-03-10T08:00:00.000Z",
+  },
+  {
+    id: "eq2", name: "Karcher SC5 Steam Cleaner", type: "Steam Cleaner", make: "Karcher", model: "SC5",
+    serial: "KC-SC5-2291", purchasedAt: "2021-07-15", status: "Active", serviceIntervalDays: 180,
+    lastServiceDate: new Date(Date.now() - 195 * 86400000).toISOString().slice(0, 10),
+    notes: "Interior deep cleaning station", createdAt: "2021-07-15T08:00:00.000Z",
+  },
+  {
+    id: "eq3", name: "Nilfisk C145 Pressure Washer", type: "Pressure Washer", make: "Nilfisk", model: "C 145.6 X-TRA",
+    serial: "NF-C145-8810", purchasedAt: "2022-11-01", status: "Active", serviceIntervalDays: 180,
+    lastServiceDate: new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10),
+    notes: "Main pre-wash & snow foam station", createdAt: "2022-11-01T08:00:00.000Z",
+  },
+  {
+    id: "eq4", name: "Silverline Air Compressor 50L", type: "Air Compressor", make: "Silverline", model: "50L 2HP",
+    serial: "SL-AC50-3301", purchasedAt: "2023-01-20", status: "Active", serviceIntervalDays: 365,
+    lastServiceDate: null, notes: "Drying, tyre inflation & air tools", createdAt: "2023-01-20T08:00:00.000Z",
+  },
+  {
+    id: "eq5", name: "Flex PE14-2 Rotary Polisher", type: "Polishing Machine", make: "Flex", model: "PE14-2 150",
+    serial: "FX-PE14-5577", purchasedAt: "2023-06-05", status: "In Maintenance", serviceIntervalDays: 90,
+    lastServiceDate: new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10),
+    notes: "Sent for carbon brush replacement — Flex service centre", createdAt: "2023-06-05T08:00:00.000Z",
+  },
+];
+
+const SEED_MAINTENANCE_LOGS: MaintenanceLog[] = [
+  {
+    id: "ml1", equipmentId: "eq1", type: "Service",
+    description: "Replaced pad backing plate, cleaned pad retention system, lubricated bearings",
+    performedBy: "Dilshan H.", cost: 4500,
+    date: new Date(Date.now() - 45 * 86400000).toISOString().slice(0, 10),
+    createdAt: new Date(Date.now() - 45 * 86400000).toISOString(),
+  },
+  {
+    id: "ml2", equipmentId: "eq1", type: "Repair",
+    description: "Replaced trigger switch — was intermittently cutting out under load",
+    performedBy: "RUPES Agent", cost: 8200,
+    date: new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10),
+    createdAt: new Date(Date.now() - 120 * 86400000).toISOString(),
+  },
+  {
+    id: "ml3", equipmentId: "eq2", type: "Service",
+    description: "Full descale and service, replaced boiler seals and steam nozzle",
+    performedBy: "Karcher Service Centre", cost: 12000,
+    date: new Date(Date.now() - 195 * 86400000).toISOString().slice(0, 10),
+    createdAt: new Date(Date.now() - 195 * 86400000).toISOString(),
+  },
+  {
+    id: "ml4", equipmentId: "eq3", type: "Inspection",
+    description: "O-ring check, hose inspection, pressure test — all within spec",
+    performedBy: "Imran S.", cost: 0,
+    date: new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10),
+    createdAt: new Date(Date.now() - 90 * 86400000).toISOString(),
+  },
+  {
+    id: "ml5", equipmentId: "eq5", type: "Repair",
+    description: "Carbon brush replacement — sent to authorised Flex service centre",
+    performedBy: "Flex Service Centre", cost: 6800,
+    date: new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10),
+    createdAt: new Date(Date.now() - 10 * 86400000).toISOString(),
+  },
+];
+
+const SEED_PURCHASE_ORDERS: PurchaseOrder[] = [
+  {
+    id: "PO-1001", poNumber: "PO-1001", supplier: "Detail Imports", status: "Draft",
+    lines: [
+      { inventoryItemId: "i2", itemName: "Sonax Clay Bar Kit", sku: "SX-CB-K", unit: "kit", qtyOrdered: 6, unitCost: 5800, qtyReceived: 0 },
+      { inventoryItemId: "i3", itemName: "Gtechniq Crystal Serum Light", sku: "GT-CSL-50", unit: "50ml", qtyOrdered: 3, unitCost: 32500, qtyReceived: 0 },
+    ],
+    notes: "Reorder triggered by low stock — see inventory alerts",
+    createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+    sentAt: null, receivedAt: null, createdBy: "Ashan (Admin)",
+  },
 ];
 
 export function seedIfNeeded(): void {
@@ -573,5 +714,56 @@ export const audit = {
     all.unshift({ ...entry, id: newId("al"), createdAt: new Date().toISOString() });
     if (all.length > 1000) all.splice(1000);
     save(KEYS.audit, all);
+  },
+};
+
+// ─── Equipment ───────────────────────────────────────────────────────────────
+
+export const equipment = {
+  list: (): Equipment[] => load<Equipment>(KEYS.equipment, SEED_EQUIPMENT),
+  get: (id: string): Equipment | undefined => equipment.list().find((e) => e.id === id),
+  upsert: (eq: Equipment): void => {
+    const all = equipment.list();
+    const idx = all.findIndex((x) => x.id === eq.id);
+    if (idx >= 0) all[idx] = eq; else all.push(eq);
+    save(KEYS.equipment, all);
+  },
+  delete: (id: string): void => save(KEYS.equipment, equipment.list().filter((e) => e.id !== id)),
+  nextId: (): string => {
+    const nums = equipment.list().map((e) => parseInt(e.id.replace("eq", ""), 10)).filter((n) => !isNaN(n));
+    return `eq${(nums.length > 0 ? Math.max(...nums) : 0) + 1}`;
+  },
+};
+
+// ─── Maintenance Logs ────────────────────────────────────────────────────────
+
+export const maintenanceLogs = {
+  list: (): MaintenanceLog[] => load<MaintenanceLog>(KEYS.maintenanceLogs, SEED_MAINTENANCE_LOGS),
+  listByEquipment: (equipmentId: string): MaintenanceLog[] =>
+    maintenanceLogs.list().filter((m) => m.equipmentId === equipmentId),
+  upsert: (m: MaintenanceLog): void => {
+    const all = maintenanceLogs.list();
+    const idx = all.findIndex((x) => x.id === m.id);
+    if (idx >= 0) all[idx] = m; else all.push(m);
+    save(KEYS.maintenanceLogs, all);
+  },
+  delete: (id: string): void => save(KEYS.maintenanceLogs, maintenanceLogs.list().filter((m) => m.id !== id)),
+};
+
+// ─── Purchase Orders ─────────────────────────────────────────────────────────
+
+export const purchaseOrders = {
+  list: (): PurchaseOrder[] => load<PurchaseOrder>(KEYS.purchaseOrders, SEED_PURCHASE_ORDERS),
+  get: (id: string): PurchaseOrder | undefined => purchaseOrders.list().find((p) => p.id === id),
+  upsert: (po: PurchaseOrder): void => {
+    const all = purchaseOrders.list();
+    const idx = all.findIndex((x) => x.id === po.id);
+    if (idx >= 0) all[idx] = po; else all.push(po);
+    save(KEYS.purchaseOrders, all);
+  },
+  delete: (id: string): void => save(KEYS.purchaseOrders, purchaseOrders.list().filter((p) => p.id !== id)),
+  nextId: (): string => {
+    const nums = purchaseOrders.list().map((p) => parseInt(p.id.replace("PO-", ""), 10)).filter((n) => !isNaN(n));
+    return `PO-${(nums.length > 0 ? Math.max(...nums) : 1000) + 1}`;
   },
 };

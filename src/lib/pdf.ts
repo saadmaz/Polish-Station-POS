@@ -1,5 +1,5 @@
 import jsPDF from "jspdf";
-import type { Invoice, InvoiceLine, Job } from "./db";
+import type { Invoice, InvoiceLine, Job, PurchaseOrder } from "./db";
 
 // ─── Brand colours (RGB) ─────────────────────────────────────────────────────
 const RED: [number, number, number] = [210, 30, 30];
@@ -370,6 +370,212 @@ export function downloadInvoicePDF(invoice: Invoice, job?: Job) {
     status: invoice.status,
   });
   doc.save(`${invoice.id}.pdf`);
+}
+
+export function downloadPOPDF(po: PurchaseOrder) {
+  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+  let y = 0;
+
+  // Header bar
+  doc.setFillColor(...RED);
+  doc.rect(0, 0, PW, 42, "F");
+  doc.setFillColor(...RED_DARK);
+  doc.rect(PW / 2, 0, PW / 2, 42, "F");
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.setTextColor(...WHITE);
+  doc.text("POLISH STATION", ML, 16);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(255, 200, 200);
+  doc.text("Professional Car Detailing & Protection", ML, 22);
+  doc.setFontSize(7);
+  doc.setTextColor(255, 220, 220);
+  doc.text("No. 142, Havelock Rd, Colombo 05  ·  +94 11 250 8821  ·  hello@polishstation.lk", ML, 28);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(22);
+  doc.setTextColor(...WHITE);
+  doc.text("PURCHASE ORDER", MR, 16, { align: "right" });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(255, 220, 220);
+  doc.text(`No:  ${po.poNumber}`, MR, 23, { align: "right" });
+  doc.text(`Date:  ${fmtDate(po.createdAt)}`, MR, 28.5, { align: "right" });
+  doc.text(`Status:  ${po.status.toUpperCase()}`, MR, 34, { align: "right" });
+
+  y = 52;
+
+  // Supplier section (left) | From section (right)
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7);
+  doc.setTextColor(...MUTED);
+  doc.text("SUPPLIER", ML, y);
+  doc.text("FROM", MR - 60, y);
+
+  y += 6;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(...CHARCOAL);
+  doc.text(po.supplier, ML, y);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text("Polish Station", MR - 60, y);
+
+  y += 5;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...SLATE);
+  doc.text("No. 142, Havelock Rd, Colombo 05", MR - 60, y);
+  y += 4.5;
+  doc.text("+94 11 250 8821", MR - 60, y);
+
+  if (po.createdBy) {
+    y += 4.5;
+    doc.text(`Raised by: ${po.createdBy}`, ML, y);
+  }
+
+  y += 8;
+  rule(doc, y);
+  y += 8;
+
+  // Line items table
+  doc.setFillColor(...CHARCOAL);
+  doc.rect(ML, y - 5, CW, 8, "F");
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.setTextColor(...WHITE);
+
+  const C1 = ML + 3;
+  const C2 = ML + 85;
+  const C3 = ML + 110;
+  const C4 = ML + 135;
+  const C5 = MR;
+
+  doc.text("#", ML + 1, y);
+  doc.text("DESCRIPTION / SKU", C1 + 6, y);
+  doc.text("UNIT", C2, y, { align: "right" });
+  doc.text("QTY", C3, y, { align: "right" });
+  doc.text("UNIT COST", C4, y, { align: "right" });
+  doc.text("LINE TOTAL", C5, y, { align: "right" });
+
+  y += 4.5;
+
+  let grandTotal = 0;
+  po.lines.forEach((line, idx) => {
+    const rowH = 9;
+    if (idx % 2 === 1) {
+      doc.setFillColor(...ROW_ALT);
+      doc.rect(ML, y - 5.5, CW, rowH, "F");
+    }
+
+    const lineTotal = line.unitCost * line.qtyOrdered;
+    grandTotal += lineTotal;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...CHARCOAL);
+    doc.text(String(idx + 1), ML + 2, y);
+    doc.text(line.itemName, C1 + 6, y);
+
+    doc.setFontSize(7);
+    doc.setTextColor(...SLATE);
+    doc.text(`SKU: ${line.sku}`, C1 + 6, y + 3.5);
+
+    doc.setFontSize(8.5);
+    doc.setTextColor(...CHARCOAL);
+    doc.text(line.unit, C2, y, { align: "right" });
+    doc.text(String(line.qtyOrdered), C3, y, { align: "right" });
+
+    doc.setTextColor(...SLATE);
+    doc.text(fmt(line.unitCost), C4, y, { align: "right" });
+
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...CHARCOAL);
+    doc.text(fmt(lineTotal), C5, y, { align: "right" });
+
+    y += rowH + 2;
+  });
+
+  y += 2;
+  rule(doc, y, CHARCOAL);
+  y += 8;
+
+  // Total box
+  const TL = MR - 78;
+  doc.setFillColor(...CHARCOAL);
+  doc.roundedRect(TL - 4, y - 5.5, MR - TL + 8, 10, 1.5, 1.5, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(...WHITE);
+  doc.text("ORDER TOTAL", TL, y);
+  doc.setFontSize(11);
+  doc.text(fmt(grandTotal), MR, y, { align: "right" });
+  y += 16;
+
+  // Notes
+  if (po.notes) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(...MUTED);
+    doc.text("NOTES", ML, y);
+    y += 5;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...SLATE);
+    const noteLines = doc.splitTextToSize(po.notes, CW);
+    doc.text(noteLines, ML, y);
+    y += noteLines.length * 5 + 8;
+  }
+
+  // Signature block
+  const SIG_Y = Math.max(y + 10, 220);
+  rule(doc, SIG_Y - 2);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(...CHARCOAL);
+  doc.text("Authorised by (Polish Station):", ML, SIG_Y + 5);
+  doc.setFont("helvetica", "normal");
+  doc.setDrawColor(...SLATE);
+  doc.setLineWidth(0.3);
+  doc.line(ML, SIG_Y + 14, ML + 70, SIG_Y + 14);
+  doc.setFontSize(7.5);
+  doc.setTextColor(...MUTED);
+  doc.text("Signature & Date", ML, SIG_Y + 18);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(...CHARCOAL);
+  doc.text("Supplier Confirmation:", MR - 70, SIG_Y + 5);
+  doc.line(MR - 70, SIG_Y + 14, MR, SIG_Y + 14);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(...MUTED);
+  doc.text("Signature & Date", MR - 70, SIG_Y + 18);
+
+  // Footer
+  const footerY = 277;
+  rule(doc, footerY - 5);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(...RED);
+  doc.text("POLISH STATION", ML, footerY);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(...SLATE);
+  doc.text("No. 142, Havelock Rd, Colombo 05  ·  +94 11 250 8821  ·  hello@polishstation.lk", ML, footerY + 5);
+  doc.setTextColor(...MUTED);
+  doc.text("Please retain a signed copy for your records.", ML, footerY + 10);
+  doc.setFontSize(7);
+  doc.text("Page 1 of 1", MR, footerY + 10, { align: "right" });
+
+  doc.save(`${po.poNumber}.pdf`);
 }
 
 export function downloadQuotationPDF(opts: {
