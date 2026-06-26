@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, Navigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { Eye, EyeOff, Loader2, LogIn } from "lucide-react";
+import { Delete, Loader2 } from "lucide-react";
 import { STAFF, useAuth, type Staff } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
@@ -8,24 +8,25 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "Sign in — Polish Station OS" },
-      { name: "description", content: "Staff login for Polish Station." },
+      { name: "description", content: "PIN login for Polish Station staff." },
     ],
   }),
-  component: Login,
+  component: PinLogin,
 });
 
-function Login() {
+const PIN_LEN = 4;
+
+function PinLogin() {
   const { staff: active, login } = useAuth();
   const navigate = useNavigate();
   const [selected, setSelected] = useState<Staff | null>(null);
-  const [password, setPassword] = useState("");
-  const [showPw, setShowPw] = useState(false);
+  const [pin, setPin] = useState("");
   const [error, setError] = useState(false);
   const [fails, setFails] = useState(0);
   const [locked, setLocked] = useState(0);
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState<Date | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const trapRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setNow(new Date());
@@ -39,25 +40,36 @@ function Login() {
     return () => clearInterval(t);
   }, [locked]);
 
+  // Auto-focus keyboard trap whenever a staff member is selected
   useEffect(() => {
-    if (selected && inputRef.current) {
-      inputRef.current.focus();
-    }
+    if (selected) trapRef.current?.focus();
   }, [selected]);
 
   if (active) return <Navigate to="/dashboard" />;
 
-  function selectStaff(s: Staff) {
-    setSelected(s);
-    setPassword("");
-    setError(false);
+  function pressDigit(d: string) {
+    if (!selected || locked > 0 || busy) return;
+    if (pin.length >= PIN_LEN) return;
+    const next = pin + d;
+    setPin(next);
+    if (next.length === PIN_LEN) tryLogin(next);
   }
 
-  function tryLogin() {
-    if (!selected || locked > 0 || busy || !password) return;
+  function backspace() {
+    if (!selected || locked > 0 || busy) return;
+    setPin((p) => p.slice(0, -1));
+  }
+
+  function clear() {
+    if (!selected || locked > 0 || busy) return;
+    setPin("");
+  }
+
+  function tryLogin(value: string) {
+    if (!selected) return;
     setBusy(true);
     setTimeout(() => {
-      if (password === selected.password) {
+      if (value === selected.pin) {
         login(selected);
         navigate({ to: "/dashboard" });
       } else {
@@ -68,17 +80,25 @@ function Login() {
           return nf;
         });
         setTimeout(() => {
-          setPassword("");
+          setPin("");
           setError(false);
-          inputRef.current?.focus();
+          trapRef.current?.focus();
         }, 600);
       }
       setBusy(false);
     }, 250);
   }
 
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter") tryLogin();
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (locked > 0 || busy || !selected) return;
+    if (/^\d$/.test(e.key)) {
+      pressDigit(e.key);
+    } else if (e.key === "Backspace") {
+      backspace();
+    } else if (e.key === "Delete" || e.key === "Escape") {
+      clear();
+    }
+    e.preventDefault();
   }
 
   return (
@@ -98,8 +118,21 @@ function Login() {
             </div>
           </div>
           <p className="text-center text-xs text-muted-foreground mb-5">
-            Select your name, then enter your password
+            Select your name, then enter your 4-digit PIN
           </p>
+
+          {/* Hidden keyboard trap — captures physical keyboard digits */}
+          <input
+            ref={trapRef}
+            type="tel"
+            inputMode="numeric"
+            aria-hidden="true"
+            tabIndex={selected ? 0 : -1}
+            onKeyDown={handleKeyDown}
+            onChange={() => {}}
+            value=""
+            className="sr-only"
+          />
 
           {/* Staff selector */}
           <div className="-mx-1 mb-5 overflow-x-auto">
@@ -109,23 +142,24 @@ function Login() {
                 return (
                   <button
                     key={s.id}
-                    onClick={() => selectStaff(s)}
+                    onClick={() => {
+                      setSelected(s);
+                      setPin("");
+                      setError(false);
+                    }}
                     className={cn(
-                      "flex shrink-0 w-[72px] flex-col items-center gap-1.5 rounded-lg p-2 transition-all",
+                      "flex shrink-0 w-[68px] flex-col items-center gap-1.5 rounded-lg p-2 transition-all",
                       isSel ? "bg-accent ring-2 ring-primary" : "hover:bg-muted",
                     )}
                   >
                     <div
-                      className="grid h-12 w-12 place-items-center rounded-full text-sm font-bold text-primary-foreground"
+                      className="grid h-11 w-11 place-items-center rounded-full text-sm font-bold text-primary-foreground"
                       style={{ background: s.color }}
                     >
-                      {s.name
-                        .split(" ")
-                        .map((p) => p[0])
-                        .join("")}
+                      {s.name.slice(0, 2).toUpperCase()}
                     </div>
                     <div className="text-[11px] font-medium leading-tight text-center truncate w-full">
-                      {s.name.split(" ")[0]}
+                      {s.name}
                     </div>
                     <div className="text-[9px] uppercase tracking-wider text-muted-foreground">
                       {s.role}
@@ -136,42 +170,21 @@ function Login() {
             </div>
           </div>
 
-          {/* Password field */}
-          <div className={cn("mb-4", error && "animate-shake")}>
-            <div className="relative">
-              <input
-                ref={inputRef}
-                type={showPw ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={handleKeyDown}
-                disabled={!selected || locked > 0 || busy}
-                placeholder={selected ? `Password for ${selected.name.split(" ")[0]}` : "Select a staff member first"}
+          {/* PIN dots */}
+          <div className={cn("flex justify-center gap-4 mb-5", error && "animate-shake")}>
+            {Array.from({ length: PIN_LEN }).map((_, i) => (
+              <div
+                key={i}
                 className={cn(
-                  "w-full rounded-lg border px-4 py-3 pr-10 text-sm font-medium bg-background transition-colors outline-none",
-                  "placeholder:text-muted-foreground/60",
-                  "disabled:opacity-40 disabled:cursor-not-allowed",
+                  "h-4 w-4 rounded-full border-2 transition-colors",
                   error
-                    ? "border-primary text-primary focus:ring-2 focus:ring-primary/30"
-                    : "border-border focus:border-primary focus:ring-2 focus:ring-primary/20",
+                    ? "border-primary bg-primary"
+                    : i < pin.length
+                      ? "border-foreground bg-foreground"
+                      : "border-border bg-transparent",
                 )}
-                autoComplete="current-password"
               />
-              <button
-                type="button"
-                tabIndex={-1}
-                onClick={() => setShowPw((v) => !v)}
-                disabled={!selected || locked > 0}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground disabled:opacity-40"
-              >
-                {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-            {error && (
-              <p className="mt-1.5 text-xs text-primary font-medium px-1">
-                Incorrect password{fails >= 2 ? ` — ${3 - fails} attempt${3 - fails === 1 ? "" : "s"} left` : ""}
-              </p>
-            )}
+            ))}
           </div>
 
           {locked > 0 && (
@@ -180,47 +193,44 @@ function Login() {
             </div>
           )}
 
-          {/* Sign in button */}
-          <button
-            onClick={tryLogin}
-            disabled={!selected || !password || locked > 0 || busy}
-            className={cn(
-              "w-full flex items-center justify-center gap-2 rounded-lg py-3 font-semibold text-sm transition-all",
-              "bg-charcoal text-charcoal-foreground hover:bg-charcoal/90",
-              "disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]",
-            )}
-          >
-            {busy ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <LogIn className="h-4 w-4" />
-            )}
-            Sign In
-          </button>
+          {/* Numpad */}
+          <div className="grid grid-cols-3 gap-2.5">
+            {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
+              <NumKey key={d} onClick={() => pressDigit(d)} disabled={!selected || locked > 0 || busy}>
+                {d}
+              </NumKey>
+            ))}
+            <NumKey onClick={clear} disabled={!selected || locked > 0 || busy} ghost>
+              C
+            </NumKey>
+            <NumKey onClick={() => pressDigit("0")} disabled={!selected || locked > 0 || busy}>
+              0
+            </NumKey>
+            <NumKey onClick={backspace} disabled={!selected || locked > 0 || busy} ghost>
+              {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Delete className="h-5 w-5" />}
+            </NumKey>
+          </div>
 
           <div className="mt-4 flex items-center justify-between text-[11px] text-muted-foreground">
-            <button className="hover:text-foreground">Forgot password?</button>
+            <button className="hover:text-foreground">Forgot PIN?</button>
             <button className="hover:text-foreground">Guest Checkout →</button>
           </div>
 
-          {/* Demo credentials */}
-          <div className="mt-3 rounded-md border border-dashed border-border bg-muted/40 px-3 py-2 text-[10px] text-muted-foreground space-y-0.5">
-            <div className="font-semibold text-foreground mb-1">Demo passwords by role</div>
-            {[
-              { role: "Admin", pw: "admin@ps" },
-              { role: "Manager", pw: "mgr@ps" },
-              { role: "Advisor", pw: "advisor@ps" },
-              { role: "Cashier", pw: "cashier@ps" },
-              { role: "Technician", pw: "tech@ps" },
-            ].map(({ role, pw }) => (
-              <div key={role} className="flex justify-between">
-                <span className="uppercase tracking-wider">{role}</span>
-                <span className="font-mono font-bold text-foreground">{pw}</span>
-              </div>
-            ))}
+          {/* Demo PINs */}
+          <div className="mt-3 rounded-md border border-dashed border-border bg-muted/40 px-3 py-2 text-[10px] text-muted-foreground">
+            <div className="font-semibold text-foreground mb-1">Demo PINs</div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+              {STAFF.map((s) => (
+                <div key={s.id} className="flex justify-between">
+                  <span>{s.name}</span>
+                  <span className="font-mono font-bold text-foreground">{s.pin}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
+
       <div
         suppressHydrationWarning
         className="pb-6 text-center font-mono text-xs text-white/40 min-h-[20px]"
@@ -242,5 +252,32 @@ function Login() {
         .animate-shake { animation: shake 0.35s ease-in-out; }
       `}</style>
     </div>
+  );
+}
+
+function NumKey({
+  children,
+  onClick,
+  disabled,
+  ghost,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  ghost?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "grid h-14 place-items-center rounded-lg font-display text-xl font-semibold transition-all active:scale-95 disabled:opacity-40 disabled:active:scale-100",
+        ghost
+          ? "bg-muted text-muted-foreground hover:bg-muted/70"
+          : "bg-charcoal text-charcoal-foreground hover:bg-charcoal/90",
+      )}
+    >
+      {children}
+    </button>
   );
 }

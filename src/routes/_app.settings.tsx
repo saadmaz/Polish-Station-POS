@@ -406,7 +406,7 @@ function AccessPanel() {
         </div>
         <div className="rounded-lg border border-border p-3">
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Auth Type</div>
-          <div className="font-mono text-xl font-bold">Password</div>
+          <div className="font-mono text-xl font-bold">4-digit PIN</div>
         </div>
         <div className="rounded-lg border border-border p-3">
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
