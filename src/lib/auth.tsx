@@ -6,20 +6,17 @@ export interface Staff {
   id: string;
   name: string;
   role: StaffRole;
-  pin: string;
+  password: string;
   color: string;
 }
 
-// All roles share PIN "12345" for demo/staging.
-export const DEMO_PIN = "12345";
-
 export const STAFF: Staff[] = [
-  { id: "s1", name: "Thalal T", role: "Admin", pin: DEMO_PIN, color: "oklch(0.55 0.21 27)" },
-  { id: "s2", name: "Ismail H", role: "Manager", pin: DEMO_PIN, color: "oklch(0.6 0.13 240)" },
-  { id: "s3", name: "Salman Z.", role: "Advisor", pin: DEMO_PIN, color: "oklch(0.65 0.16 145)" },
-  { id: "s4", name: "Mijwadh A.", role: "Cashier", pin: DEMO_PIN, color: "oklch(0.78 0.15 75)" },
-  { id: "s5", name: "Saad M.", role: "Technician", pin: DEMO_PIN, color: "oklch(0.45 0.2 20)" },
-  { id: "s6", name: "Abbas M.", role: "Technician", pin: DEMO_PIN, color: "oklch(0.5 0.18 30)" },
+  { id: "s1", name: "Thalal T", role: "Admin", password: "admin@ps", color: "oklch(0.55 0.21 27)" },
+  { id: "s2", name: "Ismail H", role: "Manager", password: "mgr@ps", color: "oklch(0.6 0.13 240)" },
+  { id: "s3", name: "Salman Z.", role: "Advisor", password: "advisor@ps", color: "oklch(0.65 0.16 145)" },
+  { id: "s4", name: "Mijwadh A.", role: "Cashier", password: "cashier@ps", color: "oklch(0.78 0.15 75)" },
+  { id: "s5", name: "Saad M.", role: "Technician", password: "tech@ps", color: "oklch(0.45 0.2 20)" },
+  { id: "s6", name: "Abbas M.", role: "Technician", password: "tech@ps", color: "oklch(0.5 0.18 30)" },
 ];
 
 const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes

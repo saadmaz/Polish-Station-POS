@@ -5,7 +5,7 @@ import { StatusChip } from "@/components/status-chip";
 import { useStore } from "@/lib/store";
 import * as db from "@/lib/db";
 import type { Service, ServiceCategory } from "@/lib/db";
-import { STAFF, DEMO_PIN } from "@/lib/auth";
+import { STAFF } from "@/lib/auth";
 import {
   Building2,
   Tag,
@@ -400,13 +400,13 @@ function AccessPanel() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         <div className="rounded-lg border border-border p-3">
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
-            PIN Length
+            Lockout Threshold
           </div>
-          <div className="font-display text-xl font-bold">5 digits</div>
+          <div className="font-display text-xl font-bold">3 fails</div>
         </div>
         <div className="rounded-lg border border-border p-3">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Demo PIN</div>
-          <div className="font-mono text-xl font-bold">{DEMO_PIN}</div>
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Auth Type</div>
+          <div className="font-mono text-xl font-bold">Password</div>
         </div>
         <div className="rounded-lg border border-border p-3">
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -424,7 +424,7 @@ function AccessPanel() {
           <tr>
             <th className="text-left py-2">Name</th>
             <th className="text-left py-2">Role</th>
-            <th className="text-left py-2">PIN</th>
+            <th className="text-left py-2">Password</th>
             <th className="text-left py-2">Status</th>
           </tr>
         </thead>
