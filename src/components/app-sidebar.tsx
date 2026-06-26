@@ -12,6 +12,7 @@ import {
   Lock,
   ChevronsLeft,
   ChevronsRight,
+  MonitorPlay,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth, type StaffRole } from "@/lib/auth";
@@ -28,6 +29,7 @@ const NAV: NavItem[] = [
   { to: "/dashboard", label: "Dashboard",    icon: LayoutDashboard, roles: [] },
   { to: "/bookings",  label: "Bookings",     icon: Calendar,        roles: [] },
   { to: "/jobs",      label: "Active Jobs",  icon: Wrench,          roles: [] },
+  { to: "/bay-board", label: "Bay Board",    icon: MonitorPlay,     roles: [] },
   { to: "/customers", label: "Customers",    icon: Users,           roles: [] },
   { to: "/inventory", label: "Inventory",    icon: Boxes,           roles: ["Admin", "Manager", "Advisor"] },
   { to: "/pos",       label: "POS / Checkout", icon: CreditCard,   roles: ["Admin", "Manager", "Cashier", "Advisor"] },

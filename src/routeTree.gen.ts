@@ -20,6 +20,7 @@ import { Route as AppJobsRouteImport } from './routes/_app.jobs'
 import { Route as AppInventoryRouteImport } from './routes/_app.inventory'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppCustomersRouteImport } from './routes/_app.customers'
+import { Route as AppBayBoardRouteImport } from './routes/_app.bay-board'
 import { Route as AppBookingsRouteImport } from './routes/_app.bookings'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
@@ -76,6 +77,11 @@ const AppCustomersRoute = AppCustomersRouteImport.update({
   path: '/customers',
   getParentRoute: () => AppRoute,
 } as any)
+const AppBayBoardRoute = AppBayBoardRouteImport.update({
+  id: '/bay-board',
+  path: '/bay-board',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppBookingsRoute = AppBookingsRouteImport.update({
   id: '/bookings',
   path: '/bookings',
@@ -85,6 +91,7 @@ const AppBookingsRoute = AppBookingsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/bay-board': typeof AppBayBoardRoute
   '/bookings': typeof AppBookingsRoute
   '/customers': typeof AppCustomersRoute
   '/dashboard': typeof AppDashboardRoute
@@ -98,6 +105,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/bay-board': typeof AppBayBoardRoute
   '/bookings': typeof AppBookingsRoute
   '/customers': typeof AppCustomersRoute
   '/dashboard': typeof AppDashboardRoute
@@ -113,6 +121,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/_app/bay-board': typeof AppBayBoardRoute
   '/_app/bookings': typeof AppBookingsRoute
   '/_app/customers': typeof AppCustomersRoute
   '/_app/dashboard': typeof AppDashboardRoute
@@ -128,6 +137,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/sitemap.xml'
+    | '/bay-board'
     | '/bookings'
     | '/customers'
     | '/dashboard'
@@ -141,6 +151,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/sitemap.xml'
+    | '/bay-board'
     | '/bookings'
     | '/customers'
     | '/dashboard'
@@ -155,6 +166,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_app'
     | '/sitemap.xml'
+    | '/_app/bay-board'
     | '/_app/bookings'
     | '/_app/customers'
     | '/_app/dashboard'
@@ -251,6 +263,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCustomersRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/bay-board': {
+      id: '/_app/bay-board'
+      path: '/bay-board'
+      fullPath: '/bay-board'
+      preLoaderRoute: typeof AppBayBoardRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/bookings': {
       id: '/_app/bookings'
       path: '/bookings'
@@ -262,6 +281,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppBayBoardRoute: typeof AppBayBoardRoute
   AppBookingsRoute: typeof AppBookingsRoute
   AppCustomersRoute: typeof AppCustomersRoute
   AppDashboardRoute: typeof AppDashboardRoute
@@ -274,6 +294,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppBayBoardRoute: AppBayBoardRoute,
   AppBookingsRoute: AppBookingsRoute,
   AppCustomersRoute: AppCustomersRoute,
   AppDashboardRoute: AppDashboardRoute,

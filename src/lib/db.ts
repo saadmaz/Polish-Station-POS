@@ -28,6 +28,89 @@ export interface Vehicle {
   color: string;
 }
 
+export interface JobPhoto {
+  id: string;
+  stage: "before" | "during" | "after";
+  url: string; // base64 compressed JPEG data URL
+  takenAt: string;
+  note: string;
+}
+
+export interface QCItem {
+  id: string;
+  label: string;
+  checked: boolean;
+}
+
+const QC_TEMPLATES: Record<ServiceCategory, string[]> = {
+  Exterior: [
+    "Pre-rinse completed",
+    "Snow foam applied & dwelled",
+    "Contact wash (two-bucket method)",
+    "Wheels & arches cleaned",
+    "Final rinse & blow-dry",
+    "Glass cleaned (streak-free)",
+    "Tyres dressed",
+    "Door jambs wiped",
+    "Final walk-around inspection",
+  ],
+  Interior: [
+    "Floor mats removed & cleaned",
+    "Vacuum: seats, carpets, boot",
+    "Dashboard & console wiped",
+    "Door panels & pockets cleaned",
+    "Interior glass cleaned",
+    "Leather/fabric treatment applied",
+    "Air vents & cup holders cleaned",
+    "Fragrance applied",
+    "Mats reinstalled & inspected",
+  ],
+  "Full Detail": [
+    "Pre-rinse completed",
+    "Snow foam applied & dwelled",
+    "Contact wash (two-bucket method)",
+    "Wheels & arches cleaned",
+    "Final rinse & blow-dry",
+    "Glass cleaned (streak-free)",
+    "Tyres dressed",
+    "Floor mats removed & cleaned",
+    "Vacuum: seats, carpets, boot",
+    "Dashboard & console wiped",
+    "Door panels & pockets cleaned",
+    "Interior glass cleaned",
+    "Fragrance applied",
+    "Final exterior walk-around",
+  ],
+  "Paint Protection": [
+    "Decontamination wash completed",
+    "Clay bar treatment done",
+    "Paint thickness measured & recorded",
+    "Compound stage completed",
+    "Polish stage completed",
+    "IPA wipe-down done",
+    "Sealant / PPF applied",
+    "Cure time observed",
+    "Panel reflection check (no swirls/haze)",
+    "Final inspection sign-off",
+  ],
+  Coating: [
+    "Decontamination wash completed",
+    "Paint correction completed",
+    "IPA wipe-down done",
+    "Coating applied to all panels",
+    "Coating levelled & inspected",
+    "Flash time observed",
+    "Second coat applied (if required)",
+    "Infra-red cure completed (if applicable)",
+    "Final inspection in controlled lighting",
+    "Care card & instructions given to customer",
+  ],
+};
+
+export function getQCTemplate(category: ServiceCategory): string[] {
+  return QC_TEMPLATES[category] ?? QC_TEMPLATES["Exterior"];
+}
+
 export interface Customer {
   id: string;
   name: string;
@@ -63,6 +146,10 @@ export interface Job {
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
+  photos?: JobPhoto[];
+  qcItems?: QCItem[];
+  qcCompletedBy?: string;
+  qcCompletedAt?: string;
 }
 
 export interface Booking {

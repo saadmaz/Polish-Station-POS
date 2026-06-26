@@ -19,8 +19,10 @@ import type {
   InventoryItem,
   Invoice,
   Job,
+  JobPhoto,
   JobStatus,
   PaymentMethod,
+  QCItem,
   Service,
   Shift,
 } from "./db";
@@ -52,6 +54,9 @@ interface Store {
   updateJob: (j: Job) => void;
   deleteJob: (id: string) => void;
   moveJob: (id: string, status: JobStatus, tech?: string, bay?: string) => void;
+  addJobPhoto: (jobId: string, photo: Omit<JobPhoto, "id">) => void;
+  removeJobPhoto: (jobId: string, photoId: string) => void;
+  updateQCItems: (jobId: string, items: QCItem[]) => void;
 
   // Customers
   addCustomer: (c: Omit<Customer, "id" | "createdAt" | "visits" | "spend" | "tier" | "lastVisit">) => Customer;
@@ -163,6 +168,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const j = db.jobs.get(id);
       if (!j) return;
       const now = new Date().toISOString();
+      const autoQC =
+        status === "Awaiting QC" && !j.qcItems?.length
+          ? db.getQCTemplate(j.category).map((label, i) => ({
+              id: `qc-${id}-${i}`,
+              label,
+              checked: false,
+            }))
+          : j.qcItems;
       db.jobs.upsert({
         ...j,
         status,
@@ -170,7 +183,41 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         bay: bay ?? j.bay,
         startedAt: status === "In Bay" && !j.startedAt ? now : j.startedAt,
         completedAt: status === "Done Today" ? now : j.completedAt,
+        qcItems: autoQC,
+        qcCompletedBy: status === "Ready" ? (j.qcCompletedBy ?? "") : j.qcCompletedBy,
+        qcCompletedAt: status === "Ready" ? (j.qcCompletedAt ?? now) : j.qcCompletedAt,
       });
+      refresh();
+    },
+    [refresh],
+  );
+
+  const addJobPhoto = useCallback(
+    (jobId: string, photo: Omit<JobPhoto, "id">) => {
+      const j = db.jobs.get(jobId);
+      if (!j) return;
+      const newPhoto: JobPhoto = { ...photo, id: db.newId("ph") };
+      db.jobs.upsert({ ...j, photos: [...(j.photos ?? []), newPhoto] });
+      refresh();
+    },
+    [refresh],
+  );
+
+  const removeJobPhoto = useCallback(
+    (jobId: string, photoId: string) => {
+      const j = db.jobs.get(jobId);
+      if (!j) return;
+      db.jobs.upsert({ ...j, photos: (j.photos ?? []).filter((p) => p.id !== photoId) });
+      refresh();
+    },
+    [refresh],
+  );
+
+  const updateQCItems = useCallback(
+    (jobId: string, items: QCItem[]) => {
+      const j = db.jobs.get(jobId);
+      if (!j) return;
+      db.jobs.upsert({ ...j, qcItems: items });
       refresh();
     },
     [refresh],
@@ -420,6 +467,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateJob,
     deleteJob,
     moveJob,
+    addJobPhoto,
+    removeJobPhoto,
+    updateQCItems,
     addCustomer,
     updateCustomer,
     deleteCustomer,
