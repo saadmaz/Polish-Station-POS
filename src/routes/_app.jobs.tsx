@@ -1,21 +1,24 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { JOBS, type JobStatus } from "@/lib/mock-data";
+import { useState } from "react";
+import { toast } from "sonner";
+import { useStore } from "@/lib/store";
 import { PageHeader } from "@/components/page-header";
 import { cn } from "@/lib/utils";
-import { Clock, Pause, Flag, ChevronRight } from "lucide-react";
+import { Clock, ChevronRight, X, Check, ArrowRight, Trash2, Plus } from "lucide-react";
+import type { Job, JobStatus } from "@/lib/db";
 
 export const Route = createFileRoute("/_app/jobs")({
   head: () => ({ meta: [{ title: "Active Jobs — Polish Station OS" }] }),
   component: ActiveJobs,
 });
 
-const COLUMNS: { status: JobStatus; tone: string }[] = [
-  { status: "Queue", tone: "border-info" },
-  { status: "In Bay", tone: "border-primary" },
-  { status: "On Hold", tone: "border-warning" },
-  { status: "Awaiting QC", tone: "border-warning" },
-  { status: "Ready", tone: "border-success" },
-  { status: "Done Today", tone: "border-muted-foreground" },
+const COLUMNS: { status: JobStatus; tone: string; nextStatus?: JobStatus; nextLabel?: string }[] = [
+  { status: "Queue",        tone: "border-info",             nextStatus: "In Bay",      nextLabel: "Start" },
+  { status: "In Bay",       tone: "border-primary",          nextStatus: "Awaiting QC", nextLabel: "Send to QC" },
+  { status: "On Hold",      tone: "border-warning",          nextStatus: "In Bay",      nextLabel: "Resume" },
+  { status: "Awaiting QC",  tone: "border-warning",          nextStatus: "Ready",       nextLabel: "Approve" },
+  { status: "Ready",        tone: "border-success",          nextStatus: "Done Today",  nextLabel: "Mark Done" },
+  { status: "Done Today",   tone: "border-muted-foreground" },
 ];
 
 const CAT_COLORS: Record<string, string> = {
@@ -26,20 +29,192 @@ const CAT_COLORS: Record<string, string> = {
   Coating: "var(--charcoal)",
 };
 
+const BAYS = ["—", "Bay 1", "Bay 2", "Bay 3", "Bay 4", "Bay 5"];
+
+// ─── Job detail side panel ────────────────────────────────────────────────────
+
+function JobDetail({ job, onClose }: { job: Job; onClose: () => void }) {
+  const { moveJob, deleteJob, openShift } = useStore();
+  const [tech, setTech] = useState(job.tech);
+  const [bay, setBay] = useState(job.bay);
+
+  const col = COLUMNS.find((c) => c.status === job.status);
+  const overdue = job.elapsedMin > job.estimateMin;
+
+  function advance() {
+    if (!col?.nextStatus) return;
+    moveJob(job.id, col.nextStatus, tech, bay);
+    toast.success(`${job.customerName} → ${col.nextStatus}`);
+  }
+
+  function hold() {
+    moveJob(job.id, "On Hold", tech, bay);
+    toast.info(`Job on hold: ${job.customerName}`);
+  }
+
+  function remove() {
+    if (!confirm(`Delete job ${job.id}? This cannot be undone.`)) return;
+    deleteJob(job.id);
+    toast.error("Job deleted");
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-y-0 right-0 z-40 w-full max-w-sm bg-background border-l border-border shadow-elevated overflow-y-auto flex flex-col">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+        <div>
+          <div className="font-mono text-xs text-muted-foreground">{job.id}</div>
+          <h2 className="font-display text-base font-bold">{job.customerName}</h2>
+        </div>
+        <button onClick={onClose} className="rounded-md p-1.5 hover:bg-muted">
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="flex-1 p-5 space-y-5">
+        {/* Vehicle */}
+        <div className="rounded-lg bg-muted/40 border border-border p-3 space-y-1">
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Vehicle</div>
+          <div className="font-semibold">{job.vehicleModel || "—"}</div>
+          <div className="font-mono text-sm">{job.plate}</div>
+          {job.vehicleColor && <div className="text-sm text-muted-foreground">{job.vehicleColor}</div>}
+        </div>
+
+        {/* Service */}
+        <div className="rounded-lg bg-muted/40 border border-border p-3 space-y-1">
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Service</div>
+          <div className="font-semibold">{job.serviceName}</div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">{job.category}</span>
+            <span className="font-mono font-bold">LKR {job.price.toLocaleString()}</span>
+          </div>
+          <div className={cn("text-sm font-mono", overdue ? "text-primary font-bold" : "text-muted-foreground")}>
+            {job.elapsedMin}m elapsed / {job.estimateMin}m est.
+            {overdue && " ⚠ OVERDUE"}
+          </div>
+        </div>
+
+        {/* Assign tech + bay */}
+        <div className="space-y-3">
+          <div>
+            <label className="text-sm font-medium">Technician</label>
+            <input
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              value={tech}
+              onChange={(e) => setTech(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium">Bay</label>
+            <select
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              value={bay}
+              onChange={(e) => setBay(e.target.value)}
+            >
+              {BAYS.map((b) => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {job.notes && (
+          <div className="rounded-lg bg-muted/40 border border-border p-3">
+            <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Notes</div>
+            <p className="text-sm">{job.notes}</p>
+          </div>
+        )}
+
+        <div className="text-xs text-muted-foreground">
+          Created: {new Date(job.createdAt).toLocaleString()}
+          {job.startedAt && <div>Started: {new Date(job.startedAt).toLocaleString()}</div>}
+          {job.completedAt && <div>Completed: {new Date(job.completedAt).toLocaleString()}</div>}
+          {!openShift && <div className="text-warning mt-1">No active shift — job won't be linked to revenue</div>}
+        </div>
+      </div>
+
+      <div className="p-5 border-t border-border space-y-2">
+        {col?.nextStatus && (
+          <button
+            onClick={advance}
+            className="w-full flex items-center justify-center gap-2 rounded-md bg-primary py-2.5 text-sm font-semibold text-primary-foreground shadow-red hover:bg-primary/90"
+          >
+            <ArrowRight className="h-4 w-4" />
+            {col.nextLabel ?? `Move to ${col.nextStatus}`}
+          </button>
+        )}
+        {job.status !== "On Hold" && job.status !== "Done Today" && (
+          <button
+            onClick={hold}
+            className="w-full rounded-md border border-warning/40 bg-warning/10 text-warning py-2.5 text-sm font-semibold hover:bg-warning/20"
+          >
+            Place On Hold
+          </button>
+        )}
+        <button
+          onClick={remove}
+          className="w-full flex items-center justify-center gap-2 rounded-md border border-border py-2 text-sm text-muted-foreground hover:text-primary hover:border-primary/40"
+        >
+          <Trash2 className="h-3.5 w-3.5" /> Delete Job
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main kanban view ─────────────────────────────────────────────────────────
+
 function ActiveJobs() {
+  const { jobs, moveJob } = useStore();
+  const [selected, setSelected] = useState<Job | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<JobStatus | null>(null);
+
+  function onDragStart(e: React.DragEvent, jobId: string) {
+    setDragId(jobId);
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function onDragOver(e: React.DragEvent, status: JobStatus) {
+    e.preventDefault();
+    setDropTarget(status);
+  }
+
+  function onDrop(e: React.DragEvent, status: JobStatus) {
+    e.preventDefault();
+    if (dragId && dragId !== jobs.find((j) => j.status === status && j.id === dragId)?.id) {
+      moveJob(dragId, status);
+      toast.success(`Job moved to ${status}`);
+    }
+    setDragId(null);
+    setDropTarget(null);
+  }
+
+  const inProgress = jobs.filter((j) => j.status !== "Done Today" && j.status !== "Queue");
+  const techMap = inProgress.reduce<Record<string, number>>((acc, j) => {
+    if (j.tech && j.tech !== "—") acc[j.tech] = (acc[j.tech] ?? 0) + 1;
+    return acc;
+  }, {});
+
   return (
     <div className="p-6 h-full flex flex-col">
-      <PageHeader title="Active Jobs" subtitle="Kanban board · drag cards to update status" />
+      <PageHeader
+        title="Active Jobs"
+        subtitle="Kanban board · drag cards between columns or click to manage"
+      />
 
       <div className="flex-1 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 min-h-0">
         {COLUMNS.map((col) => {
-          const items = JOBS.filter((j) => j.status === col.status);
+          const items = jobs.filter((j) => j.status === col.status);
+          const isTarget = dropTarget === col.status;
           return (
             <div
               key={col.status}
+              onDragOver={(e) => onDragOver(e, col.status)}
+              onDrop={(e) => onDrop(e, col.status)}
+              onDragLeave={() => setDropTarget(null)}
               className={cn(
-                "flex flex-col rounded-xl border-t-[3px] bg-card border-border",
+                "flex flex-col rounded-xl border-t-[3px] bg-card border-border transition-colors",
                 col.tone,
+                isTarget && "bg-primary/5 border-primary/30",
               )}
             >
               <div className="flex items-center justify-between px-3 pt-3 pb-2">
@@ -54,38 +229,47 @@ function ActiveJobs() {
                   return (
                     <div
                       key={j.id}
-                      className="rounded-lg border border-border bg-background p-2.5 hover:shadow-card cursor-pointer transition-shadow border-l-[3px]"
+                      draggable
+                      onDragStart={(e) => onDragStart(e, j.id)}
+                      onClick={() => setSelected(j)}
+                      className="rounded-lg border border-border bg-background p-2.5 hover:shadow-card cursor-pointer transition-shadow border-l-[3px] select-none"
                       style={{ borderLeftColor: CAT_COLORS[j.category] ?? "var(--primary)" }}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <div className="text-sm font-semibold truncate">{j.customer}</div>
+                          <div className="text-sm font-semibold truncate">{j.customerName}</div>
                           <div className="text-[11px] text-muted-foreground truncate">
-                            {j.vehicle} · <span className="font-mono">{j.plate}</span>
+                            {j.vehicleModel} · <span className="font-mono">{j.plate}</span>
                           </div>
                         </div>
                         <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
                       </div>
-                      <div className="mt-2 text-[11px] line-clamp-2">{j.service}</div>
+                      <div className="mt-2 text-[11px] line-clamp-2">{j.serviceName}</div>
                       <div className="mt-2 flex items-center justify-between text-[11px]">
-                        <span className="text-muted-foreground">
+                        <span className="text-muted-foreground truncate">
                           {j.tech} · {j.bay}
                         </span>
-                        <span
-                          className={cn(
-                            "inline-flex items-center gap-1 font-mono font-semibold",
-                            overdue ? "text-primary" : "text-muted-foreground",
-                          )}
-                        >
+                        <span className={cn("inline-flex items-center gap-1 font-mono font-semibold shrink-0", overdue ? "text-primary" : "text-muted-foreground")}>
                           <Clock className="h-3 w-3" />
                           {j.elapsedMin}m
                         </span>
                       </div>
+                      {col.nextStatus && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); moveJob(j.id, col.nextStatus!); toast.success(`${j.customerName} → ${col.nextStatus}`); }}
+                          className="mt-2 w-full flex items-center justify-center gap-1 rounded bg-primary/10 text-primary text-[10px] font-semibold py-1 hover:bg-primary/20"
+                        >
+                          <Check className="h-3 w-3" />
+                          {col.nextLabel}
+                        </button>
+                      )}
                     </div>
                   );
                 })}
                 {items.length === 0 && (
-                  <div className="text-center text-[11px] text-muted-foreground py-6">Empty</div>
+                  <div className="text-center text-[11px] text-muted-foreground py-6 border-2 border-dashed border-border rounded-lg">
+                    Drop here
+                  </div>
                 )}
               </div>
             </div>
@@ -93,46 +277,46 @@ function ActiveJobs() {
         })}
       </div>
 
-      {/* Tech performance strip */}
+      {/* Tech strip */}
       <div className="mt-4 rounded-xl border border-border bg-card shadow-card p-3">
         <div className="flex flex-wrap items-center gap-3">
           <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground mr-2">
-            On Shift
+            Active Techs
           </div>
-          {[
-            { name: "Imran S.", done: 5, status: "Active" },
-            { name: "Dilshan H.", done: 3, status: "Active" },
-            { name: "Niro D.", done: 0, status: "Idle" },
-            { name: "Tharu K.", done: 0, status: "Break" },
-          ].map((t) => (
-            <div
-              key={t.name}
-              className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5"
-            >
+          {Object.entries(techMap).map(([name, count]) => (
+            <div key={name} className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5">
               <div className="grid h-7 w-7 place-items-center rounded-full bg-primary/15 text-[11px] font-bold text-primary">
-                {t.name
-                  .split(" ")
-                  .map((p) => p[0])
-                  .join("")}
+                {name.split(" ").map((p) => p[0]).join("")}
               </div>
               <div className="leading-tight">
-                <div className="text-xs font-semibold">{t.name}</div>
-                <div className="text-[10px] text-muted-foreground">
-                  {t.done} jobs · {t.status}
-                </div>
+                <div className="text-xs font-semibold">{name}</div>
+                <div className="text-[10px] text-muted-foreground">{count} job{count !== 1 ? "s" : ""} active</div>
               </div>
             </div>
           ))}
-          <div className="ml-auto flex gap-1.5">
-            <button className="rounded-md border border-input p-1.5 hover:bg-accent" title="Pause">
-              <Pause className="h-3.5 w-3.5" />
-            </button>
-            <button className="rounded-md border border-input p-1.5 hover:bg-accent" title="Flag">
-              <Flag className="h-3.5 w-3.5" />
-            </button>
+          {Object.keys(techMap).length === 0 && (
+            <span className="text-xs text-muted-foreground">No jobs in progress</span>
+          )}
+          <div className="ml-auto">
+            <span className="text-xs text-muted-foreground">{jobs.length} total jobs today</span>
           </div>
         </div>
       </div>
+
+      {/* Side panel */}
+      {selected && (
+        <>
+          <div
+            className="fixed inset-0 z-30 bg-black/20"
+            onClick={() => setSelected(null)}
+          />
+          <JobDetail
+            key={selected.id}
+            job={jobs.find((j) => j.id === selected.id) ?? selected}
+            onClose={() => setSelected(null)}
+          />
+        </>
+      )}
     </div>
   );
 }
