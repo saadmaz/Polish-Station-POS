@@ -4,9 +4,11 @@ import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip, statusVariant } from "@/components/status-chip";
-import { Plus, Trash2, Banknote, CreditCard, ArrowRightLeft, Search } from "lucide-react";
+import { Plus, Trash2, Banknote, CreditCard, ArrowRightLeft, Search, FileDown, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { PaymentMethod, InvoiceLine } from "@/lib/db";
+import { downloadInvoicePDF, downloadQuotationPDF } from "@/lib/pdf";
+import { newId } from "@/lib/db";
 
 export const Route = createFileRoute("/_app/pos")({
   head: () => ({ meta: [{ title: "POS / Checkout — Polish Station OS" }] }),
@@ -64,6 +66,20 @@ function POS() {
   const subtotal = lines.reduce((s, l) => s + l.unitPrice * l.qty - l.discount, 0);
   const tax = Math.round(subtotal * 0.18);
   const total = subtotal + tax + tip;
+
+  function handleSaveQuote() {
+    if (lines.length === 0) { toast.error("Add at least one line item"); return; }
+    const quoteId = newId("QUO");
+    downloadQuotationPDF({
+      id: quoteId,
+      customerName: customerName || "Guest",
+      phone: selectedJob?.phone,
+      plate: selectedJob?.plate,
+      vehicleModel: selectedJob?.vehicleModel,
+      lines: lines.map(({ key: _k, ...l }) => l),
+    });
+    toast.success(`Quotation ${quoteId} downloaded`);
+  }
 
   function handleCharge() {
     if (lines.length === 0) { toast.error("Add at least one line item"); return; }
@@ -394,6 +410,14 @@ function POS() {
           className="w-full rounded-md gradient-brand py-3 text-sm font-bold uppercase tracking-wider text-primary-foreground shadow-red hover:opacity-95 disabled:opacity-50"
         >
           {charging ? "Processing…" : `Charge LKR ${total.toLocaleString()}`}
+        </button>
+
+        <button
+          onClick={handleSaveQuote}
+          disabled={lines.length === 0}
+          className="mt-2 w-full flex items-center justify-center gap-2 rounded-md border border-input bg-background py-2.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
+        >
+          <FileText className="h-4 w-4" /> Download Quotation PDF
         </button>
 
         {!openShift && (
