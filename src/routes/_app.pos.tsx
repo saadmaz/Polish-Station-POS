@@ -14,7 +14,7 @@ export const Route = createFileRoute("/_app/pos")({
 });
 
 function POS() {
-  const { services, customers, jobs, invoices, openShift, addInvoice, moveJob } = useStore();
+  const { services, customers, jobs, invoices, openShift, addInvoice, moveJob, voidInvoice } = useStore();
 
   // Customer / job selection
   const [customerSearch, setCustomerSearch] = useState("");
@@ -282,6 +282,7 @@ function POS() {
                   <th className="text-right px-3 py-2.5">Total</th>
                   <th className="text-left px-3 py-2.5">Method</th>
                   <th className="text-left px-3 py-2.5">Status</th>
+                  <th className="w-10" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -298,6 +299,16 @@ function POS() {
                     <td className="px-3 py-2.5 text-muted-foreground">{i.method}</td>
                     <td className="px-3 py-2.5">
                       <StatusChip variant={statusVariant(i.status)}>{i.status}</StatusChip>
+                    </td>
+                    <td className="px-2 py-2.5">
+                      {i.status !== "Void" && (
+                        <button
+                          onClick={() => { if (confirm(`Void ${i.id}?`)) { voidInvoice(i.id); toast.success(`${i.id} voided`); } }}
+                          className="text-[11px] text-muted-foreground hover:text-primary underline underline-offset-2"
+                        >
+                          Void
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

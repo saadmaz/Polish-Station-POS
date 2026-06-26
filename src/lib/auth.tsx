@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 export type StaffRole = "Technician" | "Cashier" | "Advisor" | "Manager" | "Admin";
 
@@ -22,10 +22,14 @@ export const STAFF: Staff[] = [
   { id: "s6", name: "Abbas M.", role: "Technician", pin: DEMO_PIN, color: "oklch(0.5 0.18 30)" },
 ];
 
+const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+const ACTIVITY_KEY = "ps_last_activity";
+
 interface AuthState {
   staff: Staff | null;
   login: (s: Staff) => void;
   logout: () => void;
+  touchActivity: () => void;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -33,15 +37,47 @@ const STORAGE_KEY = "ps_active_staff_id";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [staff, setStaff] = useState<Staff | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const logout = useCallback(() => {
+    window.localStorage.removeItem(STORAGE_KEY);
+    window.localStorage.removeItem(ACTIVITY_KEY);
+    setStaff(null);
+  }, []);
+
+  const resetTimer = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(logout, SESSION_TIMEOUT_MS);
+    window.localStorage.setItem(ACTIVITY_KEY, Date.now().toString());
+  }, [logout]);
+
+  const touchActivity = useCallback(() => resetTimer(), [resetTimer]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const id = window.localStorage.getItem(STORAGE_KEY);
     if (id) {
       const found = STAFF.find((s) => s.id === id);
-      if (found) setStaff(found);
+      if (found) {
+        // Check if session already expired
+        const last = Number(window.localStorage.getItem(ACTIVITY_KEY) ?? "0");
+        if (Date.now() - last < SESSION_TIMEOUT_MS) {
+          setStaff(found);
+          resetTimer();
+        } else {
+          window.localStorage.removeItem(STORAGE_KEY);
+        }
+      }
     }
-  }, []);
+    // Track user activity globally
+    const events = ["mousedown", "keydown", "touchstart", "scroll"];
+    const handler = () => { if (window.localStorage.getItem(STORAGE_KEY)) resetTimer(); };
+    events.forEach((e) => window.addEventListener(e, handler, { passive: true }));
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, handler));
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [resetTimer]);
 
   const value = useMemo<AuthState>(
     () => ({
@@ -49,13 +85,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login: (s) => {
         window.localStorage.setItem(STORAGE_KEY, s.id);
         setStaff(s);
+        resetTimer();
       },
-      logout: () => {
-        window.localStorage.removeItem(STORAGE_KEY);
-        setStaff(null);
-      },
+      logout,
+      touchActivity,
     }),
-    [staff],
+    [staff, logout, resetTimer, touchActivity],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

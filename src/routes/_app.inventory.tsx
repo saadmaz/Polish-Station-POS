@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
-import { Plus, FileText, Pencil, Trash2, Minus, X } from "lucide-react";
+import { Plus, FileText, Pencil, Trash2, Minus, X, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { InventoryItem } from "@/lib/db";
 import { newId } from "@/lib/db";
@@ -160,12 +160,15 @@ function AdjustWidget({ item }: { item: InventoryItem }) {
 function Inventory() {
   const { inventory, upsertInventoryItem, deleteInventoryItem } = useStore();
   const [formMode, setFormMode] = useState<null | "add" | InventoryItem>(null);
+  const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
 
   const categories = ["All", ...Array.from(new Set(inventory.map((i) => i.category))).sort()];
 
   const filtered = inventory.filter((i) => {
+    const q = search.toLowerCase();
+    const matchSearch = !q || i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q) || i.supplier.toLowerCase().includes(q);
     const matchCat = categoryFilter === "All" || i.category === categoryFilter;
     const st = stockStatus(i.stock, i.reorder);
     const matchSt =
@@ -173,7 +176,7 @@ function Inventory() {
       (statusFilter === "Low" && st.variant === "warning") ||
       (statusFilter === "Out" && st.variant === "danger") ||
       (statusFilter === "OK" && st.variant === "success");
-    return matchCat && matchSt;
+    return matchSearch && matchCat && matchSt;
   });
 
   const totalValue = inventory.reduce((s, i) => s + i.stock * i.cost, 0);
@@ -239,7 +242,16 @@ function Inventory() {
       )}
 
       {/* Filters */}
-      <div className="flex gap-2 mb-3">
+      <div className="flex flex-wrap gap-2 mb-3">
+        <div className="relative flex-1 min-w-48">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            className="w-full rounded-md border border-input bg-background pl-9 pr-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            placeholder="Search name, SKU, supplier…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
         <select className="rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
           {categories.map((c) => <option key={c}>{c}</option>)}
         </select>

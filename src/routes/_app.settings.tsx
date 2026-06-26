@@ -17,6 +17,7 @@ import {
   ScrollText,
   Check,
   X,
+  Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -97,7 +98,7 @@ function Settings() {
           ))}
         </nav>
 
-        <div className="rounded-xl border border-border bg-card shadow-card p-6 min-h-[420px]">
+        <div className="rounded-xl border border-border bg-card shadow-card p-6 min-h-105">
           {active === "business" && <BusinessPanel />}
           {active === "catalog" && <CatalogPanel />}
           {active === "bays" && <BaysPanel />}
@@ -136,7 +137,31 @@ function Field({ label, value, hint }: { label: string; value: string; hint?: st
   );
 }
 
+const BIZ_KEY = "ps_business_info";
+const BIZ_DEFAULTS = {
+  name: "Polish Station (Pvt) Ltd",
+  trading: "Polish Station",
+  vat: "VAT-184220985-7000",
+  phone: "+94 11 250 8821",
+  email: "hello@polishstation.lk",
+  address: "No. 142, Havelock Rd, Colombo 05",
+  hours: "Mon–Sat · 08:00–18:00",
+  vatRate: "18%",
+};
+type BizInfo = typeof BIZ_DEFAULTS;
+
+function loadBiz(): BizInfo {
+  try { return { ...BIZ_DEFAULTS, ...JSON.parse(localStorage.getItem(BIZ_KEY) ?? "{}") }; } catch { return BIZ_DEFAULTS; }
+}
+
 function BusinessPanel() {
+  const [form, setForm] = useState<BizInfo>(loadBiz);
+  const [saved, setSaved] = useState(false);
+
+  function set(k: keyof BizInfo, v: string) { setForm((f) => ({ ...f, [k]: v })); setSaved(false); }
+  function save() { localStorage.setItem(BIZ_KEY, JSON.stringify(form)); setSaved(true); }
+  function reset() { setForm(loadBiz()); setSaved(false); }
+
   return (
     <>
       <SectionTitle
@@ -144,18 +169,32 @@ function BusinessPanel() {
         desc="Information used on invoices and customer-facing communications."
       />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label="Business Name" value="Polish Station (Pvt) Ltd" />
-        <Field label="Trading Name" value="Polish Station" />
-        <Field label="VAT / Tax No." value="VAT-184220985-7000" />
-        <Field label="Phone" value="+94 11 250 8821" />
-        <Field label="Email" value="hello@polishstation.lk" />
-        <Field label="Address" value="No. 142, Havelock Rd, Colombo 05" />
-        <Field label="Opening Hours" value="Mon–Sat · 08:00–18:00" />
-        <Field label="VAT Rate" value="18%" hint="Applied to all taxable line items at checkout." />
+        {(
+          [
+            ["Business Name", "name"],
+            ["Trading Name", "trading"],
+            ["VAT / Tax No.", "vat"],
+            ["Phone", "phone"],
+            ["Email", "email"],
+            ["Address", "address"],
+            ["Opening Hours", "hours"],
+            ["VAT Rate", "vatRate"],
+          ] as [string, keyof BizInfo][]
+        ).map(([label, key]) => (
+          <label key={key} className="block">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
+            <input
+              value={form[key]}
+              onChange={(e) => set(key, e.target.value)}
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            />
+          </label>
+        ))}
       </div>
-      <div className="mt-6 flex gap-2 justify-end">
-        <button className="rounded-md border border-input px-4 py-2 text-sm">Cancel</button>
-        <button className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red">
+      <div className="mt-6 flex items-center gap-2 justify-end">
+        {saved && <span className="text-xs text-success font-medium">Saved ✓</span>}
+        <button onClick={reset} className="rounded-md border border-input px-4 py-2 text-sm">Reset</button>
+        <button onClick={save} className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red">
           Save Changes
         </button>
       </div>
@@ -293,15 +332,39 @@ function BaysPanel() {
   );
 }
 
+const BR_KEY = "ps_booking_rules";
+const BR_DEFAULTS = {
+  leadTime: "30 minutes",
+  maxAdvance: "60 days",
+  depositThreshold: "LKR 25,000",
+  depositPct: "20%",
+  cancelWindow: "24 hours",
+  noShowPenalty: "LKR 1,500",
+  autoConfirm: "Yes",
+};
+type BookingRules = typeof BR_DEFAULTS;
+
+function loadBR(): BookingRules {
+  try { return { ...BR_DEFAULTS, ...JSON.parse(localStorage.getItem(BR_KEY) ?? "{}") }; } catch { return BR_DEFAULTS; }
+}
+
+const BR_LABELS: [keyof BookingRules, string][] = [
+  ["leadTime", "Minimum lead time"],
+  ["maxAdvance", "Maximum advance booking"],
+  ["depositThreshold", "Deposit required above"],
+  ["depositPct", "Deposit percentage"],
+  ["cancelWindow", "Cancellation window"],
+  ["noShowPenalty", "No-show penalty"],
+  ["autoConfirm", "Auto-confirm walk-ins"],
+];
+
 function BookingRulesPanel() {
-  const rules = [
-    ["Minimum lead time", "30 minutes"],
-    ["Maximum advance booking", "60 days"],
-    ["Deposit required (>LKR 25k)", "20%"],
-    ["Cancellation window", "24 hours"],
-    ["No-show penalty", "LKR 1,500"],
-    ["Auto-confirm walk-ins", "Yes"],
-  ];
+  const [rules, setRules] = useState<BookingRules>(loadBR);
+  const [saved, setSaved] = useState(false);
+
+  function set(k: keyof BookingRules, v: string) { setRules((r) => ({ ...r, [k]: v })); setSaved(false); }
+  function save() { localStorage.setItem(BR_KEY, JSON.stringify(rules)); setSaved(true); }
+
   return (
     <>
       <SectionTitle
@@ -309,12 +372,22 @@ function BookingRulesPanel() {
         desc="Policies enforced at the point of booking and cancellation."
       />
       <div className="divide-y divide-border">
-        {rules.map(([k, v]) => (
-          <div key={k} className="flex items-center justify-between py-3">
-            <span className="text-sm">{k}</span>
-            <span className="font-mono text-sm font-semibold">{v}</span>
+        {BR_LABELS.map(([key, label]) => (
+          <div key={key} className="flex items-center justify-between py-3 gap-4">
+            <span className="text-sm flex-1">{label}</span>
+            <input
+              value={rules[key]}
+              onChange={(e) => set(key, e.target.value)}
+              className="w-36 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm font-mono text-right focus:outline-none focus:border-primary"
+            />
           </div>
         ))}
+      </div>
+      <div className="mt-4 flex items-center gap-2 justify-end">
+        {saved && <span className="text-xs text-success font-medium">Saved ✓</span>}
+        <button onClick={save} className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red">
+          Save Rules
+        </button>
       </div>
     </>
   );
@@ -333,7 +406,7 @@ function AccessPanel() {
         </div>
         <div className="rounded-lg border border-border p-3">
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Demo PIN</div>
-          <div className="font-display text-xl font-bold font-mono">{DEMO_PIN}</div>
+          <div className="font-mono text-xl font-bold">{DEMO_PIN}</div>
         </div>
         <div className="rounded-lg border border-border p-3">
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
@@ -372,36 +445,58 @@ function AccessPanel() {
   );
 }
 
+const NOTIFY_KEY = "ps_notify_settings";
+const NOTIFY_DEFAULTS: Record<string, boolean> = {
+  "SMS — Booking Confirmation": true,
+  "SMS — Ready for Pickup": true,
+  "Email — Receipt": true,
+  "WhatsApp — Before/After Photos": true,
+  "Email — Marketing Campaigns": false,
+};
+
+function loadNotify(): Record<string, boolean> {
+  try { return { ...NOTIFY_DEFAULTS, ...JSON.parse(localStorage.getItem(NOTIFY_KEY) ?? "{}") }; } catch { return { ...NOTIFY_DEFAULTS }; }
+}
+
 function NotifyPanel() {
-  const channels = [
-    { name: "SMS — Booking Confirmation", on: true },
-    { name: "SMS — Ready for Pickup", on: true },
-    { name: "Email — Receipt", on: true },
-    { name: "WhatsApp — Before/After Photos", on: true },
-    { name: "Email — Marketing Campaigns", on: false },
-  ];
+  const [channels, setChannels] = useState<Record<string, boolean>>(loadNotify);
+
+  function toggle(name: string) {
+    setChannels((prev) => {
+      const next = { ...prev, [name]: !prev[name] };
+      localStorage.setItem(NOTIFY_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
   return (
     <>
       <SectionTitle title="Notifications" desc="Toggle outbound channels and message templates." />
       <div className="divide-y divide-border">
-        {channels.map((c) => (
-          <div key={c.name} className="flex items-center justify-between py-3">
-            <span className="text-sm">{c.name}</span>
-            <span
-              className={cn(
-                "inline-flex h-6 w-11 items-center rounded-full p-0.5 transition-colors",
-                c.on ? "bg-primary" : "bg-muted",
-              )}
-            >
-              <span
+        {Object.keys(NOTIFY_DEFAULTS).map((name) => {
+          const on = channels[name] ?? NOTIFY_DEFAULTS[name];
+          return (
+            <div key={name} className="flex items-center justify-between py-3">
+              <span className="text-sm">{name}</span>
+              <button
+                role="switch"
+                aria-checked={on}
+                onClick={() => toggle(name)}
                 className={cn(
-                  "h-5 w-5 rounded-full bg-white shadow transition-transform",
-                  c.on ? "translate-x-5" : "translate-x-0",
+                  "inline-flex h-6 w-11 items-center rounded-full p-0.5 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40",
+                  on ? "bg-primary" : "bg-muted",
                 )}
-              />
-            </span>
-          </div>
-        ))}
+              >
+                <span
+                  className={cn(
+                    "h-5 w-5 rounded-full bg-white shadow transition-transform",
+                    on ? "translate-x-5" : "translate-x-0",
+                  )}
+                />
+              </button>
+            </div>
+          );
+        })}
       </div>
     </>
   );
@@ -446,12 +541,37 @@ function IntegrationsPanel() {
 
 function AuditPanel() {
   const events = [...db.audit.list()].reverse();
+
+  function exportCSV() {
+    const rows = events.map((e) => [
+      new Date(e.createdAt).toISOString(),
+      e.staffName || e.staffId || "",
+      e.entity,
+      e.action,
+      e.entityId,
+    ]);
+    const csv = [["Timestamp", "User", "Entity", "Action", "Entity ID"], ...rows]
+      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const a = document.createElement("a");
+    a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
+    a.download = `audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+  }
+
   return (
     <>
-      <SectionTitle
-        title="Audit Log"
-        desc="All admin and manager actions are recorded immutably."
-      />
+      <div className="mb-5 border-b border-border pb-4 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="font-display text-lg font-bold">Audit Log</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">All admin and manager actions are recorded immutably.</p>
+        </div>
+        {events.length > 0 && (
+          <button onClick={exportCSV} className="inline-flex items-center gap-1.5 rounded-md border border-input px-3 py-1.5 text-xs hover:bg-accent shrink-0">
+            <Download className="h-3.5 w-3.5" /> Export CSV
+          </button>
+        )}
+      </div>
       {events.length === 0 ? (
         <p className="text-sm text-muted-foreground py-6 text-center">No audit events recorded yet.</p>
       ) : (
@@ -468,7 +588,7 @@ function AuditPanel() {
             {events.slice(0, 50).map((e) => (
               <tr key={e.id}>
                 <td className="py-2.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
-                  {new Date(e.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  {new Date(e.createdAt).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
                 </td>
                 <td className="py-2.5 font-medium">{e.staffName || e.staffId || "—"}</td>
                 <td className="py-2.5">
