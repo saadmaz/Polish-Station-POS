@@ -15,5 +15,7 @@ export default defineConfig({
   ],
   ssr: {
     noExternal: true,
+    // React ships CJS; keep it external so Node loads it natively (avoids "module is not defined")
+    external: ["react", "react-dom", "react/jsx-runtime", "react-dom/server"],
   },
 });
