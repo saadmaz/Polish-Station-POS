@@ -7,7 +7,8 @@ import { toast } from "sonner";
 import { Lock, Unlock, CheckCircle2, XCircle, DollarSign, AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useStore } from "@/lib/store";
-import { useAuth, STAFF } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
+import { useStaffList } from "@/lib/use-staff-list";
 import { cn } from "@/lib/utils";
 import type { Shift } from "@/lib/db";
 
@@ -63,13 +64,14 @@ function DenomCounter({
 function OpenShiftPanel({ onClose }: { onClose: () => void }) {
   const { openShiftFn } = useStore();
   const { staff: activeStaff } = useAuth();
+  const { staffList } = useStaffList();
   const [staffId, setStaffId] = useState(activeStaff?.id ?? "");
   const [denoms, setDenoms] = useState<Record<DenomKey, number>>({} as Record<DenomKey, number>);
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
 
   const balance = calcBalance(denoms);
-  const selectedStaff = STAFF.find((s) => s.id === staffId);
+  const selectedStaff = staffList.find((s) => s.id === staffId);
 
   function handleDenom(k: string, v: number) {
     setDenoms((d) => ({ ...d, [k]: v }));
@@ -100,7 +102,7 @@ function OpenShiftPanel({ onClose }: { onClose: () => void }) {
           onChange={(e) => setStaffId(e.target.value)}
         >
           <option value="">Select…</option>
-          {STAFF.filter((s) => s.role === "Admin" || s.role === "Manager" || s.role === "Advisor").map((s) => (
+          {staffList.filter((s) => s.role === "Admin" || s.role === "Manager" || s.role === "Advisor").map((s) => (
             <option key={s.id} value={s.id}>{s.name} — {s.role}</option>
           ))}
         </select>
@@ -145,6 +147,7 @@ function OpenShiftPanel({ onClose }: { onClose: () => void }) {
 
 function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void }) {
   const { closeShiftFn, expenses: expensesList, invoices: invoicesList } = useStore();
+  const { staffList } = useStaffList();
   const [denoms, setDenoms] = useState<Record<DenomKey, number>>({} as Record<DenomKey, number>);
   const [notes, setNotes] = useState(shift.notes ?? "");
   const [verifiedBy, setVerifiedBy] = useState("");
@@ -250,7 +253,7 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
           onChange={(e) => setVerifiedBy(e.target.value)}
         >
           <option value="">Select manager…</option>
-          {STAFF.filter((s) => s.role === "Admin" || s.role === "Manager").map((s) => (
+          {staffList.filter((s) => s.role === "Admin" || s.role === "Manager").map((s) => (
             <option key={s.id} value={s.name}>{s.name} — {s.role}</option>
           ))}
         </select>

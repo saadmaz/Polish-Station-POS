@@ -14,7 +14,8 @@
     "preview": "vite preview",
     "start": "node start.mjs",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "seed:staff": "tsx scripts/seed-staff.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -55,6 +56,7 @@
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
     "embla-carousel-react": "^8.6.0",
+    "firebase": "^12.15.0",
     "firebase-admin": "^14.1.0",
     "input-otp": "^1.4.2",
     "jspdf": "^4.2.1",
@@ -80,6 +82,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^5.2.0",
+    "dotenv": "^17.4.2",
     "eslint": "^9.32.0",
     "eslint-config-prettier": "^10.1.1",
     "eslint-plugin-prettier": "^5.2.6",
@@ -88,6 +91,7 @@
     "globals": "^15.15.0",
     "nitro": "3.0.260603-beta",
     "prettier": "^3.7.3",
+    "tsx": "^4.22.4",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1",
     "vite": "^8.0.16"

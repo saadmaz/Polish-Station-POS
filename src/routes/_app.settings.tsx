@@ -5,7 +5,7 @@ import { StatusChip } from "@/components/status-chip";
 import { useStore } from "@/lib/store";
 import * as db from "@/lib/db";
 import type { Service, ServiceCategory } from "@/lib/db";
-import { STAFF } from "@/lib/auth";
+import { useStaffList } from "@/lib/use-staff-list";
 import {
   Building2,
   Tag,
@@ -394,6 +394,7 @@ function BookingRulesPanel() {
 }
 
 function AccessPanel() {
+  const { staffList } = useStaffList();
   return (
     <>
       <SectionTitle title="Staff & Access" desc="Roles, PIN policy and session controls." />
@@ -429,7 +430,7 @@ function AccessPanel() {
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
-          {STAFF.map((s) => (
+          {staffList.map((s) => (
             <tr key={s.id}>
               <td className="py-2.5 font-medium">{s.name}</td>
               <td className="py-2.5 text-muted-foreground">{s.role}</td>

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { STAFF } from "@/lib/auth";
 import { useStore } from "@/lib/store";
+import { useStaffList } from "@/lib/use-staff-list";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
 import { Calendar } from "lucide-react";
@@ -12,6 +12,7 @@ export const Route = createFileRoute("/_app/staff")({
 
 function StaffPage() {
   const { jobs, invoices } = useStore();
+  const { staffList } = useStaffList();
   const today = new Date().toISOString().slice(0, 10);
 
   // Real stats per tech name (join by name since staff don't have IDs in jobs yet)
@@ -36,7 +37,7 @@ function StaffPage() {
     <div className="p-6">
       <PageHeader
         title="Staff"
-        subtitle={`${STAFF.length} team members · ${activeTechs.size} currently active`}
+        subtitle={`${staffList.length} team members · ${activeTechs.size} currently active`}
         actions={
           <button className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent">
             <Calendar className="h-4 w-4" /> Schedule
@@ -45,7 +46,7 @@ function StaffPage() {
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
-        {STAFF.map((s) => {
+        {staffList.map((s) => {
           const stats = statsFor(s.name);
           const isActive = activeTechs.has(s.name);
           return (
