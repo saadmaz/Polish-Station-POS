@@ -3,6 +3,7 @@ import { Loader2 } from "lucide-react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { TopBar } from "@/components/top-bar";
 import { useAuth } from "@/lib/auth";
+import { useStore } from "@/lib/store";
 
 export const Route = createFileRoute("/_app")({
   component: AppLayout,
@@ -10,10 +11,10 @@ export const Route = createFileRoute("/_app")({
 
 function AppLayout() {
   const { staff, loading } = useAuth();
+  const { storeLoading } = useStore();
 
-  // Firebase is checking IndexedDB for an existing session — show a spinner
-  // instead of flashing the login page for users who are already logged in.
-  if (loading) {
+  // Show spinner while Firebase checks IndexedDB or Firestore data loads
+  if (loading || storeLoading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />

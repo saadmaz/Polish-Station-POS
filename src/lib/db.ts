@@ -793,7 +793,7 @@ export const purchaseOrders = {
 
 // ─── Notification Settings ───────────────────────────────────────────────────
 
-const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   googleReviewLink: "",
   reminderIntervalDays: 30,
   jobReadyTemplate: DEFAULT_TEMPLATES.jobReady,

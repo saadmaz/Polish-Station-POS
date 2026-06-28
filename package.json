@@ -15,7 +15,8 @@
     "start": "node start.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "seed:staff": "tsx scripts/seed-staff.ts"
+    "seed:staff": "tsx scripts/seed-staff.ts",
+    "seed:data": "tsx scripts/seed-data.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
