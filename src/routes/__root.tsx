@@ -10,7 +10,7 @@ import {
 import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
-import { reportError } from "../lib/error-reporting";
+import { initErrorReporting, reportError } from "../lib/error-reporting";
 import { AuthProvider } from "../lib/auth";
 import { StoreProvider } from "../lib/store";
 import { Toaster } from "../components/ui/sonner";
@@ -125,6 +125,7 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  initErrorReporting();
 
   return (
     <QueryClientProvider client={queryClient}>

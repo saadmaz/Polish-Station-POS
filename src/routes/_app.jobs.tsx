@@ -19,7 +19,7 @@ import {
   ZoomIn,
   MessageCircle,
 } from "lucide-react";
-import type { Job, JobStatus, JobPhoto, QCItem } from "@/lib/db";
+import type { Job, JobStatus, JobPhoto } from "@/lib/db";
 import { downloadQuotationPDF } from "@/lib/pdf";
 import { newId } from "@/lib/db";
 import { buildWALink, fillTemplate } from "@/lib/notifications";

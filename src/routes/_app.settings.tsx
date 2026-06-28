@@ -122,21 +122,6 @@ function SectionTitle({ title, desc }: { title: string; desc: string }) {
   );
 }
 
-function Field({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <label className="block">
-      <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        {label}
-      </span>
-      <input
-        defaultValue={value}
-        className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-      />
-      {hint && <span className="mt-1 block text-[11px] text-muted-foreground">{hint}</span>}
-    </label>
-  );
-}
-
 const BIZ_KEY = "ps_business_info";
 const BIZ_DEFAULTS = {
   name: "Polish Station (Pvt) Ltd",

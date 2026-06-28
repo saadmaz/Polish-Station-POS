@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { TrendingUp, TrendingDown, RefreshCw, AlertTriangle, Activity } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { StatusChip, statusVariant } from "@/components/status-chip";
@@ -29,15 +29,8 @@ function Sparkline({ up }: { up: boolean }) {
 }
 
 function Dashboard() {
-  const { jobs, bookings, inventory, invoices, openShift, todayRevenue, todayJobs, lowStockItems, refreshAll } = useStore();
+  const { jobs, bookings, invoices, openShift, todayRevenue, todayJobs, lowStockItems, refreshAll } = useStore();
   const [shiftOpen, setShiftOpen] = useState(false);
-  const [tick, setTick] = useState(0);
-
-  // Refresh every 30s to update elapsed times
-  useEffect(() => {
-    const t = setInterval(() => { setTick((n) => n + 1); refreshAll(); }, 30_000);
-    return () => clearInterval(t);
-  }, [refreshAll]);
 
   const today = new Date().toISOString().slice(0, 10);
   const todayBookings = bookings.filter((b) => b.date === today);

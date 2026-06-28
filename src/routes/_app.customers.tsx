@@ -5,7 +5,6 @@ import { useStore } from "@/lib/store";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
 import { Search, Plus, Download, X, Pencil, Trash2, Car, ChevronDown, ChevronUp } from "lucide-react";
-import { cn } from "@/lib/utils";
 import type { Customer, Vehicle } from "@/lib/db";
 import { calcTier } from "@/lib/db";
 

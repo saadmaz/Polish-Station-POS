@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
-import { Plus, FileText, Pencil, Trash2, Minus, X, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Minus, X, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { InventoryItem } from "@/lib/db";
 import { newId } from "@/lib/db";

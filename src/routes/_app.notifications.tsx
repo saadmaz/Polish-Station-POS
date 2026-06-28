@@ -94,18 +94,6 @@ function RemindersTab() {
   const [sent, setSent] = useState<Set<string>>(new Set());
   const [preview, setPreview] = useState<string | null>(null);
 
-  function buildMessage(c: { name: string; vehicles: { model: string; plate?: string }[] }) {
-    const vehicle = c.vehicles[0];
-    return fillTemplate(notificationSettingsData.serviceReminderTemplate, {
-      customerName: c.name.split(" ")[0],
-      vehicle: vehicle?.model ?? "your vehicle",
-      plate: vehicle?.plate ?? "",
-      daysSinceVisit: String(daysSince(null)),
-      reviewLink: notificationSettingsData.googleReviewLink,
-      serviceName: "",
-    });
-  }
-
   function handleSent(customerId: string, customerName: string, phone: string) {
     recordNotification({ type: "service_reminder", customerId, jobId: null, customerName, phone });
     setSent((s) => new Set(s).add(customerId));

@@ -2,6 +2,19 @@
 deployment:
   tasks:
     - echo "=== Polish Station POS deploy ==="
+
+    # Use the virtualenv Node.js (v20) for npm commands
+    - export PATH=/home/polishst/nodevenv/pos.polishstation.lk/20/bin:$PATH
+
+    # Install all deps (including devDependencies — needed for Vite build)
+    - npm ci --include=dev
+
+    # Build client + server bundles (reads VITE_FIREBASE_* from .env on server)
+    - npm run build
+
+    - echo "=== Build complete ==="
+
+    # Write Passenger config
     - echo "RemoveHandler .php .php5 .php7 .php8" > /home/polishst/pos.polishstation.lk/.htaccess
     - echo "RemoveType application/x-httpd-php .php" >> /home/polishst/pos.polishstation.lk/.htaccess
     - echo "PassengerEnabled on" >> /home/polishst/pos.polishstation.lk/.htaccess
@@ -11,4 +24,5 @@ deployment:
     - echo "PassengerAppType node" >> /home/polishst/pos.polishstation.lk/.htaccess
     - echo "PassengerStartupFile start.mjs" >> /home/polishst/pos.polishstation.lk/.htaccess
     - chmod 644 /home/polishst/pos.polishstation.lk/.htaccess
-    - echo "=== .htaccess written ==="
+
+    - echo "=== .htaccess written — deploy complete ==="
