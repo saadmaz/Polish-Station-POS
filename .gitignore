@@ -22,6 +22,11 @@ dist-ssr
 .env.*
 !.env.example
 
+# Firebase service account keys — never commit these
+*firebase-adminsdk*.json
+*service-account*.json
+*serviceAccount*.json
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars

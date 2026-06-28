@@ -1,0 +1,132 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuth()            { return request.auth != null; }
+    function role()              { return request.auth.token.role; }
+    function isManagerOrAbove()  { return isAuth() && role() in ["Manager", "Admin"]; }
+    function isAdmin()           { return isAuth() && role() == "Admin"; }
+
+    // ── Staff ─────────────────────────────────────────────────────────────
+    // Reads: own profile OR Manager/Admin. Writes: server-side Admin SDK only.
+    match /staff/{staffId} {
+      allow read: if isAuth() && (request.auth.uid == staffId || isManagerOrAbove());
+      allow write: if false;
+    }
+
+    // Public staff list (name, role, color only — no pinHash)
+    match /staff_public/{staffId} {
+      allow read: if true;   // login screen needs this before auth
+      allow write: if false; // written by Admin SDK seed script only
+    }
+
+    // ── Audit log ─────────────────────────────────────────────────────────
+    // Append-only. No updates or deletes — ever.
+    match /audit/{logId} {
+      allow read:             if isManagerOrAbove();
+      allow create:           if isAuth();
+      allow update, delete:   if false;
+    }
+
+    // ── Settings ──────────────────────────────────────────────────────────
+    match /settings/{settingId} {
+      allow read:  if isAuth();
+      allow write: if isManagerOrAbove();
+    }
+
+    // ── Jobs ──────────────────────────────────────────────────────────────
+    // Technicians can update only their own jobs (status, photos, QC).
+    // Manager+ can create/delete.
+    match /jobs/{jobId} {
+      allow read:   if isAuth();
+      allow create: if isManagerOrAbove();
+      allow update: if isAuth() && (
+        isManagerOrAbove() ||
+        (role() == "Technician" && resource.data.tech == request.auth.token.name)
+      );
+      allow delete: if isAdmin();
+    }
+
+    // ── Invoices ──────────────────────────────────────────────────────────
+    match /invoices/{invoiceId} {
+      allow read:   if isAuth() && role() in ["Cashier", "Advisor", "Manager", "Admin"];
+      allow create: if isAuth() && role() in ["Cashier", "Advisor", "Manager", "Admin"];
+      allow update: if isManagerOrAbove();
+      allow delete: if isAdmin();
+    }
+
+    // ── Shifts ────────────────────────────────────────────────────────────
+    match /shifts/{shiftId} {
+      allow read:   if isAuth();
+      allow create: if isAuth() && role() in ["Cashier", "Manager", "Admin"];
+      allow update: if isAuth() && role() in ["Cashier", "Manager", "Admin"];
+      allow delete: if isAdmin();
+    }
+
+    // ── Expenses ──────────────────────────────────────────────────────────
+    match /expenses/{expenseId} {
+      allow read:   if isAuth();
+      allow create: if isAuth() && role() in ["Cashier", "Manager", "Admin"];
+      allow update: if isManagerOrAbove();
+      allow delete: if isAdmin();
+    }
+
+    // ── Bookings ──────────────────────────────────────────────────────────
+    match /bookings/{bookingId} {
+      allow read:   if isAuth();
+      allow create: if isAuth() && role() in ["Advisor", "Manager", "Admin"];
+      allow update: if isAuth() && role() in ["Advisor", "Manager", "Admin"];
+      allow delete: if isManagerOrAbove();
+    }
+
+    // ── Customers ─────────────────────────────────────────────────────────
+    match /customers/{customerId} {
+      allow read:   if isAuth();
+      allow create: if isAuth() && role() in ["Advisor", "Cashier", "Manager", "Admin"];
+      allow update: if isAuth() && role() in ["Advisor", "Cashier", "Manager", "Admin"];
+      allow delete: if isManagerOrAbove();
+    }
+
+    // ── Services ──────────────────────────────────────────────────────────
+    match /services/{serviceId} {
+      allow read:  if isAuth();
+      allow write: if isManagerOrAbove();
+    }
+
+    // ── Inventory ─────────────────────────────────────────────────────────
+    match /inventory/{itemId} {
+      allow read:   if isAuth();
+      allow create: if isManagerOrAbove();
+      allow update: if isAuth();   // Technicians can adjust stock
+      allow delete: if isManagerOrAbove();
+    }
+
+    // ── Equipment & Maintenance ───────────────────────────────────────────
+    match /equipment/{equipmentId} {
+      allow read:  if isAuth();
+      allow write: if isManagerOrAbove();
+    }
+
+    match /maintenanceLogs/{logId} {
+      allow read:   if isAuth();
+      allow create: if isAuth();
+      allow update: if isManagerOrAbove();
+      allow delete: if isAdmin();
+    }
+
+    // ── Purchase Orders ───────────────────────────────────────────────────
+    match /purchaseOrders/{poId} {
+      allow read:   if isAuth();
+      allow create: if isManagerOrAbove();
+      allow update: if isManagerOrAbove();
+      allow delete: if isAdmin();
+    }
+
+    // ── Notifications ─────────────────────────────────────────────────────
+    match /sentNotifications/{notifId} {
+      allow read:   if isManagerOrAbove();
+      allow create: if isAuth();
+      allow update, delete: if false;
+    }
+  }
+}
