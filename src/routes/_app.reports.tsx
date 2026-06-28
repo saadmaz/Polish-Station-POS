@@ -3,6 +3,11 @@ import { useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Download } from "lucide-react";
 import { useStore } from "@/lib/store";
+import {
+  AreaChart, Area, BarChart, Bar,
+  XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, Legend,
+} from "recharts";
 
 export const Route = createFileRoute("/_app/reports")({
   head: () => ({ meta: [{ title: "Reports — Polish Station OS" }] }),
@@ -19,12 +24,25 @@ function dateFrom(period: Period): string {
   return "1970-01-01";
 }
 
-function Sparkline() {
-  return (
-    <svg viewBox="0 0 80 28" className="h-10 w-24">
-      <polyline points="0,22 10,18 20,20 30,14 40,16 50,8 60,11 70,5 80,7" fill="none" stroke="var(--primary)" strokeWidth="1.5" />
-    </svg>
-  );
+// Build daily revenue/jobs data from invoice + job arrays
+function buildDailyData(
+  invoices: { createdAt: string; total: number; method: string }[],
+  completedJobs: { completedAt?: string | null }[],
+  days: number,
+): { date: string; cash: number; card: number; jobs: number }[] {
+  const result: { date: string; cash: number; card: number; jobs: number }[] = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    const dayInvs = invoices.filter((inv) => inv.createdAt.startsWith(d));
+    const dayJobs = completedJobs.filter((j) => j.completedAt?.startsWith(d)).length;
+    result.push({
+      date: d.slice(5), // MM-DD
+      cash: dayInvs.filter((inv) => inv.method === "Cash").reduce((s, inv) => s + inv.total, 0),
+      card: dayInvs.filter((inv) => inv.method !== "Cash").reduce((s, inv) => s + inv.total, 0),
+      jobs: dayJobs,
+    });
+  }
+  return result;
 }
 
 function Reports() {
@@ -77,6 +95,10 @@ function Reports() {
   const avgVariance = closedShifts.length > 0
     ? Math.round(closedShifts.reduce((s, sh) => s + Math.abs(sh.variance ?? 0), 0) / closedShifts.length)
     : 0;
+
+  // Chart data — last 14 days for "today"/"7d", last 30 for "30d", last 60 for "all"
+  const chartDays = period === "today" ? 14 : period === "7d" ? 14 : period === "30d" ? 30 : 60;
+  const dailyData = buildDailyData(filteredInvoices, completedJobs, chartDays);
 
   const reports = [
     {
@@ -182,6 +204,7 @@ function Reports() {
         }
       />
 
+      {/* Summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {reports.map((r) => (
           <div key={r.name} className="rounded-xl border border-border bg-card p-5 shadow-card hover:shadow-elevated transition-shadow">
@@ -198,15 +221,55 @@ function Reports() {
                 <Download className="h-4 w-4" />
               </button>
             </div>
-            <div className="mt-4 flex items-end justify-between">
-              <div>
-                <div className={`font-display text-2xl font-extrabold ${r.color}`}>{r.metric}</div>
-                <div className="text-[11px] text-muted-foreground font-semibold mt-0.5">{r.delta}</div>
-              </div>
-              <Sparkline />
+            <div className="mt-4">
+              <div className={`font-display text-2xl font-extrabold ${r.color}`}>{r.metric}</div>
+              <div className="text-[11px] text-muted-foreground font-semibold mt-0.5">{r.delta}</div>
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Revenue chart */}
+      <div className="mt-6 rounded-xl border border-border bg-card p-5 shadow-card">
+        <h2 className="font-display font-bold mb-4">Daily Revenue (LKR)</h2>
+        <ResponsiveContainer width="100%" height={240}>
+          <AreaChart data={dailyData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="gCash" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+              </linearGradient>
+              <linearGradient id="gCard" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+            <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} />
+            <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+            <Tooltip
+              formatter={(val: number, name: string) => [`LKR ${val.toLocaleString()}`, name === "cash" ? "Cash" : "Card"]}
+              contentStyle={{ fontSize: 12, borderRadius: 8 }}
+            />
+            <Legend formatter={(v) => v === "cash" ? "Cash" : "Card"} />
+            <Area type="monotone" dataKey="cash" stroke="hsl(var(--primary))" fill="url(#gCash)" strokeWidth={2} dot={false} />
+            <Area type="monotone" dataKey="card" stroke="#6366f1" fill="url(#gCard)" strokeWidth={2} dot={false} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Jobs per day chart */}
+      <div className="mt-4 rounded-xl border border-border bg-card p-5 shadow-card">
+        <h2 className="font-display font-bold mb-4">Completed Jobs per Day</h2>
+        <ResponsiveContainer width="100%" height={160}>
+          <BarChart data={dailyData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+            <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} />
+            <YAxis allowDecimals={false} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+            <Tooltip formatter={(val: number) => [val, "Jobs"]} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+            <Bar dataKey="jobs" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
       </div>
     </div>
   );

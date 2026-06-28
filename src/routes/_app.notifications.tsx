@@ -126,7 +126,7 @@ function RemindersTab() {
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Last Visit</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Days Since</th>
               <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Vehicles</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Send</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Notify</th>
             </tr>
           </thead>
           <tbody>
@@ -168,7 +168,7 @@ function RemindersTab() {
                         <WAButton
                           phone={c.phone}
                           message={msg}
-                          label="WhatsApp"
+                          label="Open in WhatsApp"
                           onSent={() => handleSent(c.id, c.name, c.phone)}
                         />
                         <button
@@ -250,7 +250,7 @@ function ReviewsTab() {
             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Vehicle</th>
             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Service</th>
             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Completed</th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Send</th>
+            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Notify</th>
           </tr>
         </thead>
         <tbody>
@@ -288,7 +288,7 @@ function ReviewsTab() {
                       <WAButton
                         phone={j.phone}
                         message={msg}
-                        label="Send Review Request"
+                        label="Open in WhatsApp"
                         onSent={() => handleSent(j)}
                       />
                       <button

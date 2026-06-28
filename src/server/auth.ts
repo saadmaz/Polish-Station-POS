@@ -72,3 +72,45 @@ export const loginFn = createServerFn({ method: "POST" })
 
     return { success: true, customToken };
   });
+
+// ── PIN Reset (Admin / Manager only) ──────────────────────────────────────────
+
+const ResetPinSchema = z.object({
+  idToken:       z.string().min(1),
+  targetStaffId: z.string().min(1).max(20),
+  newPin:        z.string().length(4).regex(/^\d{4}$/),
+});
+
+export type ResetPinResult =
+  | { success: true }
+  | { success: false; error: "unauthorized" }
+  | { success: false; error: "not_found" };
+
+export const resetPinFn = createServerFn({ method: "POST" })
+  .validator((raw: unknown) => ResetPinSchema.parse(raw))
+  .handler(async ({ data }): Promise<ResetPinResult> => {
+    const { idToken, targetStaffId, newPin } = data;
+
+    // Verify the caller's Firebase ID token and check their role claim
+    let callerRole: string;
+    try {
+      const decoded = await adminAuth.verifyIdToken(idToken);
+      callerRole = (decoded as Record<string, unknown>).role as string;
+    } catch {
+      return { success: false, error: "unauthorized" };
+    }
+
+    if (callerRole !== "Admin" && callerRole !== "Manager") {
+      return { success: false, error: "unauthorized" };
+    }
+
+    const targetRef = adminDb.collection("staff").doc(targetStaffId);
+    if (!(await targetRef.get()).exists) {
+      return { success: false, error: "not_found" };
+    }
+
+    const pinHash = await bcrypt.hash(newPin, 12);
+    await targetRef.update({ pinHash, failCount: 0, lockedUntil: null });
+
+    return { success: true };
+  });

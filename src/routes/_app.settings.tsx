@@ -6,6 +6,10 @@ import { useStore } from "@/lib/store";
 import * as db from "@/lib/db";
 import type { Service, ServiceCategory } from "@/lib/db";
 import { useStaffList } from "@/lib/use-staff-list";
+import { useAuth } from "@/lib/auth";
+import { auth as firebaseAuth } from "@/lib/firebase";
+import { resetPinFn } from "@/server/auth";
+import { toast } from "sonner";
 import {
   Building2,
   Tag,
@@ -18,6 +22,7 @@ import {
   Check,
   X,
   Download,
+  KeyRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -380,38 +385,66 @@ function BookingRulesPanel() {
 
 function AccessPanel() {
   const { staffList } = useStaffList();
+  const { staff: currentStaff } = useAuth();
+  const canResetPins = currentStaff?.role === "Admin" || currentStaff?.role === "Manager";
+
+  const [resetTarget, setResetTarget] = useState<{ id: string; name: string } | null>(null);
+  const [newPin, setNewPin] = useState("");
+  const [resetting, setResetting] = useState(false);
+
+  async function submitReset() {
+    if (!resetTarget || newPin.length !== 4 || !/^\d{4}$/.test(newPin)) return;
+    setResetting(true);
+    try {
+      const idToken = await firebaseAuth.currentUser?.getIdToken(true);
+      if (!idToken) { toast.error("Session expired — please log in again"); return; }
+      const result = await resetPinFn({ data: { idToken, targetStaffId: resetTarget.id, newPin } });
+      if (result.success) {
+        toast.success(`PIN reset for ${resetTarget.name}`);
+        setResetTarget(null);
+        setNewPin("");
+      } else if (result.error === "unauthorized") {
+        toast.error("You don't have permission to reset PINs");
+      } else {
+        toast.error("Staff member not found");
+      }
+    } catch {
+      toast.error("Reset failed — check connection and try again");
+    } finally {
+      setResetting(false);
+    }
+  }
+
   return (
     <>
       <SectionTitle title="Staff & Access" desc="Roles, PIN policy and session controls." />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         <div className="rounded-lg border border-border p-3">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
-            Lockout Threshold
-          </div>
-          <div className="font-display text-xl font-bold">3 fails</div>
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Lockout Threshold</div>
+          <div className="font-display text-xl font-bold">5 fails</div>
         </div>
         <div className="rounded-lg border border-border p-3">
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Auth Type</div>
           <div className="font-mono text-xl font-bold">4-digit PIN</div>
         </div>
         <div className="rounded-lg border border-border p-3">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
-            Session Timeout
-          </div>
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Session Timeout</div>
           <div className="font-display text-xl font-bold">15 min</div>
         </div>
         <div className="rounded-lg border border-border p-3">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Lockout</div>
-          <div className="font-display text-xl font-bold">3 fails · 60s</div>
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Lockout Duration</div>
+          <div className="font-display text-xl font-bold">5 min</div>
         </div>
       </div>
+
       <table className="w-full text-sm">
         <thead className="text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
           <tr>
             <th className="text-left py-2">Name</th>
             <th className="text-left py-2">Role</th>
-            <th className="text-left py-2">Password</th>
+            <th className="text-left py-2">PIN</th>
             <th className="text-left py-2">Status</th>
+            {canResetPins && <th className="text-left py-2">Actions</th>}
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
@@ -419,14 +452,62 @@ function AccessPanel() {
             <tr key={s.id}>
               <td className="py-2.5 font-medium">{s.name}</td>
               <td className="py-2.5 text-muted-foreground">{s.role}</td>
-              <td className="py-2.5 font-mono">●●●●●</td>
-              <td className="py-2.5">
-                <StatusChip variant="success">Active</StatusChip>
-              </td>
+              <td className="py-2.5 font-mono text-muted-foreground">●●●●</td>
+              <td className="py-2.5"><StatusChip variant="success">Active</StatusChip></td>
+              {canResetPins && (
+                <td className="py-2.5">
+                  <button
+                    onClick={() => { setResetTarget({ id: s.id, name: s.name }); setNewPin(""); }}
+                    className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted"
+                  >
+                    <KeyRound className="h-3 w-3" /> Reset PIN
+                  </button>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
       </table>
+
+      {/* PIN reset modal */}
+      {resetTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-sm rounded-xl border border-border bg-background p-6 shadow-xl">
+            <h3 className="font-display text-base font-bold mb-1">Reset PIN</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Set a new 4-digit PIN for <strong>{resetTarget.name}</strong>. They will use this PIN immediately.
+            </p>
+            <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+              New PIN
+            </label>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              value={newPin}
+              onChange={(e) => setNewPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              placeholder="●●●●"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-center font-mono text-xl tracking-widest outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 mb-4"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={submitReset}
+                disabled={newPin.length !== 4 || resetting}
+                className="flex-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+              >
+                {resetting ? "Resetting…" : "Reset PIN"}
+              </button>
+              <button
+                onClick={() => { setResetTarget(null); setNewPin(""); }}
+                className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
