@@ -1,0 +1,38 @@
+name: Deploy Firestore/Storage rules
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "firestore.rules"
+      - "firestore.indexes.json"
+      - "storage.rules"
+      - "firebase.json"
+
+jobs:
+  deploy-rules:
+    name: firebase deploy --only firestore,storage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Write service account credentials
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}' > /tmp/gcp-sa.json
+
+      - name: Deploy rules and indexes
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp-sa.json
+        run: |
+          npx firebase-tools@latest deploy \
+            --only firestore:rules,firestore:indexes,storage \
+            --project ${{ secrets.FIREBASE_PROJECT_ID }} \
+            --non-interactive
+
+      - name: Clean up credentials
+        if: always()
+        run: rm -f /tmp/gcp-sa.json

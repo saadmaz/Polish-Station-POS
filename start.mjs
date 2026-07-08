@@ -1,3 +1,8 @@
+// Must run before anything else: Passenger spawns this file directly (no shell env sourcing),
+// so FIREBASE_* / VITE_SENTRY_DSN must be loaded from .env here or firebase-admin.ts (imported
+// inside the dynamic SERVER_ENTRY import below) will see undefined credentials at request time.
+import "dotenv/config";
+
 import { createServer } from "http";
 import { createReadStream, existsSync, statSync, unlinkSync } from "fs";
 import { join, extname } from "path";
