@@ -48,26 +48,33 @@ jobs:
           mkdir -p deploy/tmp
           date > deploy/tmp/restart.txt
 
-      # .htaccess is deliberately NOT uploaded here. LiteSpeed only trusts a
-      # .htaccess owned by the vhost's own account user — files written by
-      # this FTP sub-account land with a different owner, which makes
-      # LiteSpeed refuse to read it ("Permission denied" despite 644 perms).
-      # It's a static file that rarely changes; it's maintained by hand
-      # directly in cPanel File Manager instead. See DEPLOYMENT.md.
+      # .htaccess is deliberately NOT part of ./deploy/ and never uploaded here.
+      # LiteSpeed only trusts a .htaccess owned by the vhost's own account user —
+      # files written by this FTP sub-account land with a different owner, which
+      # makes LiteSpeed refuse to read it ("Permission denied" despite 644 perms).
+      # It's a static file that rarely changes; it's maintained by hand directly
+      # in cPanel File Manager instead. See DEPLOYMENT.md.
       #
-      # local-dir contains only dist/, node_modules/, start.mjs, package.json,
-      # tmp/restart.txt — never .env, which lives only on the server and is
-      # never part of this repo or this CI job.
-      - name: Deploy over FTPS
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ secrets.FTP_HOST }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          port: 21
-          protocol: ftps
-          local-dir: ./deploy/
-          server-dir: /home/polishst/pos.polishstation.lk/
-          dangerous-clean-slate: false
-          exclude: |
-            .htaccess
+      # Using lftp instead of a Node-based FTP action: basic-ftp (which backs
+      # several popular FTP GitHub Actions) hangs indefinitely on the data
+      # connection against this server — it enforces TLS session reuse between
+      # the control and data channels, which basic-ftp doesn't handle. lftp
+      # (like curl, which was used to verify these credentials manually) does.
+      - name: Deploy over FTPS with lftp
+        timeout-minutes: 8
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y lftp
+          lftp -c "
+            set ssl:verify-certificate no;
+            set ftp:ssl-force true;
+            set ftp:ssl-protect-data true;
+            set net:timeout 20;
+            set net:max-retries 2;
+            set net:reconnect-interval-base 5;
+            open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
+            mirror -R --verbose ./deploy/ /home/polishst/pos.polishstation.lk/
+          "
