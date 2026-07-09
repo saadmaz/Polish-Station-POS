@@ -1,4 +1,4 @@
-name: Deploy to cPanel
+name: Build and deploy via FTP
 
 on:
   push:
@@ -6,8 +6,8 @@ on:
       - main
 
 jobs:
-  validate:
-    name: Build check
+  build-and-deploy:
+    name: Build, package, and FTP deploy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,27 +18,66 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --include=dev
 
       - name: Type check
         run: npx tsc --noEmit
 
       - name: Build
         env:
-          VITE_FIREBASE_API_KEY:            ${{ secrets.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_AUTH_DOMAIN:        ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
-          VITE_FIREBASE_PROJECT_ID:         ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
-          VITE_FIREBASE_STORAGE_BUCKET:     ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
           VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-          VITE_FIREBASE_APP_ID:             ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
         run: npm run build
 
-  deploy:
-    name: Trigger cPanel pull
-    runs-on: ubuntu-latest
-    needs: validate
-    steps:
-      - name: Trigger cPanel Git Pull
+      # Vite/TypeScript/ESLint etc. are no longer needed once the build is done —
+      # dropping them keeps the FTP upload (and the server's disk usage) small.
+      - name: Prune to production dependencies only
+        run: npm prune --omit=dev
+
+      - name: Assemble deploy package
         run: |
-          curl -H "Authorization: cpanel ${{ secrets.CPANEL_USERNAME }}:${{ secrets.CPANEL_TOKEN }}" \
-          "https://${{ secrets.CPANEL_DOMAIN }}:2083/execute/VersionControl/update?repository_root=/home/${{ secrets.CPANEL_USERNAME }}/pos.polishstation.lk"
+          mkdir -p deploy
+          cp -r dist deploy/dist
+          cp -r node_modules deploy/node_modules
+          cp start.mjs deploy/start.mjs
+          cp package.json deploy/package.json
+          mkdir -p deploy/tmp
+          date > deploy/tmp/restart.txt
+          cat > deploy/.htaccess <<'EOF'
+          RemoveHandler .php .php5 .php7 .php8
+          RemoveType application/x-httpd-php .php
+          PassengerEnabled on
+          PassengerBaseURI /
+          PassengerNodejs /home/polishst/nodevenv/pos.polishstation.lk/20/bin/node
+          PassengerAppRoot /home/polishst/pos.polishstation.lk
+          PassengerAppType node
+          PassengerStartupFile start.mjs
+          <IfModule mod_deflate.c>
+            AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json application/xml image/svg+xml
+          </IfModule>
+          <IfModule mod_expires.c>
+            ExpiresActive on
+            ExpiresByType application/javascript "access plus 1 year"
+            ExpiresByType text/css "access plus 1 year"
+            ExpiresByType image/svg+xml "access plus 1 year"
+          </IfModule>
+          EOF
+
+      # local-dir contains only dist/, node_modules/, start.mjs, package.json,
+      # .htaccess, tmp/restart.txt — never .env, which lives only on the server
+      # and is never part of this repo or this CI job.
+      - name: Deploy over FTPS
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: 21
+          protocol: ftps
+          local-dir: ./deploy/
+          server-dir: ./pos.polishstation.lk/
+          dangerous-clean-slate: false
