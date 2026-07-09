@@ -48,6 +48,16 @@ jobs:
           mkdir -p deploy/tmp
           date > deploy/tmp/restart.txt
 
+          # node_modules has thousands of small files (source maps, type defs,
+          # docs, test fixtures) that Node never touches at runtime — FTP has
+          # heavy per-file overhead, so stripping these meaningfully shortens
+          # the upload. .bin is dropped too: those are CLI symlinks the FTP
+          # server can't create anyway (SITE SYMLINK unsupported) and aren't
+          # needed to run the already-built app.
+          find deploy/node_modules -type d \( -name test -o -name tests -o -name __tests__ -o -name .bin -o -name docs -o -name example -o -name examples \) -prune -exec rm -rf {} +
+          find deploy/node_modules -type f \( -name "*.map" -o -name "*.d.ts" -o -name "*.d.mts" -o -name "*.d.cts" -o -name "*.md" -o -name "LICENSE*" -o -name "license*" -o -name "README*" -o -name "CHANGELOG*" \) -delete
+          echo "Deploy payload size:" && du -sh deploy
+
       # .htaccess is deliberately NOT part of ./deploy/ and never uploaded here.
       # LiteSpeed only trusts a .htaccess owned by the vhost's own account user —
       # files written by this FTP sub-account land with a different owner, which
@@ -61,7 +71,7 @@ jobs:
       # the control and data channels, which basic-ftp doesn't handle. lftp
       # (like curl, which was used to verify these credentials manually) does.
       - name: Deploy over FTPS with lftp
-        timeout-minutes: 8
+        timeout-minutes: 15
         env:
           FTP_HOST: ${{ secrets.FTP_HOST }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
@@ -75,6 +85,7 @@ jobs:
             set net:timeout 20;
             set net:max-retries 2;
             set net:reconnect-interval-base 5;
+            set mirror:parallel-transfer-count 15;
             open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
-            mirror -R --verbose ./deploy/ /home/polishst/pos.polishstation.lk/
+            mirror -R --parallel=15 ./deploy/ /home/polishst/pos.polishstation.lk/
           "
