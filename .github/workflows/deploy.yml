@@ -79,5 +79,5 @@ jobs:
           port: 21
           protocol: ftps
           local-dir: ./deploy/
-          server-dir: ./pos.polishstation.lk/
+          server-dir: /home/polishst/pos.polishstation.lk/
           dangerous-clean-slate: false
