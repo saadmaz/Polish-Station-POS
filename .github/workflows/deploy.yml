@@ -70,22 +70,65 @@ jobs:
       # connection against this server — it enforces TLS session reuse between
       # the control and data channels, which basic-ftp doesn't handle. lftp
       # (like curl, which was used to verify these credentials manually) does.
-      - name: Deploy over FTPS with lftp
-        timeout-minutes: 30
+      - name: Install lftp
+        run: sudo apt-get update -y && sudo apt-get install -y lftp
+
+      # node_modules is tens of thousands of files — even pruned, that's the one
+      # part of the payload that can genuinely take a long time over FTPS. Most
+      # pushes only change app code, not dependencies, so re-uploading the whole
+      # tree every single time was the actual cause of every prior timeout here
+      # (see git history). This compares package-lock.json's hash against a
+      # marker file left on the server by the last successful dependency upload,
+      # so the expensive mirror below only runs when dependencies actually changed
+      # (or on the very first deploy, when the marker doesn't exist yet).
+      - name: Check whether server dependencies are up to date
+        id: deps-check
+        timeout-minutes: 3
         env:
           FTP_HOST: ${{ secrets.FTP_HOST }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
         run: |
-          sudo apt-get update -y && sudo apt-get install -y lftp
-          # --ignore-time: npm ci gives every node_modules file a fresh mtime on
-          # every run, so date-based comparison (lftp's default) makes mirror
-          # think all ~50k files changed and re-upload the entire tree every
-          # single deploy — which is what was actually blowing the timeout, not
-          # parallelism or file count. Comparing by size instead means unchanged
-          # dependencies get skipped and only real changes (dist/ output, or
-          # deps that actually changed) get transferred.
+          REMOTE_DIR=/home/polishst/pos.polishstation.lk
+          LOCAL_HASH=$(sha256sum package-lock.json | cut -d' ' -f1)
+          echo "local_hash=$LOCAL_HASH" >> "$GITHUB_OUTPUT"
+
+          REMOTE_HASH=$(lftp -c "
+            set ssl:verify-certificate no;
+            set ftp:ssl-force true;
+            set ftp:ssl-protect-data true;
+            set net:timeout 20;
+            set net:max-retries 1;
+            open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
+            cat $REMOTE_DIR/.deps-hash
+          " 2>/dev/null || true)
+
+          if [ "$REMOTE_HASH" = "$LOCAL_HASH" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Dependencies unchanged since last deploy ($LOCAL_HASH) — skipping node_modules upload."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Dependencies changed or no marker found (remote='$REMOTE_HASH', local='$LOCAL_HASH') — full node_modules upload needed."
+          fi
+
+      - name: Upload node_modules (only when dependencies changed)
+        if: steps.deps-check.outputs.changed == 'true'
+        timeout-minutes: 60
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          REMOTE_DIR=/home/polishst/pos.polishstation.lk
+          echo "${{ steps.deps-check.outputs.local_hash }}" > deploy/.deps-hash
+          # --ignore-time: npm ci stamps every file with a fresh mtime on every
+          # run, so date-based comparison (lftp's default) would think all files
+          # changed. Comparing by size means files that already made it to the
+          # server (including from a previous timed-out attempt) get skipped.
+          # cmd:fail-exit stops the script if mirror fails, so the marker file
+          # only gets written after a genuinely complete upload.
           lftp -c "
+            set cmd:fail-exit yes;
             set ssl:verify-certificate no;
             set ftp:ssl-force true;
             set ftp:ssl-protect-data true;
@@ -94,5 +137,33 @@ jobs:
             set net:reconnect-interval-base 5;
             set mirror:parallel-transfer-count 4;
             open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
-            mirror -R --ignore-time --parallel=4 ./deploy/ /home/polishst/pos.polishstation.lk/
+            mirror -R --ignore-time --parallel=4 ./deploy/node_modules/ $REMOTE_DIR/node_modules/;
+            put ./deploy/.deps-hash -o $REMOTE_DIR/.deps-hash;
           "
+
+      - name: Upload app files
+        timeout-minutes: 10
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          REMOTE_DIR=/home/polishst/pos.polishstation.lk
+          lftp -c "
+            set cmd:fail-exit yes;
+            set ssl:verify-certificate no;
+            set ftp:ssl-force true;
+            set ftp:ssl-protect-data true;
+            set net:timeout 20;
+            set net:max-retries 2;
+            set net:reconnect-interval-base 5;
+            set mirror:parallel-transfer-count 4;
+            open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
+            mirror -R --ignore-time --parallel=4 ./deploy/dist/ $REMOTE_DIR/dist/;
+            mirror -R ./deploy/tmp/ $REMOTE_DIR/tmp/;
+            put ./deploy/start.mjs -o $REMOTE_DIR/start.mjs;
+            put ./deploy/package.json -o $REMOTE_DIR/package.json;
+          "
+          # (tmp/ deliberately skips --ignore-time above: restart.txt's fresh mtime
+          # every run is what tells Passenger to restart the app, so it must always
+          # re-upload rather than get skipped on a size match.)
