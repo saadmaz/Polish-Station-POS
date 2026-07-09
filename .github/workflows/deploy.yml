@@ -85,7 +85,7 @@ jobs:
             set net:timeout 20;
             set net:max-retries 2;
             set net:reconnect-interval-base 5;
-            set mirror:parallel-transfer-count 15;
+            set mirror:parallel-transfer-count 4;
             open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
-            mirror -R --parallel=15 ./deploy/ /home/polishst/pos.polishstation.lk/
+            mirror -R --parallel=4 ./deploy/ /home/polishst/pos.polishstation.lk/
           "
