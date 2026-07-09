@@ -47,29 +47,17 @@ jobs:
           cp package.json deploy/package.json
           mkdir -p deploy/tmp
           date > deploy/tmp/restart.txt
-          cat > deploy/.htaccess <<'EOF'
-          RemoveHandler .php .php5 .php7 .php8
-          RemoveType application/x-httpd-php .php
-          PassengerEnabled on
-          PassengerBaseURI /
-          PassengerNodejs /home/polishst/nodevenv/pos.polishstation.lk/20/bin/node
-          PassengerAppRoot /home/polishst/pos.polishstation.lk
-          PassengerAppType node
-          PassengerStartupFile start.mjs
-          <IfModule mod_deflate.c>
-            AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json application/xml image/svg+xml
-          </IfModule>
-          <IfModule mod_expires.c>
-            ExpiresActive on
-            ExpiresByType application/javascript "access plus 1 year"
-            ExpiresByType text/css "access plus 1 year"
-            ExpiresByType image/svg+xml "access plus 1 year"
-          </IfModule>
-          EOF
 
+      # .htaccess is deliberately NOT uploaded here. LiteSpeed only trusts a
+      # .htaccess owned by the vhost's own account user — files written by
+      # this FTP sub-account land with a different owner, which makes
+      # LiteSpeed refuse to read it ("Permission denied" despite 644 perms).
+      # It's a static file that rarely changes; it's maintained by hand
+      # directly in cPanel File Manager instead. See DEPLOYMENT.md.
+      #
       # local-dir contains only dist/, node_modules/, start.mjs, package.json,
-      # .htaccess, tmp/restart.txt — never .env, which lives only on the server
-      # and is never part of this repo or this CI job.
+      # tmp/restart.txt — never .env, which lives only on the server and is
+      # never part of this repo or this CI job.
       - name: Deploy over FTPS
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
@@ -81,3 +69,5 @@ jobs:
           local-dir: ./deploy/
           server-dir: /home/polishst/pos.polishstation.lk/
           dangerous-clean-slate: false
+          exclude: |
+            .htaccess
