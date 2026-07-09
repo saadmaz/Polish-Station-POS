@@ -71,13 +71,20 @@ jobs:
       # the control and data channels, which basic-ftp doesn't handle. lftp
       # (like curl, which was used to verify these credentials manually) does.
       - name: Deploy over FTPS with lftp
-        timeout-minutes: 15
+        timeout-minutes: 30
         env:
           FTP_HOST: ${{ secrets.FTP_HOST }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
         run: |
           sudo apt-get update -y && sudo apt-get install -y lftp
+          # --ignore-time: npm ci gives every node_modules file a fresh mtime on
+          # every run, so date-based comparison (lftp's default) makes mirror
+          # think all ~50k files changed and re-upload the entire tree every
+          # single deploy — which is what was actually blowing the timeout, not
+          # parallelism or file count. Comparing by size instead means unchanged
+          # dependencies get skipped and only real changes (dist/ output, or
+          # deps that actually changed) get transferred.
           lftp -c "
             set ssl:verify-certificate no;
             set ftp:ssl-force true;
@@ -87,5 +94,5 @@ jobs:
             set net:reconnect-interval-base 5;
             set mirror:parallel-transfer-count 4;
             open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
-            mirror -R --parallel=4 ./deploy/ /home/polishst/pos.polishstation.lk/
+            mirror -R --ignore-time --parallel=4 ./deploy/ /home/polishst/pos.polishstation.lk/
           "
