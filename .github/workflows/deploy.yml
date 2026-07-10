@@ -107,9 +107,21 @@ jobs:
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
         run: |
           REMOTE_DIR=/home/polishst/pos.polishstation.lk
-          # Single lftp session for all diagnostics: the host's brute-force
+          # Single lftp session for everything: the host's brute-force
           # protection counts FTP logins, and multiple sessions per run got the
           # CI temporarily blocked with "530 Login authentication failed".
+          #
+          # Hygiene fixes (idempotent — errors on already-fixed state are fine,
+          # cmd:fail-exit stays off here):
+          # - chmod 755 app root: it was 700, which stopped LiteSpeed from even
+          #   entering the directory — the actual cause of the site-wide 503s
+          #   and every "[HTAccess] ... Permission denied" in the server log.
+          # - mv htaccess -> .htaccess: the Passenger config that binds the
+          #   domain to this Node app was uploaded WITHOUT the leading dot at
+          #   some point, so it never took effect. (cat first so its content is
+          #   visible in this log; on later runs both commands no-op with an
+          #   error once the rename has happened.)
+          # - chmod 600 .env: it was 644 (world-readable credentials).
           lftp -c "
             set ssl:verify-certificate no;
             set ftp:ssl-force true;
@@ -117,15 +129,18 @@ jobs:
             set net:timeout 20;
             set net:max-retries 1;
             open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
-            !echo '=== App root listing (perms/owner matter for .htaccess) ===';
+            chmod 755 $REMOTE_DIR;
+            chmod 600 $REMOTE_DIR/.env;
+            !echo '=== htaccess content (pre-rename, if present) ===';
+            cat $REMOTE_DIR/htaccess;
+            mv $REMOTE_DIR/htaccess $REMOTE_DIR/.htaccess;
+            !echo '=== App root listing ===';
             cls -la $REMOTE_DIR/;
-            !echo '=== Passenger/app error log (stderr.log) tail ===';
-            !touch /tmp/stderr.log; get $REMOTE_DIR/stderr.log -o /tmp/stderr.log;
-            !echo '=== passenger.log (if present) ===';
-            !touch /tmp/passenger.log; get $REMOTE_DIR/passenger.log -o /tmp/passenger.log;
+            !echo '=== dist/server listing (confirm bundled server.js arrived) ===';
+            cls -la $REMOTE_DIR/dist/server/;
+            !echo '=== app error log (stderr.log), if the app has crashed ===';
+            cat $REMOTE_DIR/stderr.log;
           " 2>&1 || true
-          tail -60 /tmp/stderr.log 2>/dev/null || true
-          tail -40 /tmp/passenger.log 2>/dev/null || true
           echo "=== Live site check ==="
           for host in pos.polishstation.lk www.pos.polishstation.lk; do
             code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "https://$host/" || echo "ERR")
