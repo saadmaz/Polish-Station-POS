@@ -16,3 +16,9 @@ if (getApps().length === 0) {
 
 export const adminAuth = getAuth();
 export const adminDb   = getFirestore();
+
+// The shared host (cPanel/LiteSpeed) breaks long-lived gRPC/HTTP2 outbound
+// connections, which the Firestore SDK uses by default — every server-side
+// read stalled 40-90s in silent gRPC retries and usually died as a 408.
+// REST mode makes each read an ordinary HTTPS request, which the host allows.
+adminDb.settings({ preferRest: true });

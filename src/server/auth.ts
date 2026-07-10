@@ -15,13 +15,25 @@ export type LoginResult =
   | { success: false; error: "locked";   remainingSec: number }
   | { success: false; error: "inactive" };
 
+// Fail fast instead of letting a stalled Firestore connection hold the login
+// request until the web server's own timeout (LiteSpeed 408s at ~60s+, and
+// the user just sees a frozen PIN pad the whole time).
+function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${what} timed out after ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
 export const loginFn = createServerFn({ method: "POST" })
   .validator((raw: unknown) => LoginSchema.parse(raw))
   .handler(async ({ data }): Promise<LoginResult> => {
     const { staffId, pin } = data;
 
     const staffRef = adminDb.collection("staff").doc(staffId);
-    const snap     = await staffRef.get();
+    const snap     = await withTimeout(staffRef.get(), 10_000, "staff lookup");
 
     if (!snap.exists) {
       // Constant-time response to prevent user enumeration via timing
