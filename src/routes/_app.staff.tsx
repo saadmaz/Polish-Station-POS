@@ -24,9 +24,12 @@ function StaffPage() {
       return job?.tech === name && i.createdAt.startsWith(today);
     });
     const revenue = techInvs.reduce((s, i) => s + i.total, 0);
-    const onTime = doneJobs.length > 0
-      ? Math.round((doneJobs.filter((j) => j.elapsedMin <= j.estimateMin).length / doneJobs.length) * 100)
-      : 100;
+    const onTime =
+      doneJobs.length > 0
+        ? Math.round(
+            (doneJobs.filter((j) => j.elapsedMin <= j.estimateMin).length / doneJobs.length) * 100,
+          )
+        : 100;
     return { jobsToday: techJobs.length, revenue, onTime };
   }
 
@@ -50,17 +53,25 @@ function StaffPage() {
           const stats = statsFor(s.name);
           const isActive = activeTechs.has(s.name);
           return (
-            <div key={s.id} className="rounded-xl border border-border bg-card p-4 shadow-card hover:shadow-elevated transition-shadow">
+            <div
+              key={s.id}
+              className="rounded-xl border border-border bg-card p-4 shadow-card hover:shadow-elevated transition-shadow"
+            >
               <div className="flex items-center gap-3">
                 <div
                   className="grid h-12 w-12 place-items-center rounded-full font-bold text-primary-foreground"
                   style={{ background: s.color }}
                 >
-                  {s.name.split(" ").map((p) => p[0]).join("")}
+                  {s.name
+                    .split(" ")
+                    .map((p) => p[0])
+                    .join("")}
                 </div>
                 <div className="flex-1">
                   <div className="font-display font-bold">{s.name}</div>
-                  <div className="text-xs text-muted-foreground uppercase tracking-wider">{s.role}</div>
+                  <div className="text-xs text-muted-foreground uppercase tracking-wider">
+                    {s.role}
+                  </div>
                 </div>
                 <StatusChip variant={isActive ? "success" : "neutral"}>
                   {isActive ? "Active" : "Idle"}
@@ -68,11 +79,16 @@ function StaffPage() {
               </div>
               <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                 <Stat label="Jobs Today" value={stats.jobsToday} />
-                <Stat label="Revenue" value={stats.revenue > 0 ? `LKR ${Math.round(stats.revenue / 1000)}k` : "—"} />
+                <Stat
+                  label="Revenue"
+                  value={stats.revenue > 0 ? `LKR ${Math.round(stats.revenue / 1000)}k` : "—"}
+                />
                 <Stat label="On-time" value={`${stats.onTime}%`} />
               </div>
               <div className="mt-3 flex justify-between text-[11px] text-muted-foreground border-t border-border pt-3">
-                <span>PIN · <span className="font-mono">●●●●●</span></span>
+                <span>
+                  User · <span className="font-mono">{s.username || "—"}</span>
+                </span>
                 <span>Shift · 08:00 – 18:00</span>
               </div>
             </div>
@@ -92,10 +108,18 @@ function StaffPage() {
                 <span className="font-mono text-[11px] text-muted-foreground w-16">{j.id}</span>
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold truncate">{j.customerName}</div>
-                  <div className="text-xs text-muted-foreground">{j.serviceName} · {j.bay}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {j.serviceName} · {j.bay}
+                  </div>
                 </div>
                 <span className="text-muted-foreground">{j.tech}</span>
-                <span className={j.elapsedMin > j.estimateMin ? "font-mono font-bold text-primary" : "font-mono text-muted-foreground"}>
+                <span
+                  className={
+                    j.elapsedMin > j.estimateMin
+                      ? "font-mono font-bold text-primary"
+                      : "font-mono text-muted-foreground"
+                  }
+                >
                   {j.elapsedMin}m / {j.estimateMin}m
                 </span>
               </div>

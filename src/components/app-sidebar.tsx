@@ -18,46 +18,44 @@ import {
   Bell,
 } from "lucide-react";
 import { useState } from "react";
-import { useAuth, type StaffRole } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
+import { MODULES, type ModuleKey } from "@/lib/permissions";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
-interface NavItem {
-  to: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  roles: StaffRole[]; // empty = all roles
-}
-
-const NAV: NavItem[] = [
-  { to: "/dashboard", label: "Dashboard",    icon: LayoutDashboard, roles: [] },
-  { to: "/bookings",  label: "Bookings",     icon: Calendar,        roles: [] },
-  { to: "/jobs",      label: "Active Jobs",  icon: Wrench,          roles: [] },
-  { to: "/bay-board", label: "Bay Board",    icon: MonitorPlay,     roles: [] },
-  { to: "/customers", label: "Customers",    icon: Users,           roles: [] },
-  { to: "/inventory",       label: "Inventory",        icon: Boxes,         roles: ["Admin", "Manager", "Advisor"] },
-  { to: "/equipment",      label: "Equipment",        icon: Hammer,        roles: ["Admin", "Manager", "Advisor"] },
-  { to: "/purchase-orders",  label: "Purchase Orders",   icon: ShoppingCart, roles: ["Admin", "Manager"] },
-  { to: "/notifications",    label: "Notifications",     icon: Bell,         roles: ["Admin", "Manager", "Advisor"] },
-  { to: "/pos",              label: "POS / Checkout",    icon: CreditCard,   roles: ["Admin", "Manager", "Cashier", "Advisor"] },
-  { to: "/staff",     label: "Staff",        icon: UserCog,         roles: ["Admin", "Manager"] },
-  { to: "/reports",   label: "Reports",      icon: BarChart3,       roles: ["Admin", "Manager"] },
-  { to: "/settings",  label: "Settings",     icon: Settings,        roles: ["Admin"] },
-];
+// Visibility comes from the user's `perms` claim, not from the role — a
+// SuperAdmin grants modules per person. MODULES is the ordering and the
+// source of the label and route; this map only supplies the icon.
+const ICONS: Record<ModuleKey, React.ComponentType<{ className?: string }>> = {
+  dashboard: LayoutDashboard,
+  bookings: Calendar,
+  jobs: Wrench,
+  "bay-board": MonitorPlay,
+  customers: Users,
+  inventory: Boxes,
+  equipment: Hammer,
+  "purchase-orders": ShoppingCart,
+  notifications: Bell,
+  pos: CreditCard,
+  staff: UserCog,
+  reports: BarChart3,
+  settings: Settings,
+};
 
 export function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { staff, logout } = useAuth();
+  const { staff, logout, can } = useAuth();
   const navigate = useNavigate();
   const { customersNeedingReminder, jobsNeedingReview } = useStore();
 
-  const role = staff?.role;
   const notificationCount = customersNeedingReminder.length + jobsNeedingReview.length;
 
-  const visibleNav = NAV.filter(
-    (item) => item.roles.length === 0 || (role && item.roles.includes(role)),
-  );
+  const visibleNav = MODULES.filter((m) => can(m.key)).map((m) => ({
+    to: m.route,
+    label: m.label,
+    icon: ICONS[m.key],
+  }));
 
   return (
     <aside

@@ -2,22 +2,51 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ── Identity ──────────────────────────────────────────────────────────
+    // `role` and `perms` are custom-token claims minted by loginFn. They are
+    // re-minted on every login, and updateStaffFn revokes refresh tokens so a
+    // demoted user cannot keep trading on a stale claim.
     function isAuth()            { return request.auth != null; }
     function role()              { return request.auth.token.role; }
-    function isManagerOrAbove()  { return isAuth() && role() in ["Manager", "Admin"]; }
-    function isAdmin()           { return isAuth() && role() == "Admin"; }
+
+    // ── Seniority ─────────────────────────────────────────────────────────
+    // Defined once so a new tier propagates everywhere. Never restate these
+    // role names inline — write `isManagerOrAbove() || role() in [peers]`.
+    function isSuperAdmin()      { return isAuth() && role() == "SuperAdmin"; }
+    function isAdmin()           { return isAuth() && role() in ["Admin", "SuperAdmin"]; }
+    function isManagerOrAbove()  { return isAuth() && role() in ["Manager", "Admin", "SuperAdmin"]; }
+
+    // ── Module access ─────────────────────────────────────────────────────
+    // A SuperAdmin implicitly holds every module, so revoking one can never
+    // lock the business out of its own user management.
+    function hasModule(m) {
+      return isAuth() && (
+        isSuperAdmin() ||
+        (request.auth.token.perms is list && m in request.auth.token.perms)
+      );
+    }
 
     // ── Staff ─────────────────────────────────────────────────────────────
-    // Reads: own profile OR Manager/Admin. Writes: server-side Admin SDK only.
+    // Reads: own profile OR Manager/Admin. Writes: server-side Admin SDK only,
+    // which bypasses these rules entirely (see src/server/staff.ts).
     match /staff/{staffId} {
       allow read: if isAuth() && (request.auth.uid == staffId || isManagerOrAbove());
       allow write: if false;
     }
 
-    // Public staff list (name, role, color only — no pinHash)
+    // Public staff list (name, role, color, active — never pinHash).
+    // Authenticated reads only: the login screen no longer needs the roster,
+    // so the employee directory is not exposed to the internet.
     match /staff_public/{staffId} {
-      allow read: if true;   // login screen needs this before auth
-      allow write: if false; // written by Admin SDK seed script only
+      allow read:  if isAuth();
+      allow write: if false; // Admin SDK only
+    }
+
+    // Username → staffId index. Resolved server-side by the Admin SDK during
+    // login; no client ever needs it, and exposing it would re-open the
+    // employee enumeration hole that staff_public used to have.
+    match /usernames/{username} {
+      allow read, write: if false;
     }
 
     // ── Audit log ─────────────────────────────────────────────────────────
@@ -29,14 +58,15 @@ service cloud.firestore {
     }
 
     // ── Settings ──────────────────────────────────────────────────────────
+    // Every signed-in user reads settings (tax rate, booking rules) regardless
+    // of module access — the POS and booking flows depend on them.
     match /settings/{settingId} {
       allow read:  if isAuth();
-      allow write: if isManagerOrAbove();
+      allow write: if isManagerOrAbove() && hasModule("settings");
     }
 
     // ── Jobs ──────────────────────────────────────────────────────────────
     // Technicians can update only their own jobs (status, photos, QC).
-    // Manager+ can create/delete.
     match /jobs/{jobId} {
       allow read:   if isAuth();
       allow create: if isManagerOrAbove();
@@ -49,83 +79,85 @@ service cloud.firestore {
 
     // ── Invoices ──────────────────────────────────────────────────────────
     match /invoices/{invoiceId} {
-      allow read:   if isAuth() && role() in ["Cashier", "Advisor", "Manager", "Admin"];
-      allow create: if isAuth() && role() in ["Cashier", "Advisor", "Manager", "Admin"];
-      allow update: if isManagerOrAbove();
+      allow read:   if hasModule("pos") && (isManagerOrAbove() || role() in ["Cashier", "Advisor"]);
+      allow create: if hasModule("pos") && (isManagerOrAbove() || role() in ["Cashier", "Advisor"]);
+      allow update: if hasModule("pos") && isManagerOrAbove();
       allow delete: if isAdmin();
     }
 
-    // ── Shifts ────────────────────────────────────────────────────────────
+    // ── Shifts (cash drawer — part of the POS module) ─────────────────────
     match /shifts/{shiftId} {
       allow read:   if isAuth();
-      allow create: if isAuth() && role() in ["Cashier", "Manager", "Admin"];
-      allow update: if isAuth() && role() in ["Cashier", "Manager", "Admin"];
+      allow create: if hasModule("pos") && (isManagerOrAbove() || role() == "Cashier");
+      allow update: if hasModule("pos") && (isManagerOrAbove() || role() == "Cashier");
       allow delete: if isAdmin();
     }
 
     // ── Expenses ──────────────────────────────────────────────────────────
     match /expenses/{expenseId} {
       allow read:   if isAuth();
-      allow create: if isAuth() && role() in ["Cashier", "Manager", "Admin"];
-      allow update: if isManagerOrAbove();
+      allow create: if hasModule("pos") && (isManagerOrAbove() || role() == "Cashier");
+      allow update: if hasModule("pos") && isManagerOrAbove();
       allow delete: if isAdmin();
     }
 
     // ── Bookings ──────────────────────────────────────────────────────────
     match /bookings/{bookingId} {
       allow read:   if isAuth();
-      allow create: if isAuth() && role() in ["Advisor", "Manager", "Admin"];
-      allow update: if isAuth() && role() in ["Advisor", "Manager", "Admin"];
+      allow create: if hasModule("bookings") && (isManagerOrAbove() || role() == "Advisor");
+      allow update: if hasModule("bookings") && (isManagerOrAbove() || role() == "Advisor");
       allow delete: if isManagerOrAbove();
     }
 
     // ── Customers ─────────────────────────────────────────────────────────
     match /customers/{customerId} {
       allow read:   if isAuth();
-      allow create: if isAuth() && role() in ["Advisor", "Cashier", "Manager", "Admin"];
-      allow update: if isAuth() && role() in ["Advisor", "Cashier", "Manager", "Admin"];
+      allow create: if hasModule("customers") && (isManagerOrAbove() || role() in ["Advisor", "Cashier"]);
+      allow update: if hasModule("customers") && (isManagerOrAbove() || role() in ["Advisor", "Cashier"]);
       allow delete: if isManagerOrAbove();
     }
 
     // ── Services ──────────────────────────────────────────────────────────
     match /services/{serviceId} {
       allow read:  if isAuth();
-      allow write: if isManagerOrAbove();
+      allow write: if isManagerOrAbove() && hasModule("settings");
     }
 
     // ── Inventory ─────────────────────────────────────────────────────────
     match /inventory/{itemId} {
       allow read:   if isAuth();
-      allow create: if isManagerOrAbove();
-      allow update: if isAuth();   // Technicians can adjust stock
-      allow delete: if isManagerOrAbove();
+      allow create: if hasModule("inventory") && isManagerOrAbove();
+      // Technicians consume stock while working a job, so any holder of the
+      // inventory module may adjust quantities.
+      allow update: if hasModule("inventory");
+      allow delete: if hasModule("inventory") && isManagerOrAbove();
     }
 
     // ── Equipment & Maintenance ───────────────────────────────────────────
     match /equipment/{equipmentId} {
       allow read:  if isAuth();
-      allow write: if isManagerOrAbove();
+      allow write: if hasModule("equipment") && isManagerOrAbove();
     }
 
     match /maintenanceLogs/{logId} {
       allow read:   if isAuth();
-      allow create: if isAuth();
-      allow update: if isManagerOrAbove();
+      allow create: if hasModule("equipment");
+      allow update: if hasModule("equipment") && isManagerOrAbove();
       allow delete: if isAdmin();
     }
 
     // ── Purchase Orders ───────────────────────────────────────────────────
     match /purchaseOrders/{poId} {
-      allow read:   if isAuth();
-      allow create: if isManagerOrAbove();
-      allow update: if isManagerOrAbove();
+      allow read:   if hasModule("purchase-orders");
+      allow create: if hasModule("purchase-orders") && isManagerOrAbove();
+      allow update: if hasModule("purchase-orders") && isManagerOrAbove();
       allow delete: if isAdmin();
     }
 
     // ── Notifications ─────────────────────────────────────────────────────
     match /sentNotifications/{notifId} {
-      allow read:   if isManagerOrAbove();
-      allow create: if isAuth();
+      allow read:   if hasModule("notifications") && isManagerOrAbove();
+      allow create: if hasModule("notifications");
       allow update, delete: if false;
     }
   }

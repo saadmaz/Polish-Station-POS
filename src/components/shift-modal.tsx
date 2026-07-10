@@ -8,6 +8,7 @@ import { Lock, Unlock, CheckCircle2, XCircle, DollarSign, AlertTriangle } from "
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
+import { isManagerOrAbove } from "@/lib/permissions";
 import { useStaffList } from "@/lib/use-staff-list";
 import { cn } from "@/lib/utils";
 import type { Shift } from "@/lib/db";
@@ -78,7 +79,10 @@ function OpenShiftPanel({ onClose }: { onClose: () => void }) {
   }
 
   function handleOpen() {
-    if (!staffId) { toast.error("Select the opening staff member"); return; }
+    if (!staffId) {
+      toast.error("Select the opening staff member");
+      return;
+    }
     setBusy(true);
     openShiftFn({
       staffId,
@@ -87,7 +91,9 @@ function OpenShiftPanel({ onClose }: { onClose: () => void }) {
       openingDenominations: { ...denoms },
       notes,
     });
-    toast.success("Shift opened", { description: `Opening balance: LKR ${balance.toLocaleString()}` });
+    toast.success("Shift opened", {
+      description: `Opening balance: LKR ${balance.toLocaleString()}`,
+    });
     setBusy(false);
     onClose();
   }
@@ -102,9 +108,13 @@ function OpenShiftPanel({ onClose }: { onClose: () => void }) {
           onChange={(e) => setStaffId(e.target.value)}
         >
           <option value="">Select…</option>
-          {staffList.filter((s) => s.role === "Admin" || s.role === "Manager" || s.role === "Advisor").map((s) => (
-            <option key={s.id} value={s.id}>{s.name} — {s.role}</option>
-          ))}
+          {staffList
+            .filter((s) => isManagerOrAbove(s.role) || s.role === "Advisor")
+            .map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} — {s.role}
+              </option>
+            ))}
         </select>
       </div>
 
@@ -156,12 +166,20 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
   const closingBalance = calcBalance(denoms);
 
   // Recompute live totals from store
-  const sessionExpenses = expensesList.filter((e) => e.sessionId === shift.id && e.type === "EXPENSE");
-  const sessionDeposits = expensesList.filter((e) => e.sessionId === shift.id && e.type === "DEPOSIT");
+  const sessionExpenses = expensesList.filter(
+    (e) => e.sessionId === shift.id && e.type === "EXPENSE",
+  );
+  const sessionDeposits = expensesList.filter(
+    (e) => e.sessionId === shift.id && e.type === "DEPOSIT",
+  );
   const sessionInvoices = invoicesList.filter((i) => i.sessionId === shift.id);
 
-  const cashSales = sessionInvoices.filter((i) => i.method === "Cash").reduce((s, i) => s + i.total, 0);
-  const cardSales = sessionInvoices.filter((i) => i.method !== "Cash").reduce((s, i) => s + i.total, 0);
+  const cashSales = sessionInvoices
+    .filter((i) => i.method === "Cash")
+    .reduce((s, i) => s + i.total, 0);
+  const cardSales = sessionInvoices
+    .filter((i) => i.method !== "Cash")
+    .reduce((s, i) => s + i.total, 0);
   const totalExp = sessionExpenses.reduce((s, e) => s + e.amount, 0);
   const totalDep = sessionDeposits.reduce((s, e) => s + e.amount, 0);
 
@@ -175,11 +193,25 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
   }
 
   function handleClose() {
-    if (!verifiedBy) { toast.error("Select verifying manager"); return; }
-    if (needsNote) { toast.error(`Variance is LKR ${absVariance.toLocaleString()} — please add an explanation`); return; }
+    if (!verifiedBy) {
+      toast.error("Select verifying manager");
+      return;
+    }
+    if (needsNote) {
+      toast.error(`Variance is LKR ${absVariance.toLocaleString()} — please add an explanation`);
+      return;
+    }
     setBusy(true);
-    closeShiftFn({ closingBalance, closingDenominations: { ...denoms }, notes, verifiedBy, variance });
-    toast.success("Shift closed", { description: `Variance: LKR ${variance >= 0 ? "+" : ""}${variance.toLocaleString()}` });
+    closeShiftFn({
+      closingBalance,
+      closingDenominations: { ...denoms },
+      notes,
+      verifiedBy,
+      variance,
+    });
+    toast.success("Shift closed", {
+      description: `Variance: LKR ${variance >= 0 ? "+" : ""}${variance.toLocaleString()}`,
+    });
     setBusy(false);
     onClose();
   }
@@ -194,8 +226,13 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
           { label: "Card Sales", value: cardSales, color: "text-info" },
           { label: "Expenses", value: totalExp + totalDep, color: "text-primary" },
         ].map((s) => (
-          <div key={s.label} className="rounded-lg bg-muted/40 border border-border p-3 text-center">
-            <div className="text-[11px] text-muted-foreground uppercase tracking-wider">{s.label}</div>
+          <div
+            key={s.label}
+            className="rounded-lg bg-muted/40 border border-border p-3 text-center"
+          >
+            <div className="text-[11px] text-muted-foreground uppercase tracking-wider">
+              {s.label}
+            </div>
             <div className={cn("font-display text-base font-bold mt-1", s.color)}>
               LKR {s.value.toLocaleString()}
             </div>
@@ -211,13 +248,32 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
       {/* Expected vs physical */}
       <div className="grid grid-cols-2 gap-3">
         <div className="rounded-lg bg-muted/40 border border-border p-3">
-          <div className="text-[11px] text-muted-foreground uppercase tracking-wider">Expected Cash</div>
-          <div className="font-display text-lg font-bold mt-1">LKR {expectedCash.toLocaleString()}</div>
+          <div className="text-[11px] text-muted-foreground uppercase tracking-wider">
+            Expected Cash
+          </div>
+          <div className="font-display text-lg font-bold mt-1">
+            LKR {expectedCash.toLocaleString()}
+          </div>
         </div>
-        <div className={cn("rounded-lg border p-3", variance === 0 ? "bg-muted/40 border-border" : variance < 0 ? "bg-primary/10 border-primary/40" : "bg-success/10 border-success/40")}>
+        <div
+          className={cn(
+            "rounded-lg border p-3",
+            variance === 0
+              ? "bg-muted/40 border-border"
+              : variance < 0
+                ? "bg-primary/10 border-primary/40"
+                : "bg-success/10 border-success/40",
+          )}
+        >
           <div className="text-[11px] text-muted-foreground uppercase tracking-wider">Variance</div>
-          <div className={cn("font-display text-lg font-bold mt-1", variance < 0 ? "text-primary" : variance > 0 ? "text-success" : "")}>
-            LKR {variance >= 0 ? "+" : ""}{variance.toLocaleString()}
+          <div
+            className={cn(
+              "font-display text-lg font-bold mt-1",
+              variance < 0 ? "text-primary" : variance > 0 ? "text-success" : "",
+            )}
+          >
+            LKR {variance >= 0 ? "+" : ""}
+            {variance.toLocaleString()}
           </div>
         </div>
       </div>
@@ -253,9 +309,13 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
           onChange={(e) => setVerifiedBy(e.target.value)}
         >
           <option value="">Select manager…</option>
-          {staffList.filter((s) => s.role === "Admin" || s.role === "Manager").map((s) => (
-            <option key={s.id} value={s.name}>{s.name} — {s.role}</option>
-          ))}
+          {staffList
+            .filter((s) => isManagerOrAbove(s.role))
+            .map((s) => (
+              <option key={s.id} value={s.name}>
+                {s.name} — {s.role}
+              </option>
+            ))}
         </select>
       </div>
 
@@ -309,20 +369,29 @@ export function ShiftModal({ open, onOpenChange }: ShiftModalProps) {
                 </div>
                 <div className="text-sm text-muted-foreground">
                   Opened by <strong>{openShift.staffName}</strong> at{" "}
-                  {new Date(openShift.openedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  {new Date(openShift.openedAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
                 </div>
                 <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
                   <div>
                     <div className="text-[11px] text-muted-foreground">Cash Sales</div>
-                    <div className="font-mono font-semibold">LKR {openShift.cashSales.toLocaleString()}</div>
+                    <div className="font-mono font-semibold">
+                      LKR {openShift.cashSales.toLocaleString()}
+                    </div>
                   </div>
                   <div>
                     <div className="text-[11px] text-muted-foreground">Card Sales</div>
-                    <div className="font-mono font-semibold">LKR {openShift.cardSales.toLocaleString()}</div>
+                    <div className="font-mono font-semibold">
+                      LKR {openShift.cardSales.toLocaleString()}
+                    </div>
                   </div>
                   <div>
                     <div className="text-[11px] text-muted-foreground">Expenses</div>
-                    <div className="font-mono font-semibold">LKR {openShift.totalExpenses.toLocaleString()}</div>
+                    <div className="font-mono font-semibold">
+                      LKR {openShift.totalExpenses.toLocaleString()}
+                    </div>
                   </div>
                 </div>
                 <button
@@ -340,7 +409,12 @@ export function ShiftModal({ open, onOpenChange }: ShiftModalProps) {
                 </div>
                 {recentClosed && (
                   <div className="text-sm text-muted-foreground">
-                    Last shift closed at {new Date(recentClosed.closedAt!).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} — by {recentClosed.staffName}
+                    Last shift closed at{" "}
+                    {new Date(recentClosed.closedAt!).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}{" "}
+                    — by {recentClosed.staffName}
                   </div>
                 )}
                 <button
@@ -355,24 +429,44 @@ export function ShiftModal({ open, onOpenChange }: ShiftModalProps) {
             {/* Recent shifts */}
             {shifts.length > 0 && (
               <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Recent Shifts</h3>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                  Recent Shifts
+                </h3>
                 <div className="space-y-1">
-                  {[...shifts].reverse().slice(0, 4).map((s) => (
-                    <div key={s.id} className="flex items-center justify-between rounded-md border border-border bg-background px-3 py-2 text-sm">
-                      <div>
-                        <span className="font-medium">{s.staffName}</span>
-                        <span className="text-muted-foreground ml-2">
-                          {new Date(s.openedAt).toLocaleDateString([], { day: "numeric", month: "short" })}
-                        </span>
+                  {[...shifts]
+                    .reverse()
+                    .slice(0, 4)
+                    .map((s) => (
+                      <div
+                        key={s.id}
+                        className="flex items-center justify-between rounded-md border border-border bg-background px-3 py-2 text-sm"
+                      >
+                        <div>
+                          <span className="font-medium">{s.staffName}</span>
+                          <span className="text-muted-foreground ml-2">
+                            {new Date(s.openedAt).toLocaleDateString([], {
+                              day: "numeric",
+                              month: "short",
+                            })}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono text-xs">
+                            LKR {(s.cashSales + s.cardSales).toLocaleString()}
+                          </span>
+                          <span
+                            className={cn(
+                              "text-xs font-semibold px-2 py-0.5 rounded-full",
+                              s.status === "OPEN"
+                                ? "bg-success/15 text-success"
+                                : "bg-muted text-muted-foreground",
+                            )}
+                          >
+                            {s.status}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono text-xs">LKR {(s.cashSales + s.cardSales).toLocaleString()}</span>
-                        <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full", s.status === "OPEN" ? "bg-success/15 text-success" : "bg-muted text-muted-foreground")}>
-                          {s.status}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
                 </div>
               </div>
             )}
@@ -381,14 +475,24 @@ export function ShiftModal({ open, onOpenChange }: ShiftModalProps) {
 
         {view === "open" && (
           <div>
-            <button onClick={() => setView("status")} className="text-sm text-muted-foreground hover:text-foreground mb-4">← Back</button>
+            <button
+              onClick={() => setView("status")}
+              className="text-sm text-muted-foreground hover:text-foreground mb-4"
+            >
+              ← Back
+            </button>
             <OpenShiftPanel onClose={() => onOpenChange(false)} />
           </div>
         )}
 
         {view === "close" && openShift && (
           <div>
-            <button onClick={() => setView("status")} className="text-sm text-muted-foreground hover:text-foreground mb-4">← Back</button>
+            <button
+              onClick={() => setView("status")}
+              className="text-sm text-muted-foreground hover:text-foreground mb-4"
+            >
+              ← Back
+            </button>
             <CloseShiftPanel shift={openShift} onClose={() => onOpenChange(false)} />
           </div>
         )}

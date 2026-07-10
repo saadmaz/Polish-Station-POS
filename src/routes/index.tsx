@@ -1,9 +1,7 @@
 import { createFileRoute, useNavigate, Navigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { Delete, Loader2 } from "lucide-react";
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { useAuth, type StaffProfile } from "@/lib/auth";
+import { Delete, Loader2, User } from "lucide-react";
+import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
@@ -14,27 +12,28 @@ export const Route = createFileRoute("/")({
       { name: "robots", content: "noindex, nofollow" },
     ],
   }),
-  component: PinLogin,
+  component: Login,
 });
 
 const PIN_LEN = 4;
 
-function PinLogin() {
-  const { staff: active, loading: authLoading, login } = useAuth();
+function Login() {
+  const { staff: active, loading: authLoading, mustChangePin, login } = useAuth();
   const navigate = useNavigate();
 
-  // Staff list loaded from Firestore (public collection — no auth required)
-  const [staffList,    setStaffList]    = useState<StaffProfile[]>([]);
-  const [staffLoading, setStaffLoading] = useState(true);
-
-  const [selected, setSelected] = useState<StaffProfile | null>(null);
-  const [pin,      setPin]      = useState("");
-  const [error,    setError]    = useState(false);
-  const [locked,   setLocked]   = useState(0); // countdown seconds
-  const [busy,     setBusy]     = useState(false);
-  const [now,      setNow]      = useState<Date | null>(null);
+  const [username, setUsername] = useState("");
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [shake, setShake] = useState(false);
+  const [locked, setLocked] = useState(0); // countdown seconds
+  const [busy, setBusy] = useState(false);
+  const [now, setNow] = useState<Date | null>(null);
 
   const trapRef = useRef<HTMLInputElement>(null);
+
+  // A username is required before the PIN pad does anything — the same gating
+  // the old staff-picker provided, without publishing the staff roster.
+  const ready = username.trim().length >= 3 && locked === 0 && !busy;
 
   // Clock
   useEffect(() => {
@@ -46,79 +45,75 @@ function PinLogin() {
   // Lockout countdown
   useEffect(() => {
     if (locked === 0) return;
-    const t = setInterval(() => setLocked(l => Math.max(0, l - 1)), 1000);
+    const t = setInterval(() => setLocked((l) => Math.max(0, l - 1)), 1000);
     return () => clearInterval(t);
   }, [locked]);
 
-  // Auto-focus keyboard trap when staff is selected
-  useEffect(() => {
-    if (selected) trapRef.current?.focus();
-  }, [selected]);
-
-  // Load staff list from Firestore
-  useEffect(() => {
-    getDocs(collection(db, "staff_public"))
-      .then(snap => {
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as StaffProfile));
-        setStaffList(list);
-      })
-      .catch(err => console.error("Failed to load staff list:", err))
-      .finally(() => setStaffLoading(false));
-  }, []);
-
   // While Firebase checks for an existing session, show nothing to prevent flash
   if (authLoading) return null;
-  if (active) return <Navigate to="/dashboard" />;
+  if (active) return <Navigate to={mustChangePin ? "/change-pin" : "/dashboard"} />;
 
   function pressDigit(d: string) {
-    if (!selected || locked > 0 || busy) return;
-    if (pin.length >= PIN_LEN) return;
+    if (!ready || pin.length >= PIN_LEN) return;
     const next = pin + d;
     setPin(next);
     if (next.length === PIN_LEN) void tryLogin(next);
   }
 
   function backspace() {
-    if (!selected || locked > 0 || busy) return;
-    setPin(p => p.slice(0, -1));
+    if (!ready) return;
+    setPin((p) => p.slice(0, -1));
   }
 
   function clearPin() {
-    if (!selected || locked > 0 || busy) return;
+    if (!ready) return;
     setPin("");
   }
 
-  async function tryLogin(value: string) {
-    if (!selected) return;
-    setBusy(true);
+  function fail(message: string) {
+    setError(message);
+    setShake(true);
+    setTimeout(() => {
+      setPin("");
+      setShake(false);
+      trapRef.current?.focus();
+    }, 600);
+  }
 
-    const err = await login(selected.id, value);
+  async function tryLogin(value: string) {
+    setBusy(true);
+    setError(null);
+
+    const err = await login(username.trim(), value);
 
     if (!err) {
-      // Success — onAuthStateChanged in AuthProvider will set staff and trigger redirect
+      // The auth provider decides where to land; a first login with an
+      // admin-issued PIN must change it before reaching the app.
       navigate({ to: "/dashboard" });
       return;
     }
 
+    setBusy(false);
+
     if (err.code === "locked") {
       setLocked(err.remainingSec);
+      fail(`Too many attempts — locked for ${err.remainingSec}s`);
+    } else if (err.code === "inactive") {
+      fail("This account has been deactivated");
+    } else if (err.code === "unknown") {
+      fail("Couldn't reach the server — check your connection");
+    } else {
+      // Deliberately does not say which of the two was wrong.
+      fail("Incorrect username or PIN");
     }
-
-    setError(true);
-    setTimeout(() => {
-      setPin("");
-      setError(false);
-      trapRef.current?.focus();
-    }, 600);
-
-    setBusy(false);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (locked > 0 || busy || !selected) return;
-    if (/^\d$/.test(e.key))                 pressDigit(e.key);
-    else if (e.key === "Backspace")          backspace();
+    if (!ready) return;
+    if (/^\d$/.test(e.key)) pressDigit(e.key);
+    else if (e.key === "Backspace") backspace();
     else if (e.key === "Delete" || e.key === "Escape") clearPin();
+    else return; // let Tab, Shift, etc. behave normally
     e.preventDefault();
   }
 
@@ -126,7 +121,6 @@ function PinLogin() {
     <div className="brushed-charcoal min-h-screen flex flex-col">
       <div className="flex-1 grid place-items-center px-4 py-10">
         <div className="w-full max-w-[440px] rounded-2xl bg-card text-card-foreground p-7 shadow-elevated border border-border">
-
           {/* Logo */}
           <div className="flex items-center justify-center gap-2.5 mb-1">
             <div className="grid h-11 w-11 place-items-center rounded-lg gradient-brand shadow-red">
@@ -140,72 +134,69 @@ function PinLogin() {
             </div>
           </div>
           <p className="text-center text-xs text-muted-foreground mb-5">
-            Select your name, then enter your 4-digit PIN
+            Enter your username, then your 4-digit PIN
           </p>
 
-          {/* Hidden keyboard trap */}
+          {/* Username */}
+          <label
+            htmlFor="username"
+            className="block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5"
+          >
+            Username
+          </label>
+          <div className="relative mb-5">
+            <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              id="username"
+              name="username"
+              type="text"
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              maxLength={20}
+              disabled={locked > 0 || busy}
+              value={username}
+              onChange={(e) => {
+                setUsername(e.target.value.replace(/[^A-Za-z0-9_.-]/g, ""));
+                setPin("");
+                setError(null);
+              }}
+              placeholder="e.g. ADMIN"
+              className="w-full rounded-lg border border-input bg-background py-2.5 pl-9 pr-3 text-sm uppercase tracking-wide outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
+              autoFocus
+            />
+          </div>
+
+          {/* Hidden keyboard trap — lets a physical keyboard drive the PIN pad */}
           <input
             ref={trapRef}
             type="tel"
             inputMode="numeric"
             aria-hidden="true"
-            tabIndex={selected ? 0 : -1}
+            tabIndex={-1}
             onKeyDown={handleKeyDown}
             onChange={() => {}}
             value=""
             className="sr-only"
           />
 
-          {/* Staff selector */}
-          <div className="-mx-1 mb-5 overflow-x-auto">
-            {staffLoading ? (
-              <div className="flex justify-center py-4">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-              </div>
-            ) : (
-              <div className="flex gap-2 px-1 pb-1">
-                {staffList.map(s => {
-                  const isSel = selected?.id === s.id;
-                  return (
-                    <button
-                      key={s.id}
-                      onClick={() => {
-                        setSelected(s);
-                        setPin("");
-                        setError(false);
-                      }}
-                      className={cn(
-                        "flex shrink-0 w-[68px] flex-col items-center gap-1.5 rounded-lg p-2 transition-all",
-                        isSel ? "bg-accent ring-2 ring-primary" : "hover:bg-muted",
-                      )}
-                    >
-                      <div
-                        className="grid h-11 w-11 place-items-center rounded-full text-sm font-bold text-primary-foreground"
-                        style={{ background: s.color }}
-                      >
-                        {s.name.slice(0, 2).toUpperCase()}
-                      </div>
-                      <div className="text-[11px] font-medium leading-tight text-center truncate w-full">
-                        {s.name}
-                      </div>
-                      <div className="text-[9px] uppercase tracking-wider text-muted-foreground">
-                        {s.role}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
           {/* PIN dots */}
-          <div className={cn("flex justify-center gap-4 mb-5", error && "animate-shake")}>
+          <button
+            type="button"
+            onClick={() => trapRef.current?.focus()}
+            aria-label="PIN entry"
+            className={cn(
+              "flex w-full justify-center gap-4 mb-5 cursor-default",
+              shake && "animate-shake",
+            )}
+          >
             {Array.from({ length: PIN_LEN }).map((_, i) => (
               <div
                 key={i}
                 className={cn(
                   "h-4 w-4 rounded-full border-2 transition-colors",
-                  error
+                  shake
                     ? "border-primary bg-primary"
                     : i < pin.length
                       ? "border-foreground bg-foreground"
@@ -213,29 +204,32 @@ function PinLogin() {
                 )}
               />
             ))}
-          </div>
+          </button>
 
-          {/* Lockout banner */}
-          {locked > 0 && (
-            <div className="mb-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-center text-xs font-semibold text-primary">
-              Too many attempts — try again in {locked}s
+          {/* Error / lockout banner */}
+          {error && (
+            <div
+              role="alert"
+              className="mb-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-center text-xs font-semibold text-primary"
+            >
+              {locked > 0 ? `Too many attempts — try again in ${locked}s` : error}
             </div>
           )}
 
           {/* Numpad */}
           <div className="grid grid-cols-3 gap-2.5">
-            {["1","2","3","4","5","6","7","8","9"].map(d => (
-              <NumKey key={d} onClick={() => pressDigit(d)} disabled={!selected || locked > 0 || busy}>
+            {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
+              <NumKey key={d} onClick={() => pressDigit(d)} disabled={!ready}>
                 {d}
               </NumKey>
             ))}
-            <NumKey onClick={clearPin} disabled={!selected || locked > 0 || busy} ghost>
+            <NumKey onClick={clearPin} disabled={!ready} ghost>
               C
             </NumKey>
-            <NumKey onClick={() => pressDigit("0")} disabled={!selected || locked > 0 || busy}>
+            <NumKey onClick={() => pressDigit("0")} disabled={!ready}>
               0
             </NumKey>
-            <NumKey onClick={backspace} disabled={!selected || locked > 0 || busy} ghost>
+            <NumKey onClick={backspace} disabled={!ready} ghost>
               {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Delete className="h-5 w-5" />}
             </NumKey>
           </div>
@@ -252,8 +246,12 @@ function PinLogin() {
       >
         {now
           ? now.toLocaleString([], {
-              weekday: "short", day: "numeric", month: "short",
-              hour: "2-digit", minute: "2-digit", second: "2-digit",
+              weekday: "short",
+              day: "numeric",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
             })
           : ""}
       </div>
@@ -267,7 +265,10 @@ function PinLogin() {
 }
 
 function NumKey({
-  children, onClick, disabled, ghost,
+  children,
+  onClick,
+  disabled,
+  ghost,
 }: {
   children: React.ReactNode;
   onClick: () => void;
@@ -276,6 +277,7 @@ function NumKey({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       disabled={disabled}
       className={cn(

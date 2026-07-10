@@ -16,6 +16,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "seed:staff": "tsx scripts/seed-staff.ts",
+    "seed:admin": "tsx scripts/seed-admin.ts",
+    "reset:staff": "tsx scripts/reset-staff.ts",
     "seed:data": "tsx scripts/seed-data.ts"
   },
   "dependencies": {
