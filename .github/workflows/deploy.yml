@@ -107,23 +107,25 @@ jobs:
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
         run: |
           REMOTE_DIR=/home/polishst/pos.polishstation.lk
-          ftp_cmd() {
-            lftp -c "
-              set ssl:verify-certificate no;
-              set ftp:ssl-force true;
-              set ftp:ssl-protect-data true;
-              set net:timeout 20;
-              set net:max-retries 1;
-              open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
-              $1
-            " 2>&1 || true
-          }
-          echo "=== App root listing (perms/owner matter for .htaccess) ==="
-          ftp_cmd "cls -la $REMOTE_DIR/"
-          echo "=== Passenger/app error log (stderr.log) tail ==="
-          ftp_cmd "cat $REMOTE_DIR/stderr.log" | tail -60
-          echo "=== passenger.log tail (if present) ==="
-          ftp_cmd "cat $REMOTE_DIR/passenger.log" | tail -40
+          # Single lftp session for all diagnostics: the host's brute-force
+          # protection counts FTP logins, and multiple sessions per run got the
+          # CI temporarily blocked with "530 Login authentication failed".
+          lftp -c "
+            set ssl:verify-certificate no;
+            set ftp:ssl-force true;
+            set ftp:ssl-protect-data true;
+            set net:timeout 20;
+            set net:max-retries 1;
+            open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
+            !echo '=== App root listing (perms/owner matter for .htaccess) ===';
+            cls -la $REMOTE_DIR/;
+            !echo '=== Passenger/app error log (stderr.log) tail ===';
+            !touch /tmp/stderr.log; get $REMOTE_DIR/stderr.log -o /tmp/stderr.log;
+            !echo '=== passenger.log (if present) ===';
+            !touch /tmp/passenger.log; get $REMOTE_DIR/passenger.log -o /tmp/passenger.log;
+          " 2>&1 || true
+          tail -60 /tmp/stderr.log 2>/dev/null || true
+          tail -40 /tmp/passenger.log 2>/dev/null || true
           echo "=== Live site check ==="
           for host in pos.polishstation.lk www.pos.polishstation.lk; do
             code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "https://$host/" || echo "ERR")
