@@ -1,0 +1,62 @@
+name: Install server-side keep-warm cron
+
+# Installs a cPanel cron job on the host itself that curls the site every
+# 2 minutes, keeping the Passenger Node app warm. This is the authoritative
+# keep-warm: GitHub's scheduled workflows (keep-warm.yml) are best-effort and
+# routinely run 10-15 minutes late, which still lets the app go cold.
+#
+# Runs when this file changes (i.e. once, on merge) or manually. Idempotent:
+# it checks the existing crontab and only adds the entry if missing.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/setup-keepwarm-cron.yml"
+
+jobs:
+  install-cron:
+    runs-on: ubuntu-latest
+    env:
+      CPANEL_DOMAIN: ${{ secrets.CPANEL_DOMAIN }}
+      CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+      CPANEL_TOKEN: ${{ secrets.CPANEL_TOKEN }}
+    steps:
+      - name: Ensure keep-warm cron exists
+        run: |
+          capi() {
+            local module=$1 func=$2; shift 2
+            curl -sk -G "https://$CPANEL_DOMAIN:2083/json-api/cpanel" \
+              -H "Authorization: cpanel $CPANEL_USERNAME:$CPANEL_TOKEN" \
+              --data-urlencode "cpanel_jsonapi_user=$CPANEL_USERNAME" \
+              --data-urlencode "cpanel_jsonapi_apiversion=2" \
+              --data-urlencode "cpanel_jsonapi_module=$module" \
+              --data-urlencode "cpanel_jsonapi_func=$func" \
+              "$@"
+          }
+
+          CMD='curl -s -o /dev/null --max-time 50 https://pos.polishstation.lk/ >/dev/null 2>&1'
+
+          echo "=== current crontab ==="
+          LIST=$(capi Cron listcron)
+          echo "$LIST" | head -c 2000; echo
+
+          if echo "$LIST" | grep -q "pos.polishstation.lk/"; then
+            echo "keep-warm cron already present — nothing to do"
+            exit 0
+          fi
+
+          echo "=== adding keep-warm cron (every 2 minutes) ==="
+          RESULT=$(capi Cron add_line \
+            --data-urlencode "minute=*/2" \
+            --data-urlencode "hour=*" \
+            --data-urlencode "day=*" \
+            --data-urlencode "month=*" \
+            --data-urlencode "weekday=*" \
+            --data-urlencode "command=$CMD")
+          echo "$RESULT" | head -c 1000; echo
+
+          echo "$RESULT" | grep -qi '"status":1\|linekey' || { echo "cron add failed"; exit 1; }
+          echo "✅ keep-warm cron installed"

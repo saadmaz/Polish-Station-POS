@@ -41,15 +41,23 @@ function AppLayout() {
     return fallback ? <Navigate to={fallback.route} /> : <NoAccess />;
   }
 
-  if (storeLoading) return <Spinner />;
-
+  // While Firestore listeners deliver their first snapshots (~2-4s on this
+  // connection), render the shell immediately and spin only the content area.
+  // Blocking the whole screen here made every login feel seconds slower than
+  // it actually was.
   return (
     <div className="flex h-screen w-full bg-background text-foreground">
       <AppSidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <TopBar />
         <main className="flex-1 overflow-auto bg-muted/30">
-          <Outlet />
+          {storeLoading ? (
+            <div className="flex h-full w-full items-center justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <Outlet />
+          )}
         </main>
       </div>
     </div>

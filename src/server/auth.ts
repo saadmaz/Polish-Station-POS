@@ -65,17 +65,33 @@ export function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise
   ]);
 }
 
+// In-process cache for the username → staffId index. Each Firestore REST call
+// from the shared host costs ~300-600ms, and this mapping almost never changes
+// (only on a rename, done through updateStaffFn). A short TTL bounds staleness
+// across Passenger workers, and everything security-relevant (pinHash, active,
+// lockout) is still read fresh from the staff doc on every login.
+const USERNAME_TTL_MS = 5 * 60 * 1000;
+const usernameCache = new Map<string, { staffId: string; at: number }>();
+
 /** Resolve a username to its staffId via the `usernames` index collection.
  *  Doc-ID uniqueness is what guarantees two people cannot claim one name. */
 export async function resolveUsername(username: string): Promise<string | null> {
+  const key = usernameKey(username);
+
+  const hit = usernameCache.get(key);
+  if (hit && Date.now() - hit.at < USERNAME_TTL_MS) return hit.staffId;
+
   const snap = await withTimeout(
-    adminDb.collection("usernames").doc(usernameKey(username)).get(),
+    adminDb.collection("usernames").doc(key).get(),
     10_000,
     "username lookup",
   );
   if (!snap.exists) return null;
   const staffId = snap.data()?.staffId;
-  return typeof staffId === "string" ? staffId : null;
+  if (typeof staffId !== "string") return null;
+
+  usernameCache.set(key, { staffId, at: Date.now() });
+  return staffId;
 }
 
 /** Claims baked into the custom token and read by firestore.rules. */
@@ -141,8 +157,15 @@ export const loginFn = createServerFn({ method: "POST" })
       return { success: false, error: "invalid_credentials" };
     }
 
-    // Successful login — reset fail counter
-    await staffRef.update({ failCount: 0, lockedUntil: null });
+    // Successful login — reset the fail counter, but only when it's actually
+    // dirty, and never make the user wait on it: the write is best-effort
+    // bookkeeping (~300-600ms per Firestore round trip from this host), while
+    // the response only needs the token. Token minting is local RSA signing.
+    if ((staff.failCount as number) > 0 || staff.lockedUntil != null) {
+      void staffRef
+        .update({ failCount: 0, lockedUntil: null })
+        .catch((err) => console.error("[loginFn] failCount reset failed:", err));
+    }
 
     const customToken = await adminAuth.createCustomToken(staffId, claimsFor(staff));
 
