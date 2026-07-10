@@ -87,12 +87,14 @@ jobs:
             set net:reconnect-interval-base 5;
             set mirror:parallel-transfer-count 4;
             open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
-            mirror -R --ignore-time --parallel=4 ./deploy/dist/ $REMOTE_DIR/dist/;
+            mirror -R --delete --ignore-time --parallel=4 ./deploy/dist/ $REMOTE_DIR/dist/;
             put ./deploy/start.mjs -o $REMOTE_DIR/start.mjs;
             put ./deploy/package.json -o $REMOTE_DIR/package.json;
             put ./htaccess -o $REMOTE_DIR/.htaccess;
             mirror -R ./deploy/tmp/ $REMOTE_DIR/tmp/;
           "
+          # --delete on dist/: built assets are content-hashed, so without it
+          # every deploy leaves the previous build's files behind forever.
 
       # The upload succeeding doesn't mean the app is up — Passenger has to be
       # able to read .htaccess (LiteSpeed 503s the whole vhost when it can't:
@@ -129,6 +131,34 @@ jobs:
             open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
             chmod 755 $REMOTE_DIR;
             chmod 600 $REMOTE_DIR/.env;
+            !echo '=== legacy cleanup (idempotent; errors once already gone are fine) ===';
+            mv $REMOTE_DIR/id_rsa_new /home/polishst/id_rsa_new_moved-out-of-webroot;
+            rm -r $REMOTE_DIR/src;
+            rm -r $REMOTE_DIR/public;
+            rm -r $REMOTE_DIR/scripts;
+            rm -r $REMOTE_DIR/id_rsa_new;
+            rm $REMOTE_DIR/.cpanel.yml;
+            rm $REMOTE_DIR/.ftp-deploy-sync-state.json;
+            rm $REMOTE_DIR/package-lock.json;
+            rm $REMOTE_DIR/bun.lock;
+            rm $REMOTE_DIR/bunfig.toml;
+            rm $REMOTE_DIR/components.json;
+            rm $REMOTE_DIR/eslint.config.js;
+            rm $REMOTE_DIR/tsconfig.json;
+            rm $REMOTE_DIR/vite.config.ts;
+            rm $REMOTE_DIR/firebase.json;
+            rm $REMOTE_DIR/firestore.rules;
+            rm $REMOTE_DIR/firestore.indexes.json;
+            rm $REMOTE_DIR/storage.rules;
+            rm $REMOTE_DIR/.firebaserc;
+            rm $REMOTE_DIR/.nvmrc;
+            rm $REMOTE_DIR/.prettierrc;
+            rm $REMOTE_DIR/.prettierignore;
+            rm $REMOTE_DIR/.gitignore;
+            rm $REMOTE_DIR/.env.example;
+            rm $REMOTE_DIR/AGENTS.md;
+            rm $REMOTE_DIR/DEPLOYMENT.md;
+            rm $REMOTE_DIR/htaccess;
             !echo '=== deployed .htaccess ===';
             cat $REMOTE_DIR/.htaccess;
             !echo '=== dist/server listing (confirm bundled server.js) ===';
