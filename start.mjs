@@ -1,13 +1,34 @@
-// Must run before anything else: Passenger spawns this file directly (no shell env sourcing),
-// so FIREBASE_* / VITE_SENTRY_DSN must be loaded from .env here or firebase-admin.ts (imported
-// inside the dynamic SERVER_ENTRY import below) will see undefined credentials at request time.
-import "dotenv/config";
-
 import { createServer } from "http";
-import { createReadStream, existsSync, statSync, unlinkSync } from "fs";
+import {
+  createReadStream,
+  existsSync,
+  readFileSync,
+  statSync,
+  unlinkSync,
+} from "fs";
 import { join, extname } from "path";
 import { fileURLToPath } from "url";
 import { Readable } from "stream";
+
+// Must run before anything else: Passenger spawns this file directly (no shell env
+// sourcing), so FIREBASE_* / VITE_SENTRY_DSN must be loaded from .env here or
+// firebase-admin (inside the dynamic SERVER_ENTRY import below) will see undefined
+// credentials at request time. Parsed inline rather than via the dotenv package so
+// the server needs no node_modules at all — the entire app (dependencies included)
+// is bundled into dist/server by the build.
+function loadDotEnv(path) {
+  if (!existsSync(path)) return;
+  for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
+    const match = line.match(/^\s*(?:export\s+)?([\w.]+)\s*=\s*(.*)?\s*$/);
+    if (!match || line.trimStart().startsWith("#")) continue;
+    let value = (match[2] ?? "").trim();
+    const quoted = value[0] === '"';
+    if (quoted || value[0] === "'") value = value.slice(1, -1);
+    if (quoted) value = value.replace(/\\n/g, "\n").replace(/\\r/g, "\r");
+    if (!(match[1] in process.env)) process.env[match[1]] = value;
+  }
+}
+loadDotEnv(join(fileURLToPath(new URL(".", import.meta.url)), ".env"));
 
 process.on("uncaughtException", (err) => {
   console.error("[fatal] Uncaught exception:", err.stack || err);
@@ -36,7 +57,9 @@ function applySecurityHeaders(req, res) {
       "default-src 'self'",
       // unsafe-inline needed for Vite hydration runtime in production builds
       "script-src 'self' 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline'",
+      // fonts.googleapis.com / fonts.gstatic.com: the SSR HTML links the
+      // Inter/JetBrains Mono stylesheet from Google Fonts directly
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       // Firebase SDK endpoints: Firestore, Auth, Storage, WebSocket realtime
       "connect-src 'self'" +
         " https://*.googleapis.com" +
@@ -45,7 +68,7 @@ function applySecurityHeaders(req, res) {
         " https://*.firebase.google.com" +
         " https://*.appspot.com",
       "img-src 'self' data: blob: https://storage.googleapis.com https://*.appspot.com",
-      "font-src 'self'",
+      "font-src 'self' https://fonts.gstatic.com",
       "frame-src 'none'",
       "object-src 'none'",
       "base-uri 'self'",
