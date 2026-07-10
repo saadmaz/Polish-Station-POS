@@ -1,6 +1,10 @@
 name: Deploy Firestore/Storage rules
 
 on:
+  # Manual trigger: after setting the FIREBASE_SERVICE_ACCOUNT_JSON secret, run
+  # this from the Actions tab to deploy the current rules without having to push
+  # a rules change first.
+  workflow_dispatch:
   push:
     branches:
       - main
