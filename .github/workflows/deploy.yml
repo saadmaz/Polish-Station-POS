@@ -115,6 +115,11 @@ jobs:
           # protection counts FTP logins, and multiple sessions per run got the
           # CI temporarily blocked with "530 Login authentication failed".
           #
+          # IMPORTANT: never touch $REMOTE_DIR/id_rsa_new — despite the name,
+          # that folder is the FTP deploy account's HOME DIRECTORY in cPanel.
+          # A previous cleanup moved it and every FTP login started failing
+          # with "421 Home directory not available" until it was restored.
+          #
           # Hygiene fixes (idempotent — errors on already-fixed state are fine,
           # cmd:fail-exit stays off here):
           # - chmod 755 app root: it was 700 once, which stopped LiteSpeed from
@@ -132,12 +137,10 @@ jobs:
             chmod 755 $REMOTE_DIR;
             chmod 600 $REMOTE_DIR/.env;
             !echo '=== legacy cleanup (idempotent; errors once already gone are fine) ===';
-            mv $REMOTE_DIR/id_rsa_new /home/polishst/id_rsa_new_moved-out-of-webroot;
             cd $REMOTE_DIR;
             rm -r $REMOTE_DIR/src;
             rm -r $REMOTE_DIR/public;
             rm -r $REMOTE_DIR/scripts;
-            rm -r $REMOTE_DIR/id_rsa_new;
             rm $REMOTE_DIR/.cpanel.yml;
             rm $REMOTE_DIR/.ftp-deploy-sync-state.json;
             rm $REMOTE_DIR/package-lock.json;
