@@ -2,7 +2,7 @@ RemoveHandler .php .php5 .php7 .php8
 RemoveType application/x-httpd-php .php
 PassengerEnabled on
 PassengerBaseURI /
-PassengerNodejs /home/polishst/nodevenv/pos.polishstation.lk/20/bin/node
+PassengerNodejs /home/polishst/nodevenv/pos.polishstation.lk/22/bin/node
 PassengerAppRoot /home/polishst/pos.polishstation.lk
 PassengerAppType node
 PassengerStartupFile start.mjs

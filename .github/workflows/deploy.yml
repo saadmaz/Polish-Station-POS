@@ -48,12 +48,13 @@ jobs:
           date > deploy/tmp/restart.txt
           echo "Deploy payload:" && du -sh deploy && find deploy -type f | wc -l
 
-      # .htaccess is deliberately NOT part of ./deploy/ and never uploaded here.
-      # LiteSpeed only trusts a .htaccess owned by the vhost's own account user —
-      # files written by this FTP sub-account land with a different owner, which
-      # makes LiteSpeed refuse to read it ("Permission denied" despite 644 perms).
-      # It's a static file that rarely changes; it's maintained by hand directly
-      # in cPanel File Manager instead. See DEPLOYMENT.md.
+      # The repo-root `htaccess` file is uploaded as the server's `.htaccess` —
+      # it binds the domain to this Node app (Passenger directives; the
+      # PassengerNodejs path must match a nodevenv that actually exists on the
+      # server, currently Node 22). Earlier attempts to hand-maintain it in
+      # cPanel stemmed from a misdiagnosis: the "Permission denied" the server
+      # logged was the app root directory being mode 700, not .htaccess
+      # ownership (fixed in the diagnostics step below).
       #
       # Using lftp instead of a Node-based FTP action: basic-ftp (which backs
       # several popular FTP GitHub Actions) hangs indefinitely on the data
@@ -89,6 +90,7 @@ jobs:
             mirror -R --ignore-time --parallel=4 ./deploy/dist/ $REMOTE_DIR/dist/;
             put ./deploy/start.mjs -o $REMOTE_DIR/start.mjs;
             put ./deploy/package.json -o $REMOTE_DIR/package.json;
+            put ./htaccess -o $REMOTE_DIR/.htaccess;
             mirror -R ./deploy/tmp/ $REMOTE_DIR/tmp/;
           "
 
@@ -113,14 +115,10 @@ jobs:
           #
           # Hygiene fixes (idempotent — errors on already-fixed state are fine,
           # cmd:fail-exit stays off here):
-          # - chmod 755 app root: it was 700, which stopped LiteSpeed from even
-          #   entering the directory — the actual cause of the site-wide 503s
-          #   and every "[HTAccess] ... Permission denied" in the server log.
-          # - mv htaccess -> .htaccess: the Passenger config that binds the
-          #   domain to this Node app was uploaded WITHOUT the leading dot at
-          #   some point, so it never took effect. (cat first so its content is
-          #   visible in this log; on later runs both commands no-op with an
-          #   error once the rename has happened.)
+          # - chmod 755 app root: it was 700 once, which stopped LiteSpeed from
+          #   even entering the directory — the cause of the original
+          #   site-wide 503s and every "[HTAccess] ... Permission denied" in
+          #   the server log.
           # - chmod 600 .env: it was 644 (world-readable credentials).
           lftp -c "
             set ssl:verify-certificate no;
@@ -131,51 +129,13 @@ jobs:
             open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
             chmod 755 $REMOTE_DIR;
             chmod 600 $REMOTE_DIR/.env;
-            !echo '=== htaccess content (pre-rename, if present) ===';
-            cat $REMOTE_DIR/htaccess;
-            mv $REMOTE_DIR/htaccess $REMOTE_DIR/.htaccess;
-            !echo '=== current .htaccess ===';
-            get $REMOTE_DIR/.htaccess -o /tmp/htaccess;
-            !echo '=== nodevenv versions present ===';
-            cls /home/polishst/nodevenv/pos.polishstation.lk/;
-            !echo MARK_NODE20;
-            cls /home/polishst/nodevenv/pos.polishstation.lk/20/bin/node;
-            !echo MARK_NODE22;
-            cls /home/polishst/nodevenv/pos.polishstation.lk/22/bin/node;
-            !echo MARK_END;
-            !echo '=== app / passenger logs ===';
-            cls -la /home/polishst/logs/;
+            !echo '=== deployed .htaccess ===';
+            cat $REMOTE_DIR/.htaccess;
+            !echo '=== dist/server listing (confirm bundled server.js) ===';
+            cls -la $REMOTE_DIR/dist/server/;
+            !echo '=== app error log (stderr.log), if the app has crashed ===';
             cat $REMOTE_DIR/stderr.log;
-          " 2>&1 | tee /tmp/probe.txt || true
-
-          # .htaccess may pin Passenger to a nodevenv that no longer exists
-          # (cPanel recreates the venv under the new major on Node version
-          # changes — the node_modules symlink points at 22 while the original
-          # .htaccess said 20, and a missing PassengerNodejs binary leaves the
-          # vhost hanging instead of erroring). Only rewrite when 20 is really
-          # gone and 22 really exists.
-          # A successful cls prints the path starting with /home/... (with a
-          # trailing @ when the binary is a symlink); a missing path prints an
-          # "Access failed: 550 ..." error line instead, which also contains
-          # the path — so anchor on ^/home/ to count only real hits.
-          node20=$(sed -n '/MARK_NODE20/,/MARK_NODE22/p' /tmp/probe.txt | grep -cE "^/home/.*/20/bin/node@?$" || true)
-          node22=$(sed -n '/MARK_NODE22/,/MARK_END/p' /tmp/probe.txt | grep -cE "^/home/.*/22/bin/node@?$" || true)
-          echo "node20 binary present: $node20, node22 binary present: $node22"
-          if [ "$node20" = "0" ] && [ "$node22" != "0" ] && grep -q "nodevenv/pos.polishstation.lk/20/bin/node" /tmp/htaccess; then
-            echo "Fixing PassengerNodejs: 20 -> 22"
-            sed -i 's#nodevenv/pos.polishstation.lk/20/bin/node#nodevenv/pos.polishstation.lk/22/bin/node#' /tmp/htaccess
-            date > /tmp/restart.txt
-            lftp -c "
-              set ssl:verify-certificate no;
-              set ftp:ssl-force true;
-              set ftp:ssl-protect-data true;
-              set net:timeout 20;
-              set net:max-retries 1;
-              open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
-              put /tmp/htaccess -o $REMOTE_DIR/.htaccess;
-              put /tmp/restart.txt -o $REMOTE_DIR/tmp/restart.txt;
-            " 2>&1 || true
-          fi
+          " 2>&1 || true
 
           echo "=== Live site check ==="
           for host in pos.polishstation.lk www.pos.polishstation.lk; do
