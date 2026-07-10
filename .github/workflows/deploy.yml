@@ -91,3 +91,41 @@ jobs:
             put ./deploy/package.json -o $REMOTE_DIR/package.json;
             mirror -R ./deploy/tmp/ $REMOTE_DIR/tmp/;
           "
+
+      # The upload succeeding doesn't mean the app is up — Passenger has to be
+      # able to read .htaccess (LiteSpeed 503s the whole vhost when it can't:
+      # "[HTAccess] Failed to open ...: Permission denied" in the server error
+      # log) and start.mjs needs .env to exist server-side. Surface the server
+      # state and app error log here so a broken deploy is diagnosable straight
+      # from the Actions output instead of guessing.
+      - name: Post-deploy server diagnostics
+        if: always()
+        timeout-minutes: 5
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          REMOTE_DIR=/home/polishst/pos.polishstation.lk
+          ftp_cmd() {
+            lftp -c "
+              set ssl:verify-certificate no;
+              set ftp:ssl-force true;
+              set ftp:ssl-protect-data true;
+              set net:timeout 20;
+              set net:max-retries 1;
+              open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
+              $1
+            " 2>&1 || true
+          }
+          echo "=== App root listing (perms/owner matter for .htaccess) ==="
+          ftp_cmd "cls -la $REMOTE_DIR/"
+          echo "=== Passenger/app error log (stderr.log) tail ==="
+          ftp_cmd "cat $REMOTE_DIR/stderr.log" | tail -60
+          echo "=== passenger.log tail (if present) ==="
+          ftp_cmd "cat $REMOTE_DIR/passenger.log" | tail -40
+          echo "=== Live site check ==="
+          for host in pos.polishstation.lk www.pos.polishstation.lk; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "https://$host/" || echo "ERR")
+            echo "https://$host/ -> $code"
+          done
