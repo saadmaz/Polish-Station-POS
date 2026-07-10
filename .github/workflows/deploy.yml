@@ -134,13 +134,45 @@ jobs:
             !echo '=== htaccess content (pre-rename, if present) ===';
             cat $REMOTE_DIR/htaccess;
             mv $REMOTE_DIR/htaccess $REMOTE_DIR/.htaccess;
-            !echo '=== App root listing ===';
-            cls -la $REMOTE_DIR/;
-            !echo '=== dist/server listing (confirm bundled server.js arrived) ===';
-            cls -la $REMOTE_DIR/dist/server/;
-            !echo '=== app error log (stderr.log), if the app has crashed ===';
+            !echo '=== current .htaccess ===';
+            get $REMOTE_DIR/.htaccess -o /tmp/htaccess;
+            !echo '=== nodevenv versions present ===';
+            cls /home/polishst/nodevenv/pos.polishstation.lk/;
+            !echo MARK_NODE20;
+            cls /home/polishst/nodevenv/pos.polishstation.lk/20/bin/node;
+            !echo MARK_NODE22;
+            cls /home/polishst/nodevenv/pos.polishstation.lk/22/bin/node;
+            !echo MARK_END;
+            !echo '=== app / passenger logs ===';
+            cls -la /home/polishst/logs/;
             cat $REMOTE_DIR/stderr.log;
-          " 2>&1 || true
+          " 2>&1 | tee /tmp/probe.txt || true
+
+          # .htaccess may pin Passenger to a nodevenv that no longer exists
+          # (cPanel recreates the venv under the new major on Node version
+          # changes — the node_modules symlink points at 22 while the original
+          # .htaccess said 20, and a missing PassengerNodejs binary leaves the
+          # vhost hanging instead of erroring). Only rewrite when 20 is really
+          # gone and 22 really exists.
+          node20=$(sed -n '/MARK_NODE20/,/MARK_NODE22/p' /tmp/probe.txt | grep -c "20/bin/node$" || true)
+          node22=$(sed -n '/MARK_NODE22/,/MARK_END/p' /tmp/probe.txt | grep -c "22/bin/node$" || true)
+          echo "node20 binary present: $node20, node22 binary present: $node22"
+          if [ "$node20" = "0" ] && [ "$node22" != "0" ] && grep -q "nodevenv/pos.polishstation.lk/20/bin/node" /tmp/htaccess; then
+            echo "Fixing PassengerNodejs: 20 -> 22"
+            sed -i 's#nodevenv/pos.polishstation.lk/20/bin/node#nodevenv/pos.polishstation.lk/22/bin/node#' /tmp/htaccess
+            date > /tmp/restart.txt
+            lftp -c "
+              set ssl:verify-certificate no;
+              set ftp:ssl-force true;
+              set ftp:ssl-protect-data true;
+              set net:timeout 20;
+              set net:max-retries 1;
+              open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
+              put /tmp/htaccess -o $REMOTE_DIR/.htaccess;
+              put /tmp/restart.txt -o $REMOTE_DIR/tmp/restart.txt;
+            " 2>&1 || true
+          fi
+
           echo "=== Live site check ==="
           for host in pos.polishstation.lk www.pos.polishstation.lk; do
             code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "https://$host/" || echo "ERR")
