@@ -24,6 +24,7 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 import { db as fsDb } from "./firebase";
+import { useAuth } from "./auth";
 import { calcTier, getQCTemplate, DEFAULT_NOTIFICATION_SETTINGS } from "./db";
 import type {
   Booking,
@@ -189,6 +190,12 @@ function logAudit(entry: Record<string, unknown>): void {
 // ── Provider ──────────────────────────────────────────────────────────────────
 
 export function StoreProvider({ children }: { children: ReactNode }) {
+  // Firestore rules require an authenticated user — listeners must not start
+  // until login completes, or all 13 fail with permission-denied (and, before
+  // error handlers were added, never resolved storeLoading: infinite spinner).
+  const { staff } = useAuth();
+  const staffId = staff?.id;
+
   // ── State ──────────────────────────────────────────────────────────────────
   const [storeLoading, setStoreLoading] = useState(true);
   const [services,            setServices]            = useState<Service[]>([]);
@@ -225,31 +232,46 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // ── Firestore listeners ────────────────────────────────────────────────────
   useEffect(() => {
+    // Not signed in: no listeners (rules would deny them all). Mark the store
+    // "loaded" so no route ever waits forever on data that can't arrive —
+    // the auth guard in _app.tsx redirects to login before data is needed.
+    if (!staffId) {
+      setStoreLoading(false);
+      return;
+    }
+    setStoreLoading(true);
+
     const TOTAL_SUBS = 13;
     let loaded = 0;
     const done = () => { if (++loaded >= TOTAL_SUBS) setStoreLoading(false); };
+    // An errored listener still counts as done — data stays empty, but the UI
+    // must never hang on a spinner because a subscription failed.
+    const fail = (name: string) => (err: unknown) => {
+      console.error(`[store] "${name}" listener error:`, err);
+      done();
+    };
 
     const unsubs: Unsubscribe[] = [
-      onSnapshot(fs("services"),            s => { setServices(s.docs.map(d => ({ id: d.id, ...d.data() } as Service)));                         done(); }),
-      onSnapshot(fs("customers"),           s => { setCustomers(s.docs.map(d => ({ id: d.id, ...d.data() } as Customer)));                       done(); }),
-      onSnapshot(fs("jobs"),                s => { setJobs(s.docs.map(d => ({ id: d.id, ...d.data() } as Job)));                                 done(); }),
-      onSnapshot(fs("bookings"),            s => { setBookings(s.docs.map(d => ({ id: d.id, ...d.data() } as Booking)));                         done(); }),
-      onSnapshot(fs("invoices"),            s => { setInvoices(s.docs.map(d => ({ id: d.id, ...d.data() } as Invoice)));                         done(); }),
-      onSnapshot(fs("inventory"),           s => { setInventory(s.docs.map(d => ({ id: d.id, ...d.data() } as InventoryItem)));                  done(); }),
-      onSnapshot(fs("expenses"),            s => { setExpenses(s.docs.map(d => ({ id: d.id, ...d.data() } as Expense)));                         done(); }),
-      onSnapshot(fs("shifts"),              s => { setShifts(s.docs.map(d => ({ id: d.id, ...d.data() } as Shift)));                             done(); }),
-      onSnapshot(fs("equipment"),           s => { setEquipmentList(s.docs.map(d => ({ id: d.id, ...d.data() } as Equipment)));                  done(); }),
-      onSnapshot(fs("maintenanceLogs"),     s => { setMaintenanceLogsList(s.docs.map(d => ({ id: d.id, ...d.data() } as MaintenanceLog)));       done(); }),
-      onSnapshot(fs("purchaseOrders"),      s => { setPurchaseOrdersList(s.docs.map(d => ({ id: d.id, ...d.data() } as PurchaseOrder)));         done(); }),
-      onSnapshot(fs("sentNotifications"),   s => { setSentNotificationsList(s.docs.map(d => ({ id: d.id, ...d.data() } as SentNotification)));   done(); }),
+      onSnapshot(fs("services"),            s => { setServices(s.docs.map(d => ({ id: d.id, ...d.data() } as Service)));                         done(); }, fail("services")),
+      onSnapshot(fs("customers"),           s => { setCustomers(s.docs.map(d => ({ id: d.id, ...d.data() } as Customer)));                       done(); }, fail("customers")),
+      onSnapshot(fs("jobs"),                s => { setJobs(s.docs.map(d => ({ id: d.id, ...d.data() } as Job)));                                 done(); }, fail("jobs")),
+      onSnapshot(fs("bookings"),            s => { setBookings(s.docs.map(d => ({ id: d.id, ...d.data() } as Booking)));                         done(); }, fail("bookings")),
+      onSnapshot(fs("invoices"),            s => { setInvoices(s.docs.map(d => ({ id: d.id, ...d.data() } as Invoice)));                         done(); }, fail("invoices")),
+      onSnapshot(fs("inventory"),           s => { setInventory(s.docs.map(d => ({ id: d.id, ...d.data() } as InventoryItem)));                  done(); }, fail("inventory")),
+      onSnapshot(fs("expenses"),            s => { setExpenses(s.docs.map(d => ({ id: d.id, ...d.data() } as Expense)));                         done(); }, fail("expenses")),
+      onSnapshot(fs("shifts"),              s => { setShifts(s.docs.map(d => ({ id: d.id, ...d.data() } as Shift)));                             done(); }, fail("shifts")),
+      onSnapshot(fs("equipment"),           s => { setEquipmentList(s.docs.map(d => ({ id: d.id, ...d.data() } as Equipment)));                  done(); }, fail("equipment")),
+      onSnapshot(fs("maintenanceLogs"),     s => { setMaintenanceLogsList(s.docs.map(d => ({ id: d.id, ...d.data() } as MaintenanceLog)));       done(); }, fail("maintenanceLogs")),
+      onSnapshot(fs("purchaseOrders"),      s => { setPurchaseOrdersList(s.docs.map(d => ({ id: d.id, ...d.data() } as PurchaseOrder)));         done(); }, fail("purchaseOrders")),
+      onSnapshot(fs("sentNotifications"),   s => { setSentNotificationsList(s.docs.map(d => ({ id: d.id, ...d.data() } as SentNotification)));   done(); }, fail("sentNotifications")),
       onSnapshot(fd("settings", "notifications"), s => {
         setNotificationSettingsData(s.exists() ? { ...DEFAULT_NOTIFICATION_SETTINGS, ...(s.data() as Partial<NotificationSettings>) } : DEFAULT_NOTIFICATION_SETTINGS);
         done();
-      }),
+      }, fail("settings/notifications")),
     ];
 
     return () => unsubs.forEach(u => u());
-  }, []);
+  }, [staffId]);
 
   // ── Computed ───────────────────────────────────────────────────────────────
   const openShift = shifts.find(s => s.status === "OPEN");

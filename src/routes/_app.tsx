@@ -13,8 +13,10 @@ function AppLayout() {
   const { staff, loading } = useAuth();
   const { storeLoading } = useStore();
 
-  // Show spinner while Firebase checks IndexedDB or Firestore data loads
-  if (loading || storeLoading) {
+  // Order matters: resolve auth first and bounce logged-out visitors to the
+  // login page immediately — before considering data. storeLoading only
+  // gates signed-in users (listeners don't even start until login).
+  if (loading) {
     return (
       <div className="flex h-screen w-full items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -23,6 +25,14 @@ function AppLayout() {
   }
 
   if (!staff) return <Navigate to="/" />;
+
+  if (storeLoading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen w-full bg-background text-foreground">
