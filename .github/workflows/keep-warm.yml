@@ -1,0 +1,39 @@
+name: Keep app warm
+
+# The app runs under Passenger/LiteSpeed on shared hosting, which tears the
+# Node process down when idle. The next request then pays a ~20s cold start —
+# long enough that a login or change-PIN server call exceeds LiteSpeed's proxy
+# timeout and 408s. Pinging the homepage on a schedule keeps one instance
+# spawned so real users never hit a cold start.
+#
+# Note on cost: on a PRIVATE repo, scheduled runs bill against the Actions
+# quota (~2000 min/month free). Every 5 min ≈ 288 runs/day, each billed as a
+# 1-minute minimum → this alone would exceed the free quota. If this repo is
+# private, either raise the interval below or (better) move the ping to a
+# cPanel cron job or a free uptime monitor (cron-job.org / UptimeRobot) and
+# delete this file. On a PUBLIC repo, Actions minutes are free.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *" # every 5 minutes (GitHub may delay under load)
+  workflow_dispatch:
+
+# Never pile up: if a previous ping is still running, skip this one.
+concurrency:
+  group: keep-warm
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping homepage to keep Passenger warm
+        run: |
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 45 https://pos.polishstation.lk/ || echo ERR)
+            echo "ping $i -> $code"
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 15
+          done
+          echo "site did not return 200 after retries"
+          exit 1
