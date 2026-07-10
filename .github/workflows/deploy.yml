@@ -17,6 +17,13 @@ jobs:
           node-version: 22
           cache: npm
 
+      # The lockfile is generated locally with npm 11; Node 22 ships npm 10.9.
+      # Pinning CI to npm 11 keeps lockfile generation and validation on the
+      # same major, which is what previously desynced `npm ci` ("Missing … from
+      # lock file") even though the lock looked complete.
+      - name: Pin npm to match local lockfile tooling
+        run: npm install -g npm@11
+
       - name: Install dependencies
         run: npm ci --include=dev
 
