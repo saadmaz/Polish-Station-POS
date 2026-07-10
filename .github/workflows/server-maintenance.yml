@@ -1,0 +1,106 @@
+name: Server maintenance (cPanel API)
+
+# Manually-dispatched server fixes that plain FTP can't do (or can't do fast).
+# Uses a cPanel API token (Security -> Manage API Tokens) — same power as the
+# File Manager UI, so it works even when FTP logins are broken.
+on:
+  workflow_dispatch:
+    inputs:
+      heavy_cleanup:
+        description: "Also delete legacy app-root .git and empty the nodevenv node_modules (large trees, safe: app is fully bundled)"
+        type: boolean
+        default: false
+
+jobs:
+  maintain:
+    name: Restore FTP home & optional cleanup
+    runs-on: ubuntu-latest
+    env:
+      CPANEL_DOMAIN: ${{ secrets.CPANEL_DOMAIN }}
+      CPANEL_USERNAME: ${{ secrets.CPANEL_USERNAME }}
+      CPANEL_TOKEN: ${{ secrets.CPANEL_TOKEN }}
+      APP_ROOT: /home/polishst/pos.polishstation.lk
+    steps:
+      - name: Restore FTP account home directory
+        run: |
+          capi() {
+            # cPanel API 2 call: capi <Module> <function> [--data-urlencode k=v ...]
+            local module=$1 func=$2; shift 2
+            curl -sk -G "https://$CPANEL_DOMAIN:2083/json-api/cpanel" \
+              -H "Authorization: cpanel $CPANEL_USERNAME:$CPANEL_TOKEN" \
+              --data-urlencode "cpanel_jsonapi_user=$CPANEL_USERNAME" \
+              --data-urlencode "cpanel_jsonapi_apiversion=2" \
+              --data-urlencode "cpanel_jsonapi_module=$module" \
+              --data-urlencode "cpanel_jsonapi_func=$func" \
+              "$@"
+          }
+          # The FTP deploy account's home directory is $APP_ROOT/id_rsa_new
+          # (created long ago with that name; harmless). A cleanup step moved
+          # it away, and since then every FTP login fails with "421 Home
+          # directory not available", killing all deploys. An empty directory
+          # is enough to make logins work again.
+          echo "--- mkdir id_rsa_new ---"
+          capi Fileman mkdir \
+            --data-urlencode "path=$APP_ROOT" \
+            --data-urlencode "name=id_rsa_new" | head -c 1500; echo
+          echo "--- verify listing ---"
+          capi Fileman listfiles \
+            --data-urlencode "dir=$APP_ROOT" \
+            --data-urlencode "filelist=1" | head -c 3000; echo
+
+      - name: Verify FTP login works again
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          sudo apt-get update -y >/dev/null && sudo apt-get install -y lftp >/dev/null
+          lftp -c "
+            set ssl:verify-certificate no;
+            set ftp:ssl-force true;
+            set net:timeout 20;
+            set net:max-retries 1;
+            open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
+            cls -d $APP_ROOT/;
+          "
+
+      - name: Heavy cleanup (legacy .git + nodevenv node_modules contents)
+        if: inputs.heavy_cleanup
+        run: |
+          capi() {
+            local module=$1 func=$2; shift 2
+            curl -sk -G "https://$CPANEL_DOMAIN:2083/json-api/cpanel" \
+              -H "Authorization: cpanel $CPANEL_USERNAME:$CPANEL_TOKEN" \
+              --data-urlencode "cpanel_jsonapi_user=$CPANEL_USERNAME" \
+              --data-urlencode "cpanel_jsonapi_apiversion=2" \
+              --data-urlencode "cpanel_jsonapi_module=$module" \
+              --data-urlencode "cpanel_jsonapi_func=$func" \
+              "$@"
+          }
+          NODEVENV_NM=/home/polishst/nodevenv/pos.polishstation.lk/22/lib/node_modules
+          # Legacy git-clone history in the app root — unused since deploys
+          # went FTP-only; the repo of record is GitHub.
+          echo "--- delete app-root .git ---"
+          capi Fileman fileop \
+            --data-urlencode "op=unlink" \
+            --data-urlencode "sourcefiles=$APP_ROOT/.git" | head -c 1500; echo
+          # ~400-500MB of node_modules junk accumulated from the old (timed
+          # out) FTP uploads. The running app is a self-contained bundle and
+          # never reads it. Delete the tree, recreate the empty dir so the
+          # app-root symlink and cPanel's Node app UI stay intact.
+          echo "--- delete nodevenv node_modules ---"
+          capi Fileman fileop \
+            --data-urlencode "op=unlink" \
+            --data-urlencode "sourcefiles=$NODEVENV_NM" | head -c 1500; echo
+          echo "--- recreate empty node_modules dir ---"
+          capi Fileman mkdir \
+            --data-urlencode "path=$(dirname $NODEVENV_NM)" \
+            --data-urlencode "name=node_modules" | head -c 1500; echo
+
+      - name: Live site check
+        if: always()
+        run: |
+          for host in pos.polishstation.lk www.pos.polishstation.lk; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 "https://$host/" || echo "ERR")
+            echo "https://$host/ -> $code"
+          done
