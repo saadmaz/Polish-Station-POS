@@ -133,6 +133,7 @@ jobs:
             chmod 600 $REMOTE_DIR/.env;
             !echo '=== legacy cleanup (idempotent; errors once already gone are fine) ===';
             mv $REMOTE_DIR/id_rsa_new /home/polishst/id_rsa_new_moved-out-of-webroot;
+            cd $REMOTE_DIR;
             rm -r $REMOTE_DIR/src;
             rm -r $REMOTE_DIR/public;
             rm -r $REMOTE_DIR/scripts;
