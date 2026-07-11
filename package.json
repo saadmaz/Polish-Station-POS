@@ -19,7 +19,9 @@
     "seed:admin": "tsx scripts/seed-admin.ts",
     "reset:staff": "tsx scripts/reset-staff.ts",
     "deploy:rules": "tsx scripts/deploy-rules.ts",
-    "seed:data": "tsx scripts/seed-data.ts"
+    "seed:data": "tsx scripts/seed-data.ts",
+    "test:rules": "firebase emulators:exec --only firestore \"node scripts/test-rules.mjs\"",
+    "test:e2e": "firebase emulators:exec --only firestore,auth \"bash scripts/e2e/run.sh\""
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

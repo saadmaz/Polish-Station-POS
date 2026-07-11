@@ -140,7 +140,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 const d = snap.data();
                 setStaff((prev) =>
                   prev && prev.id === user.uid
-                    ? { ...prev, name: (d.name as string) ?? prev.name, color: (d.color as string) ?? prev.color }
+                    ? {
+                        ...prev,
+                        name: (d.name as string) ?? prev.name,
+                        color: (d.color as string) ?? prev.color,
+                      }
                     : prev,
                 );
               }

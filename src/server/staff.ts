@@ -83,8 +83,8 @@ async function requireCaller(idToken: string): Promise<Caller | null> {
  * stale claims only linger for client-side rule checks until logout.
  */
 function revokeBestEffort(staffId: string) {
-  void withTimeout(adminAuth.revokeRefreshTokens(staffId), 8_000, "token revoke").catch(
-    (err) => console.error(`[staff] revokeRefreshTokens(${staffId}) failed:`, err),
+  void withTimeout(adminAuth.revokeRefreshTokens(staffId), 8_000, "token revoke").catch((err) =>
+    console.error(`[staff] revokeRefreshTokens(${staffId}) failed:`, err),
   );
 }
 

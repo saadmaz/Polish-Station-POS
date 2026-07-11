@@ -2,7 +2,15 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { Clock, CheckCircle2, PauseCircle, AlertTriangle, Maximize2, Minimize2, Car } from "lucide-react";
+import {
+  Clock,
+  CheckCircle2,
+  PauseCircle,
+  AlertTriangle,
+  Maximize2,
+  Minimize2,
+  Car,
+} from "lucide-react";
 import type { Job } from "@/lib/db";
 
 export const Route = createFileRoute("/_app/bay-board")({
@@ -13,18 +21,18 @@ export const Route = createFileRoute("/_app/bay-board")({
 const BAYS = ["Bay 1", "Bay 2", "Bay 3", "Bay 4", "Bay 5"];
 
 const CAT_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-  Exterior:         { bg: "bg-info/10",             border: "border-info/40",             text: "text-info"    },
-  Interior:         { bg: "bg-success/10",           border: "border-success/40",           text: "text-success" },
-  "Full Detail":    { bg: "bg-primary/10",           border: "border-primary/40",           text: "text-primary" },
-  "Paint Protection": { bg: "bg-warning/10",         border: "border-warning/40",           text: "text-warning" },
-  Coating:          { bg: "bg-muted",                border: "border-muted-foreground/30",  text: "text-foreground" },
+  Exterior: { bg: "bg-info/10", border: "border-info/40", text: "text-info" },
+  Interior: { bg: "bg-success/10", border: "border-success/40", text: "text-success" },
+  "Full Detail": { bg: "bg-primary/10", border: "border-primary/40", text: "text-primary" },
+  "Paint Protection": { bg: "bg-warning/10", border: "border-warning/40", text: "text-warning" },
+  Coating: { bg: "bg-muted", border: "border-muted-foreground/30", text: "text-foreground" },
 };
 
 const STATUS_ICON: Record<string, React.ElementType> = {
-  "In Bay":      Clock,
+  "In Bay": Clock,
   "Awaiting QC": CheckCircle2,
-  "On Hold":     PauseCircle,
-  "Ready":       CheckCircle2,
+  "On Hold": PauseCircle,
+  Ready: CheckCircle2,
 };
 
 function liveElapsedMin(job: Job): number {
@@ -61,20 +69,35 @@ function BayCard({ bay, job, tick }: { bay: string; job: Job | undefined; tick: 
 
   const pct = Math.min(100, job.estimateMin > 0 ? (elapsed / job.estimateMin) * 100 : 0);
   const overdue = elapsed > job.estimateMin;
-  const atRisk  = !overdue && pct >= 80;
+  const atRisk = !overdue && pct >= 80;
 
   const colors = CAT_COLORS[job.category] ?? CAT_COLORS["Exterior"];
   const StatusIcon = STATUS_ICON[job.status] ?? Clock;
 
   const progressColor = overdue ? "bg-primary" : atRisk ? "bg-warning" : "bg-success";
-  const borderColor   = overdue ? "border-primary/60" : atRisk ? "border-warning/60" : "border-success/40";
+  const borderColor = overdue
+    ? "border-primary/60"
+    : atRisk
+      ? "border-warning/60"
+      : "border-success/40";
 
   return (
-    <div className={cn("rounded-2xl border-2 bg-card p-5 flex flex-col gap-4 min-h-[220px] transition-colors", borderColor)}>
+    <div
+      className={cn(
+        "rounded-2xl border-2 bg-card p-5 flex flex-col gap-4 min-h-[220px] transition-colors",
+        borderColor,
+      )}
+    >
       {/* Bay label + status */}
       <div className="flex items-center justify-between">
         <div className="text-base font-bold text-foreground">{bay}</div>
-        <div className={cn("flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold", colors.bg, colors.text)}>
+        <div
+          className={cn(
+            "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold",
+            colors.bg,
+            colors.text,
+          )}
+        >
           <StatusIcon className="h-3.5 w-3.5" />
           {job.status}
         </div>
@@ -82,7 +105,9 @@ function BayCard({ bay, job, tick }: { bay: string; job: Job | undefined; tick: 
 
       {/* Customer + vehicle */}
       <div className="flex-1">
-        <div className="text-xl font-display font-bold leading-tight truncate">{job.customerName}</div>
+        <div className="text-xl font-display font-bold leading-tight truncate">
+          {job.customerName}
+        </div>
         <div className="text-sm text-muted-foreground mt-0.5 truncate">
           {job.vehicleModel} · <span className="font-mono">{job.plate}</span>
         </div>
@@ -93,7 +118,12 @@ function BayCard({ bay, job, tick }: { bay: string; job: Job | undefined; tick: 
       {/* Timer + progress */}
       <div className="space-y-2">
         <div className="flex items-center justify-between text-sm">
-          <span className={cn("font-mono font-bold text-lg", overdue ? "text-primary" : "text-foreground")}>
+          <span
+            className={cn(
+              "font-mono font-bold text-lg",
+              overdue ? "text-primary" : "text-foreground",
+            )}
+          >
             {formatElapsed(elapsed)}
           </span>
           <span className="text-muted-foreground text-xs">
@@ -152,7 +182,12 @@ function BayBoard() {
   const occupiedCount = BAYS.filter((b) => bayJob(b)).length;
 
   return (
-    <div className={cn("p-6 h-full flex flex-col gap-5", fullscreen && "fixed inset-0 z-50 bg-background overflow-auto")}>
+    <div
+      className={cn(
+        "p-6 h-full flex flex-col gap-5",
+        fullscreen && "fixed inset-0 z-50 bg-background overflow-auto",
+      )}
+    >
       {/* Header */}
       <div className="flex items-center justify-between shrink-0">
         <div>
@@ -166,11 +201,15 @@ function BayBoard() {
           <div className="flex items-center gap-3 text-sm">
             <div className="rounded-lg border border-border bg-card px-3 py-2 text-center">
               <div className="font-bold text-lg text-primary">{activeJobs.length}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Active</div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Active
+              </div>
             </div>
             <div className="rounded-lg border border-border bg-card px-3 py-2 text-center">
               <div className="font-bold text-lg text-warning">{queued.length}</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Queued</div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Queued
+              </div>
             </div>
             <div className="rounded-lg border border-border bg-card px-3 py-2 text-center">
               <div className="font-bold text-lg text-success">{doneToday.length}</div>
@@ -210,22 +249,33 @@ function BayBoard() {
         {/* Queue */}
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Queue</h3>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Queue
+            </h3>
             <span className="text-[11px] font-mono text-muted-foreground bg-muted rounded-full px-2 py-0.5">
               {queued.length}
             </span>
           </div>
           {queued.length === 0 ? (
-            <div className="text-xs text-muted-foreground text-center py-3">No vehicles waiting</div>
+            <div className="text-xs text-muted-foreground text-center py-3">
+              No vehicles waiting
+            </div>
           ) : (
             <div className="space-y-2">
               {queued.map((j) => (
-                <div key={j.id} className="flex items-center justify-between rounded-lg bg-muted/40 border border-border px-3 py-2">
+                <div
+                  key={j.id}
+                  className="flex items-center justify-between rounded-lg bg-muted/40 border border-border px-3 py-2"
+                >
                   <div>
                     <div className="text-sm font-semibold">{j.customerName}</div>
-                    <div className="text-[11px] text-muted-foreground">{j.serviceName} · {j.plate}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {j.serviceName} · {j.plate}
+                    </div>
                   </div>
-                  <div className="text-xs text-muted-foreground font-mono">{j.tech !== "—" ? j.tech : "Unassigned"}</div>
+                  <div className="text-xs text-muted-foreground font-mono">
+                    {j.tech !== "—" ? j.tech : "Unassigned"}
+                  </div>
                 </div>
               ))}
             </div>
@@ -235,25 +285,37 @@ function BayBoard() {
         {/* Done today */}
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Done Today</h3>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Done Today
+            </h3>
             <span className="text-[11px] font-mono text-muted-foreground bg-muted rounded-full px-2 py-0.5">
               {doneToday.length}
             </span>
           </div>
           {doneToday.length === 0 ? (
-            <div className="text-xs text-muted-foreground text-center py-3">No completed jobs yet</div>
+            <div className="text-xs text-muted-foreground text-center py-3">
+              No completed jobs yet
+            </div>
           ) : (
             <div className="space-y-2">
               {doneToday.map((j) => (
-                <div key={j.id} className="flex items-center justify-between rounded-lg bg-success/5 border border-success/20 px-3 py-2">
+                <div
+                  key={j.id}
+                  className="flex items-center justify-between rounded-lg bg-success/5 border border-success/20 px-3 py-2"
+                >
                   <div>
                     <div className="text-sm font-semibold">{j.customerName}</div>
-                    <div className="text-[11px] text-muted-foreground">{j.serviceName} · {j.plate}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {j.serviceName} · {j.plate}
+                    </div>
                   </div>
                   <div className="flex items-center gap-1.5 text-success text-xs font-semibold">
                     <CheckCircle2 className="h-3.5 w-3.5" />
                     {j.completedAt
-                      ? new Date(j.completedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                      ? new Date(j.completedAt).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
                       : "Done"}
                   </div>
                 </div>
@@ -265,8 +327,11 @@ function BayBoard() {
 
       {fullscreen && (
         <div className="shrink-0 text-center text-xs text-muted-foreground">
-          Press <kbd className="rounded border border-border px-1.5 py-0.5 font-mono">Esc</kbd> or click{" "}
-          <button onClick={() => setFullscreen(false)} className="underline">exit fullscreen</button>
+          Press <kbd className="rounded border border-border px-1.5 py-0.5 font-mono">Esc</kbd> or
+          click{" "}
+          <button onClick={() => setFullscreen(false)} className="underline">
+            exit fullscreen
+          </button>
         </div>
       )}
     </div>

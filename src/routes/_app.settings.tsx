@@ -585,7 +585,10 @@ function IntegrationsPanel() {
 }
 
 function AuditPanel() {
-  const events = [...db.audit.list()].reverse();
+  const { auditList } = useStore();
+  const events = [...auditList].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
 
   function exportCSV() {
     const rows = events.map((e) => [

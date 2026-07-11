@@ -32,7 +32,11 @@ function daysSince(iso: string | null): number {
 }
 
 function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  return new Date(iso).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 // ─── Send Button ─────────────────────────────────────────────────────────────
@@ -114,7 +118,8 @@ function RemindersTab() {
       <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800/40 dark:bg-blue-900/20">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
         <p className="text-sm text-blue-700 dark:text-blue-300">
-          Clicking <strong>WhatsApp</strong> opens the app with the pre-filled message — review and tap Send. The customer is automatically removed from this list once marked.
+          Clicking <strong>WhatsApp</strong> opens the app with the pre-filled message — review and
+          tap Send. The customer is automatically removed from this list once marked.
         </p>
       </div>
 
@@ -122,11 +127,21 @@ function RemindersTab() {
         <table className="w-full">
           <thead className="bg-muted/50">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Customer</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Last Visit</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Days Since</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Vehicles</th>
-              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Notify</th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Customer
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Last Visit
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Days Since
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Vehicles
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Notify
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -151,7 +166,12 @@ function RemindersTab() {
                     {c.lastVisit ? fmtDate(c.lastVisit) : "—"}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={cn("text-sm font-medium", days > 60 ? "text-destructive" : "text-amber-600")}>
+                    <span
+                      className={cn(
+                        "text-sm font-medium",
+                        days > 60 ? "text-destructive" : "text-amber-600",
+                      )}
+                    >
                       {days}d ago
                     </span>
                   </td>
@@ -176,7 +196,11 @@ function RemindersTab() {
                           className="rounded p-1 text-muted-foreground hover:text-foreground"
                           title="Preview message"
                         >
-                          {preview === c.id ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                          {preview === c.id ? (
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          ) : (
+                            <ChevronRight className="h-3.5 w-3.5" />
+                          )}
                         </button>
                       </div>
                     )}
@@ -215,8 +239,19 @@ function ReviewsTab() {
   const [sent, setSent] = useState<Set<string>>(new Set());
   const [preview, setPreview] = useState<string | null>(null);
 
-  function handleSent(j: { id: string; customerId: string | null; customerName: string; phone: string }) {
-    recordNotification({ type: "review_request", customerId: j.customerId, jobId: j.id, customerName: j.customerName, phone: j.phone });
+  function handleSent(j: {
+    id: string;
+    customerId: string | null;
+    customerName: string;
+    phone: string;
+  }) {
+    recordNotification({
+      type: "review_request",
+      customerId: j.customerId,
+      jobId: j.id,
+      customerName: j.customerName,
+      phone: j.phone,
+    });
     setSent((s) => new Set(s).add(j.id));
   }
 
@@ -225,7 +260,9 @@ function ReviewsTab() {
       <div className="text-center py-16 text-muted-foreground">
         <Star className="mx-auto mb-3 h-10 w-10 text-amber-400 opacity-60" />
         <p className="font-medium">No pending review requests</p>
-        <p className="text-sm mt-1">Review requests for recently completed jobs will appear here.</p>
+        <p className="text-sm mt-1">
+          Review requests for recently completed jobs will appear here.
+        </p>
       </div>
     );
   }
@@ -235,7 +272,8 @@ function ReviewsTab() {
     return (
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800/40 dark:bg-amber-900/20">
         <p className="text-sm font-medium text-amber-700 dark:text-amber-400 flex items-center gap-2">
-          <Info className="h-4 w-4" /> Set your Google Review link in the <strong>Templates & Settings</strong> tab first.
+          <Info className="h-4 w-4" /> Set your Google Review link in the{" "}
+          <strong>Templates & Settings</strong> tab first.
         </p>
       </div>
     );
@@ -246,11 +284,21 @@ function ReviewsTab() {
       <table className="w-full">
         <thead className="bg-muted/50">
           <tr>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Customer</th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Vehicle</th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Service</th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Completed</th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Notify</th>
+            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Customer
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Vehicle
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Service
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Completed
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Notify
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -296,7 +344,11 @@ function ReviewsTab() {
                         className="rounded p-1 text-muted-foreground hover:text-foreground"
                         title="Preview"
                       >
-                        {preview === j.id ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                        {preview === j.id ? (
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        ) : (
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        )}
                       </button>
                     </div>
                   )}
@@ -341,7 +393,8 @@ function TemplatesTab() {
     setTimeout(() => setSaved(false), 2000);
   }
 
-  const inp = "w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
+  const inp =
+    "w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
   const lbl = "block text-xs font-medium text-muted-foreground mb-1";
 
   const sampleVars = {
@@ -357,7 +410,9 @@ function TemplatesTab() {
     <div className="space-y-6">
       {/* Settings */}
       <div className="rounded-lg border border-border bg-card p-5">
-        <h3 className="font-semibold mb-4 flex items-center gap-2"><Settings2 className="h-4 w-4" /> Settings</h3>
+        <h3 className="font-semibold mb-4 flex items-center gap-2">
+          <Settings2 className="h-4 w-4" /> Settings
+        </h3>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <label className={lbl}>Google Review Link</label>
@@ -369,12 +424,19 @@ function TemplatesTab() {
                 placeholder="https://g.page/r/YOUR_BUSINESS/review"
               />
               {form.googleReviewLink && (
-                <a href={form.googleReviewLink} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted">
+                <a
+                  href={form.googleReviewLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted"
+                >
                   <ExternalLink className="h-4 w-4" /> Test
                 </a>
               )}
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">Go to Google Business Profile → Get more reviews → Copy the short link</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Go to Google Business Profile → Get more reviews → Copy the short link
+            </p>
           </div>
           <div>
             <label className={lbl}>Service Reminder Interval (days)</label>
@@ -386,17 +448,25 @@ function TemplatesTab() {
               value={form.reminderIntervalDays}
               onChange={(e) => set("reminderIntervalDays", parseInt(e.target.value) || 30)}
             />
-            <p className="mt-1 text-xs text-muted-foreground">Customers with no visit in this many days appear in Service Reminders</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Customers with no visit in this many days appear in Service Reminders
+            </p>
           </div>
         </div>
       </div>
 
       {/* Variable reference */}
       <div className="rounded-lg border border-border bg-muted/30 p-4">
-        <p className="text-xs font-semibold text-muted-foreground mb-2">Available template variables:</p>
+        <p className="text-xs font-semibold text-muted-foreground mb-2">
+          Available template variables:
+        </p>
         <div className="flex flex-wrap gap-2">
           {TEMPLATE_VARS.map((v) => (
-            <span key={v.key} className="rounded bg-background border border-border px-2 py-0.5 font-mono text-xs" title={v.desc}>{`{${v.key}}`}</span>
+            <span
+              key={v.key}
+              className="rounded bg-background border border-border px-2 py-0.5 font-mono text-xs"
+              title={v.desc}
+            >{`{${v.key}}`}</span>
           ))}
         </div>
       </div>
@@ -408,7 +478,9 @@ function TemplatesTab() {
         { key: "reviewRequestTemplate" as const, label: "Google Review Request", icon: "⭐" },
       ].map(({ key, label, icon }) => (
         <div key={key} className="rounded-lg border border-border bg-card p-5 space-y-3">
-          <h3 className="font-semibold">{icon} {label}</h3>
+          <h3 className="font-semibold">
+            {icon} {label}
+          </h3>
           <div>
             <label className={lbl}>Message Template</label>
             <textarea
@@ -427,10 +499,20 @@ function TemplatesTab() {
           onClick={save}
           className={cn(
             "flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium transition-colors",
-            saved ? "bg-green-600 text-white" : "bg-primary text-primary-foreground hover:bg-primary/90",
+            saved
+              ? "bg-green-600 text-white"
+              : "bg-primary text-primary-foreground hover:bg-primary/90",
           )}
         >
-          {saved ? <><CheckCircle2 className="h-4 w-4" /> Saved!</> : <><Send className="h-4 w-4" /> Save Templates</>}
+          {saved ? (
+            <>
+              <CheckCircle2 className="h-4 w-4" /> Saved!
+            </>
+          ) : (
+            <>
+              <Send className="h-4 w-4" /> Save Templates
+            </>
+          )}
         </button>
       </div>
     </div>
@@ -443,9 +525,24 @@ function NotificationsPage() {
   const { customersNeedingReminder, jobsNeedingReview } = useStore();
   const [tab, setTab] = useState<Tab>("reminders");
 
-  const tabs: { id: Tab; label: string; icon: React.ComponentType<{ className?: string }>; badge?: number }[] = [
-    { id: "reminders", label: "Service Reminders", icon: Clock3, badge: customersNeedingReminder.length || undefined },
-    { id: "reviews",   label: "Review Requests",   icon: Star,   badge: jobsNeedingReview.length || undefined },
+  const tabs: {
+    id: Tab;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+    badge?: number;
+  }[] = [
+    {
+      id: "reminders",
+      label: "Service Reminders",
+      icon: Clock3,
+      badge: customersNeedingReminder.length || undefined,
+    },
+    {
+      id: "reviews",
+      label: "Review Requests",
+      icon: Star,
+      badge: jobsNeedingReview.length || undefined,
+    },
     { id: "templates", label: "Templates & Settings", icon: Settings2 },
   ];
 
@@ -457,7 +554,8 @@ function NotificationsPage() {
           <Bell className="h-6 w-6 text-primary" /> Notifications & Reminders
         </h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Send service reminders and review requests via WhatsApp — one-click deep links, no backend required
+          Send service reminders and review requests via WhatsApp — one-click deep links, no backend
+          required
         </p>
       </div>
 
@@ -468,7 +566,9 @@ function NotificationsPage() {
             <Clock3 className="h-4 w-4 text-amber-500" />
             <span className="text-xs text-muted-foreground">Reminder Due</span>
           </div>
-          <p className="mt-1 text-2xl font-bold text-amber-500">{customersNeedingReminder.length}</p>
+          <p className="mt-1 text-2xl font-bold text-amber-500">
+            {customersNeedingReminder.length}
+          </p>
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="flex items-center gap-2">
@@ -482,7 +582,9 @@ function NotificationsPage() {
             <MessageCircle className="h-4 w-4 text-green-500" />
             <span className="text-xs text-muted-foreground">Total Pending</span>
           </div>
-          <p className="mt-1 text-2xl font-bold text-green-600">{customersNeedingReminder.length + jobsNeedingReview.length}</p>
+          <p className="mt-1 text-2xl font-bold text-green-600">
+            {customersNeedingReminder.length + jobsNeedingReview.length}
+          </p>
         </div>
       </div>
 
@@ -502,7 +604,9 @@ function NotificationsPage() {
             <Icon className="h-4 w-4" />
             {label}
             {badge !== undefined && badge > 0 && (
-              <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">{badge}</span>
+              <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                {badge}
+              </span>
             )}
           </button>
         ))}
@@ -510,7 +614,7 @@ function NotificationsPage() {
 
       {/* Tab content */}
       {tab === "reminders" && <RemindersTab />}
-      {tab === "reviews"   && <ReviewsTab />}
+      {tab === "reviews" && <ReviewsTab />}
       {tab === "templates" && <TemplatesTab />}
     </div>
   );

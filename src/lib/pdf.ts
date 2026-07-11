@@ -26,7 +26,11 @@ function fmt(n: number) {
 }
 
 function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  return new Date(iso).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function rule(doc: jsPDF, y: number, color = RULE) {
@@ -102,7 +106,11 @@ function buildDoc(opts: DocOptions): jsPDF {
   // Contact line
   doc.setFontSize(7);
   doc.setTextColor(255, 220, 220);
-  doc.text("No. 142, Havelock Rd, Colombo 05  ·  +94 11 250 8821  ·  hello@polishstation.lk", ML, 28);
+  doc.text(
+    "No. 142, Havelock Rd, Colombo 05  ·  +94 11 250 8821  ·  hello@polishstation.lk",
+    ML,
+    28,
+  );
   doc.text("VAT Reg: VAT-184220985-7000", ML, 33.5);
 
   // Doc type (right side)
@@ -132,11 +140,20 @@ function buildDoc(opts: DocOptions): jsPDF {
 
   // Status badge (right)
   const statusColor =
-    opts.status === "Paid" ? SUCCESS :
-    opts.status === "Void" ? SLATE :
-    opts.status === "ESTIMATE" ? AMBER :
-    SLATE;
-  badge(doc, opts.status.toUpperCase(), MR - doc.getTextWidth(opts.status.toUpperCase()) - 8, y + 0.5, statusColor);
+    opts.status === "Paid"
+      ? SUCCESS
+      : opts.status === "Void"
+        ? SLATE
+        : opts.status === "ESTIMATE"
+          ? AMBER
+          : SLATE;
+  badge(
+    doc,
+    opts.status.toUpperCase(),
+    MR - doc.getTextWidth(opts.status.toUpperCase()) - 8,
+    y + 0.5,
+    statusColor,
+  );
 
   y += 6;
   doc.setFont("helvetica", "bold");
@@ -148,7 +165,10 @@ function buildDoc(opts: DocOptions): jsPDF {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(...SLATE);
-  if (opts.phone) { doc.text(opts.phone, ML, y); y += 4.5; }
+  if (opts.phone) {
+    doc.text(opts.phone, ML, y);
+    y += 4.5;
+  }
 
   if (opts.plate || opts.vehicleModel) {
     const vehicleLine = [opts.plate, opts.vehicleModel].filter(Boolean).join("  ·  ");
@@ -169,11 +189,11 @@ function buildDoc(opts: DocOptions): jsPDF {
   doc.setFontSize(7.5);
   doc.setTextColor(...WHITE);
 
-  const C1 = ML + 3;          // description start
-  const C2 = ML + 90;         // qty
-  const C3 = ML + 111;        // unit price
-  const C4 = ML + 136;        // discount
-  const C5 = MR;              // total (right-aligned)
+  const C1 = ML + 3; // description start
+  const C2 = ML + 90; // qty
+  const C3 = ML + 111; // unit price
+  const C4 = ML + 136; // discount
+  const C5 = MR; // total (right-aligned)
 
   doc.text("#", ML + 1, y);
   doc.text("DESCRIPTION", C1 + 6, y);
@@ -235,9 +255,14 @@ function buildDoc(opts: DocOptions): jsPDF {
 
   // ── Totals ────────────────────────────────────────────────────────────────────
   const TL = MR - 78; // totals label start
-  const TV = MR;      // totals value (right-aligned)
+  const TV = MR; // totals value (right-aligned)
 
-  function totalRow(label: string, value: string, bold = false, color: [number, number, number] = CHARCOAL) {
+  function totalRow(
+    label: string,
+    value: string,
+    bold = false,
+    color: [number, number, number] = CHARCOAL,
+  ) {
     doc.setFont("helvetica", bold ? "bold" : "normal");
     doc.setFontSize(bold ? 9 : 8.5);
     doc.setTextColor(...SLATE);
@@ -341,7 +366,11 @@ function buildDoc(opts: DocOptions): jsPDF {
   );
 
   doc.setTextColor(...MUTED);
-  doc.text("Thank you for choosing Polish Station — Sri Lanka's premier car care destination.", ML, footerY + 10);
+  doc.text(
+    "Thank you for choosing Polish Station — Sri Lanka's premier car care destination.",
+    ML,
+    footerY + 10,
+  );
 
   // Page number
   doc.setFontSize(7);
@@ -393,7 +422,11 @@ export function downloadPOPDF(po: PurchaseOrder) {
   doc.text("Professional Car Detailing & Protection", ML, 22);
   doc.setFontSize(7);
   doc.setTextColor(255, 220, 220);
-  doc.text("No. 142, Havelock Rd, Colombo 05  ·  +94 11 250 8821  ·  hello@polishstation.lk", ML, 28);
+  doc.text(
+    "No. 142, Havelock Rd, Colombo 05  ·  +94 11 250 8821  ·  hello@polishstation.lk",
+    ML,
+    28,
+  );
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(22);
@@ -569,7 +602,11 @@ export function downloadPOPDF(po: PurchaseOrder) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
   doc.setTextColor(...SLATE);
-  doc.text("No. 142, Havelock Rd, Colombo 05  ·  +94 11 250 8821  ·  hello@polishstation.lk", ML, footerY + 5);
+  doc.text(
+    "No. 142, Havelock Rd, Colombo 05  ·  +94 11 250 8821  ·  hello@polishstation.lk",
+    ML,
+    footerY + 5,
+  );
   doc.setTextColor(...MUTED);
   doc.text("Please retain a signed copy for your records.", ML, footerY + 10);
   doc.setFontSize(7);
@@ -598,7 +635,11 @@ export function downloadQuotationPDF(opts: {
     docType: "QUOTATION",
     docId: opts.id,
     docDate: new Date().toISOString(),
-    validUntil: validDate.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
+    validUntil: validDate.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    }),
     customerName: opts.customerName,
     phone: opts.phone,
     plate: opts.plate,

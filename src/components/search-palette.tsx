@@ -37,9 +37,7 @@ export function SearchPalette({ open, onOpenChange }: SearchPaletteProps) {
 
   const matchedCustomers = customers.filter(
     (c) =>
-      c.name.toLowerCase().includes(q) ||
-      c.phone.includes(q) ||
-      c.email.toLowerCase().includes(q),
+      c.name.toLowerCase().includes(q) || c.phone.includes(q) || c.email.toLowerCase().includes(q),
   );
 
   const matchedBookings = bookings.filter(
@@ -92,7 +90,11 @@ export function SearchPalette({ open, onOpenChange }: SearchPaletteProps) {
         {matchedBookings.length > 0 && (
           <CommandGroup heading="Bookings">
             {matchedBookings.slice(0, 5).map((b) => (
-              <CommandItem key={b.id} value={b.id + b.customerName} onSelect={() => go("/bookings")}>
+              <CommandItem
+                key={b.id}
+                value={b.id + b.customerName}
+                onSelect={() => go("/bookings")}
+              >
                 <Calendar className="mr-2 h-4 w-4 text-muted-foreground" />
                 <span className="font-medium">{b.id}</span>
                 <span className="ml-2 text-sm">{b.customerName}</span>

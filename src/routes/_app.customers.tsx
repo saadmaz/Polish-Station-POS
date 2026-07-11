@@ -4,7 +4,17 @@ import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
-import { Search, Plus, Download, X, Pencil, Trash2, Car, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  Search,
+  Plus,
+  Download,
+  X,
+  Pencil,
+  Trash2,
+  Car,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import type { Customer, Vehicle } from "@/lib/db";
 import { calcTier } from "@/lib/db";
 
@@ -35,12 +45,19 @@ function CustomerForm({
   onCancel,
 }: {
   initial: Customer | null;
-  onSave: (data: Omit<Customer, "id" | "createdAt" | "visits" | "spend" | "tier" | "lastVisit"> | Customer) => void;
+  onSave: (
+    data: Omit<Customer, "id" | "createdAt" | "visits" | "spend" | "tier" | "lastVisit"> | Customer,
+  ) => void;
   onCancel: () => void;
 }) {
   const [form, setForm] = useState<typeof BLANK>(
     initial
-      ? { name: initial.name, phone: initial.phone, email: initial.email, vehicles: initial.vehicles }
+      ? {
+          name: initial.name,
+          phone: initial.phone,
+          email: initial.email,
+          vehicles: initial.vehicles,
+        }
       : BLANK,
   );
 
@@ -75,22 +92,41 @@ function CustomerForm({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="text-sm font-medium">Name *</label>
-          <input required className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+          <input
+            required
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+          />
         </div>
         <div>
           <label className="text-sm font-medium">Phone</label>
-          <input className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" placeholder="+94 77 000 0000" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
+          <input
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            placeholder="+94 77 000 0000"
+            value={form.phone}
+            onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+          />
         </div>
         <div className="sm:col-span-2">
           <label className="text-sm font-medium">Email</label>
-          <input type="email" className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+          <input
+            type="email"
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            value={form.email}
+            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+          />
         </div>
       </div>
 
       <div>
         <div className="flex items-center justify-between mb-2">
           <label className="text-sm font-medium">Vehicles</label>
-          <button type="button" onClick={addVehicle} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+          <button
+            type="button"
+            onClick={addVehicle}
+            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          >
             <Plus className="h-3 w-3" /> Add vehicle
           </button>
         </div>
@@ -116,7 +152,11 @@ function CustomerForm({
                   value={v.color}
                   onChange={(e) => setVehicle(i, "color", e.target.value)}
                 />
-                <button type="button" onClick={() => removeVehicle(i)} className="text-muted-foreground hover:text-primary">
+                <button
+                  type="button"
+                  onClick={() => removeVehicle(i)}
+                  className="text-muted-foreground hover:text-primary"
+                >
                   <X className="h-4 w-4" />
                 </button>
               </div>
@@ -129,8 +169,17 @@ function CustomerForm({
       </div>
 
       <div className="flex gap-2 pt-2">
-        <button type="button" onClick={onCancel} className="flex-1 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent">Cancel</button>
-        <button type="submit" className="flex-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex-1 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="flex-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90"
+        >
           {initial ? "Save Changes" : "Add Customer"}
         </button>
       </div>
@@ -140,21 +189,33 @@ function CustomerForm({
 
 // ─── Customer detail row (expanded) ──────────────────────────────────────────
 
-function CustomerRow({ customer, onEdit, onDelete }: { customer: Customer; onEdit: () => void; onDelete: () => void }) {
+function CustomerRow({
+  customer,
+  onEdit,
+  onDelete,
+}: {
+  customer: Customer;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const { invoices } = useStore();
-  const history = invoices.filter((i) => i.customerId === customer.id).reverse().slice(0, 5);
+  const history = invoices
+    .filter((i) => i.customerId === customer.id)
+    .reverse()
+    .slice(0, 5);
 
   return (
     <>
-      <tr
-        className="hover:bg-muted/40 cursor-pointer"
-        onClick={() => setExpanded((v) => !v)}
-      >
+      <tr className="hover:bg-muted/40 cursor-pointer" onClick={() => setExpanded((v) => !v)}>
         <td className="px-5 py-3">
           <div className="flex items-center gap-2.5">
             <div className="grid h-8 w-8 place-items-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-              {customer.name.split(" ").map((p) => p[0]).slice(0, 2).join("")}
+              {customer.name
+                .split(" ")
+                .map((p) => p[0])
+                .slice(0, 2)
+                .join("")}
             </div>
             <div>
               <div className="font-semibold">{customer.name}</div>
@@ -164,10 +225,16 @@ function CustomerRow({ customer, onEdit, onDelete }: { customer: Customer; onEdi
         </td>
         <td className="px-3 py-3 font-mono text-xs text-muted-foreground">{customer.phone}</td>
         <td className="px-3 py-3 text-right font-mono">{customer.visits}</td>
-        <td className="px-3 py-3 text-right font-mono font-semibold">LKR {customer.spend.toLocaleString()}</td>
+        <td className="px-3 py-3 text-right font-mono font-semibold">
+          LKR {customer.spend.toLocaleString()}
+        </td>
         <td className="px-3 py-3 text-muted-foreground text-xs">
           {customer.lastVisit
-            ? new Date(customer.lastVisit).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })
+            ? new Date(customer.lastVisit).toLocaleDateString([], {
+                day: "numeric",
+                month: "short",
+                year: "numeric",
+              })
             : "Never"}
         </td>
         <td className="px-3 py-3 text-right">
@@ -182,20 +249,30 @@ function CustomerRow({ customer, onEdit, onDelete }: { customer: Customer; onEdi
         <td className="px-3 py-3">
           <div className="flex items-center gap-1">
             <button
-              onClick={(e) => { e.stopPropagation(); onEdit(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit();
+              }}
               className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
               title="Edit"
             >
               <Pencil className="h-3.5 w-3.5" />
             </button>
             <button
-              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
               className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-primary"
               title="Delete"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
-            {expanded ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+            {expanded ? (
+              <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            )}
           </div>
         </td>
       </tr>
@@ -205,7 +282,9 @@ function CustomerRow({ customer, onEdit, onDelete }: { customer: Customer; onEdi
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Vehicles */}
               <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Vehicles</h4>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                  Vehicles
+                </h4>
                 {customer.vehicles.length > 0 ? (
                   <div className="space-y-1">
                     {customer.vehicles.map((v, i) => (
@@ -217,22 +296,32 @@ function CustomerRow({ customer, onEdit, onDelete }: { customer: Customer; onEdi
                       </div>
                     ))}
                   </div>
-                ) : <p className="text-xs text-muted-foreground">No vehicles on file</p>}
+                ) : (
+                  <p className="text-xs text-muted-foreground">No vehicles on file</p>
+                )}
               </div>
               {/* Recent invoices */}
               <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">Recent Invoices</h4>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                  Recent Invoices
+                </h4>
                 {history.length > 0 ? (
                   <div className="space-y-1">
                     {history.map((inv) => (
                       <div key={inv.id} className="flex items-center justify-between text-sm">
                         <span className="font-mono text-xs text-muted-foreground">{inv.id}</span>
-                        <span className="font-mono font-semibold">LKR {inv.total.toLocaleString()}</span>
-                        <span className="text-xs text-muted-foreground">{new Date(inv.createdAt).toLocaleDateString()}</span>
+                        <span className="font-mono font-semibold">
+                          LKR {inv.total.toLocaleString()}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(inv.createdAt).toLocaleDateString()}
+                        </span>
                       </div>
                     ))}
                   </div>
-                ) : <p className="text-xs text-muted-foreground">No invoices yet</p>}
+                ) : (
+                  <p className="text-xs text-muted-foreground">No invoices yet</p>
+                )}
               </div>
             </div>
           </td>
@@ -293,7 +382,15 @@ function Customers() {
                 const csv = [
                   ["Name", "Phone", "Email", "Tier", "Visits", "Spend", "Vehicles"].join(","),
                   ...customers.map((c) =>
-                    [c.name, c.phone, c.email, c.tier, c.visits, c.spend, c.vehicles.map((v) => v.plate).join(";")].join(","),
+                    [
+                      c.name,
+                      c.phone,
+                      c.email,
+                      c.tier,
+                      c.visits,
+                      c.spend,
+                      c.vehicles.map((v) => v.plate).join(";"),
+                    ].join(","),
                   ),
                 ].join("\n");
                 const a = document.createElement("a");
@@ -379,7 +476,9 @@ function Customers() {
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={8} className="text-center py-10 text-muted-foreground">
-                    {search || tierFilter !== "All" ? "No customers match your filter" : "No customers yet"}
+                    {search || tierFilter !== "All"
+                      ? "No customers match your filter"
+                      : "No customers yet"}
                   </td>
                 </tr>
               )}

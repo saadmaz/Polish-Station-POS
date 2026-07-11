@@ -1,11 +1,5 @@
 import { createServer } from "http";
-import {
-  createReadStream,
-  existsSync,
-  readFileSync,
-  statSync,
-  unlinkSync,
-} from "fs";
+import { createReadStream, existsSync, readFileSync, statSync, unlinkSync } from "fs";
 import { join, extname } from "path";
 import { fileURLToPath } from "url";
 import { Readable } from "stream";
@@ -44,6 +38,18 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const CLIENT_DIR = join(__dirname, "dist", "client");
 const SERVER_ENTRY = new URL("./dist/server/server.js", import.meta.url).href;
 
+// Only set by the e2e test harness / local emulator runs — never in a real
+// deploy, since production never has FIRESTORE_EMULATOR_HOST in its .env.
+// Without this, the CSP below (correctly) blocks the browser from ever
+// reaching a local Firestore/Auth emulator, which made every e2e login
+// silently fail with a CSP violation instead of a readable auth error.
+const EMULATOR_CONNECT_SRC = process.env.FIRESTORE_EMULATOR_HOST
+  ? ` http://${process.env.FIRESTORE_EMULATOR_HOST}` +
+    (process.env.FIREBASE_AUTH_EMULATOR_HOST
+      ? ` http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}`
+      : "")
+  : "";
+
 // Security headers applied to every response.
 // CSP allows Firebase SDKs (Firestore, Auth, Storage) and blocks framing/plugins.
 function applySecurityHeaders(req, res) {
@@ -66,7 +72,8 @@ function applySecurityHeaders(req, res) {
         " https://*.firebaseio.com" +
         " wss://*.firebaseio.com" +
         " https://*.firebase.google.com" +
-        " https://*.appspot.com",
+        " https://*.appspot.com" +
+        EMULATOR_CONNECT_SRC,
       "img-src 'self' data: blob: https://storage.googleapis.com https://*.appspot.com",
       "font-src 'self' https://fonts.gstatic.com",
       "frame-src 'none'",
@@ -154,10 +161,7 @@ async function main() {
       const bodyBuffer = chunks.length ? Buffer.concat(chunks) : null;
 
       const hasBody =
-        bodyBuffer &&
-        bodyBuffer.length > 0 &&
-        req.method !== "GET" &&
-        req.method !== "HEAD";
+        bodyBuffer && bodyBuffer.length > 0 && req.method !== "GET" && req.method !== "HEAD";
 
       const request = new Request(url.href, {
         method: req.method,
@@ -195,8 +199,7 @@ async function main() {
   });
 
   const portOrSocket = process.env.PORT || "3000";
-  const isSocket =
-    typeof portOrSocket === "string" && portOrSocket.startsWith("/");
+  const isSocket = typeof portOrSocket === "string" && portOrSocket.startsWith("/");
 
   if (isSocket) {
     try {

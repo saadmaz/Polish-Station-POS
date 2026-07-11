@@ -30,12 +30,12 @@ export const Route = createFileRoute("/_app/jobs")({
 });
 
 const COLUMNS: { status: JobStatus; tone: string; nextStatus?: JobStatus; nextLabel?: string }[] = [
-  { status: "Queue",        tone: "border-info",             nextStatus: "In Bay",      nextLabel: "Start" },
-  { status: "In Bay",       tone: "border-primary",          nextStatus: "Awaiting QC", nextLabel: "Send to QC" },
-  { status: "On Hold",      tone: "border-warning",          nextStatus: "In Bay",      nextLabel: "Resume" },
-  { status: "Awaiting QC",  tone: "border-warning",          nextStatus: "Ready",       nextLabel: "Approve" },
-  { status: "Ready",        tone: "border-success",          nextStatus: "Done Today",  nextLabel: "Mark Done" },
-  { status: "Done Today",   tone: "border-muted-foreground" },
+  { status: "Queue", tone: "border-info", nextStatus: "In Bay", nextLabel: "Start" },
+  { status: "In Bay", tone: "border-primary", nextStatus: "Awaiting QC", nextLabel: "Send to QC" },
+  { status: "On Hold", tone: "border-warning", nextStatus: "In Bay", nextLabel: "Resume" },
+  { status: "Awaiting QC", tone: "border-warning", nextStatus: "Ready", nextLabel: "Approve" },
+  { status: "Ready", tone: "border-success", nextStatus: "Done Today", nextLabel: "Mark Done" },
+  { status: "Done Today", tone: "border-muted-foreground" },
 ];
 
 const CAT_COLORS: Record<string, string> = {
@@ -63,7 +63,10 @@ async function compressImage(file: File, maxWidth = 1200, quality = 0.72): Promi
         canvas.width = Math.round(img.width * scale);
         canvas.height = Math.round(img.height * scale);
         const ctx = canvas.getContext("2d");
-        if (!ctx) { reject(new Error("canvas ctx")); return; }
+        if (!ctx) {
+          reject(new Error("canvas ctx"));
+          return;
+        }
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         resolve(canvas.toDataURL("image/jpeg", quality));
       };
@@ -76,9 +79,9 @@ async function compressImage(file: File, maxWidth = 1200, quality = 0.72): Promi
 // ─── Photos tab ───────────────────────────────────────────────────────────────
 
 const STAGES: { key: JobPhoto["stage"]; label: string }[] = [
-  { key: "before",  label: "Before"  },
-  { key: "during",  label: "During"  },
-  { key: "after",   label: "After"   },
+  { key: "before", label: "Before" },
+  { key: "during", label: "During" },
+  { key: "after", label: "After" },
 ];
 
 function PhotosTab({ job }: { job: Job }) {
@@ -116,7 +119,11 @@ function PhotosTab({ job }: { job: Job }) {
           <button className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20">
             <X className="h-5 w-5 text-white" />
           </button>
-          <img src={lightbox} alt="Job photo" className="max-h-full max-w-full object-contain rounded-lg" />
+          <img
+            src={lightbox}
+            alt="Job photo"
+            className="max-h-full max-w-full object-contain rounded-lg"
+          />
         </div>
       )}
 
@@ -192,7 +199,10 @@ function PhotosTab({ job }: { job: Job }) {
                       </button>
                     </div>
                     <div className="text-[10px] text-muted-foreground mt-0.5 text-center">
-                      {new Date(photo.takenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {new Date(photo.takenAt).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
                     </div>
                   </div>
                 ))}
@@ -238,7 +248,10 @@ function QCTab({ job }: { job: Job }) {
   }
 
   function checkAll() {
-    updateQCItems(job.id, items.map((i) => ({ ...i, checked: true })));
+    updateQCItems(
+      job.id,
+      items.map((i) => ({ ...i, checked: true })),
+    );
   }
 
   if (!["Awaiting QC", "Ready", "Done Today"].includes(job.status) && items.length === 0) {
@@ -265,20 +278,30 @@ function QCTab({ job }: { job: Job }) {
       <div className="rounded-lg bg-muted/40 border border-border p-3 space-y-2">
         <div className="flex items-center justify-between text-xs">
           <span className="font-semibold">QC Progress</span>
-          <span className={cn("font-mono font-bold", allChecked ? "text-success" : "text-muted-foreground")}>
+          <span
+            className={cn(
+              "font-mono font-bold",
+              allChecked ? "text-success" : "text-muted-foreground",
+            )}
+          >
             {checkedCount} / {items.length}
           </span>
         </div>
         <div className="h-2 rounded-full bg-muted overflow-hidden">
           <div
-            className={cn("h-full rounded-full transition-all", allChecked ? "bg-success" : "bg-primary")}
+            className={cn(
+              "h-full rounded-full transition-all",
+              allChecked ? "bg-success" : "bg-primary",
+            )}
             style={{ width: `${items.length ? (checkedCount / items.length) * 100 : 0}%` }}
           />
         </div>
         {allChecked && (
           <div className="text-[11px] text-success font-semibold flex items-center gap-1">
             <Check className="h-3 w-3" /> All checks passed
-            {job.qcCompletedBy && <span className="text-muted-foreground font-normal"> · by {job.qcCompletedBy}</span>}
+            {job.qcCompletedBy && (
+              <span className="text-muted-foreground font-normal"> · by {job.qcCompletedBy}</span>
+            )}
           </div>
         )}
       </div>
@@ -351,20 +374,31 @@ function DetailsTab({
   return (
     <div className="space-y-5">
       <div className="rounded-lg bg-muted/40 border border-border p-3 space-y-1">
-        <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Vehicle</div>
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+          Vehicle
+        </div>
         <div className="font-semibold">{job.vehicleModel || "—"}</div>
         <div className="font-mono text-sm">{job.plate}</div>
-        {job.vehicleColor && <div className="text-sm text-muted-foreground">{job.vehicleColor}</div>}
+        {job.vehicleColor && (
+          <div className="text-sm text-muted-foreground">{job.vehicleColor}</div>
+        )}
       </div>
 
       <div className="rounded-lg bg-muted/40 border border-border p-3 space-y-1">
-        <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Service</div>
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+          Service
+        </div>
         <div className="font-semibold">{job.serviceName}</div>
         <div className="flex items-center justify-between text-sm">
           <span className="text-muted-foreground">{job.category}</span>
           <span className="font-mono font-bold">LKR {job.price.toLocaleString()}</span>
         </div>
-        <div className={cn("text-sm font-mono", overdue ? "text-primary font-bold" : "text-muted-foreground")}>
+        <div
+          className={cn(
+            "text-sm font-mono",
+            overdue ? "text-primary font-bold" : "text-muted-foreground",
+          )}
+        >
           {job.elapsedMin}m elapsed / {job.estimateMin}m est.
           {overdue && " ⚠ OVERDUE"}
         </div>
@@ -386,14 +420,20 @@ function DetailsTab({
             value={bay}
             onChange={(e) => setBay(e.target.value)}
           >
-            {BAYS.map((b) => <option key={b} value={b}>{b}</option>)}
+            {BAYS.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
           </select>
         </div>
       </div>
 
       {job.notes && (
         <div className="rounded-lg bg-muted/40 border border-border p-3">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">Notes</div>
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold mb-1">
+            Notes
+          </div>
           <p className="text-sm">{job.notes}</p>
         </div>
       )}
@@ -415,7 +455,8 @@ function DetailsTab({
 type DetailTab = "details" | "photos" | "qc";
 
 function JobDetail({ job, onClose }: { job: Job; onClose: () => void }) {
-  const { moveJob, deleteJob, openShift, notificationSettingsData, recordNotification } = useStore();
+  const { moveJob, deleteJob, openShift, notificationSettingsData, recordNotification } =
+    useStore();
   const [tech, setTech] = useState(job.tech);
   const [bay, setBay] = useState(job.bay);
   const [tab, setTab] = useState<DetailTab>("details");
@@ -452,8 +493,8 @@ function JobDetail({ job, onClose }: { job: Job; onClose: () => void }) {
 
   const TABS: { id: DetailTab; label: string; badge?: string | number }[] = [
     { id: "details", label: "Details" },
-    { id: "photos",  label: "Photos",  badge: photoCount || undefined },
-    { id: "qc",      label: "QC",      badge: qcPending ? "!" : qcDone ? "✓" : undefined },
+    { id: "photos", label: "Photos", badge: photoCount || undefined },
+    { id: "qc", label: "QC", badge: qcPending ? "!" : qcDone ? "✓" : undefined },
   ];
 
   return (
@@ -463,7 +504,9 @@ function JobDetail({ job, onClose }: { job: Job; onClose: () => void }) {
         <div>
           <div className="font-mono text-xs text-muted-foreground">{job.id}</div>
           <h2 className="font-display text-base font-bold">{job.customerName}</h2>
-          <div className="text-xs text-muted-foreground">{job.vehicleModel} · {job.plate}</div>
+          <div className="text-xs text-muted-foreground">
+            {job.vehicleModel} · {job.plate}
+          </div>
         </div>
         <button onClick={onClose} className="rounded-md p-1.5 hover:bg-muted">
           <X className="h-5 w-5" />
@@ -488,9 +531,11 @@ function JobDetail({ job, onClose }: { job: Job; onClose: () => void }) {
               <span
                 className={cn(
                   "inline-flex items-center justify-center rounded-full text-[10px] font-bold px-1.5 min-w-4.5 h-4.5",
-                  badge === "!" ? "bg-warning text-white" :
-                  badge === "✓" ? "bg-success text-white" :
-                  "bg-primary/15 text-primary",
+                  badge === "!"
+                    ? "bg-warning text-white"
+                    : badge === "✓"
+                      ? "bg-success text-white"
+                      : "bg-primary/15 text-primary",
                 )}
               >
                 {badge}
@@ -503,10 +548,17 @@ function JobDetail({ job, onClose }: { job: Job; onClose: () => void }) {
       {/* Tab content */}
       <div className="flex-1 overflow-y-auto p-5">
         {tab === "details" && (
-          <DetailsTab job={job} tech={tech} setTech={setTech} bay={bay} setBay={setBay} openShift={openShift} />
+          <DetailsTab
+            job={job}
+            tech={tech}
+            setTech={setTech}
+            bay={bay}
+            setBay={setBay}
+            openShift={openShift}
+          />
         )}
         {tab === "photos" && <PhotosTab job={job} />}
-        {tab === "qc"     && <QCTab job={job} />}
+        {tab === "qc" && <QCTab job={job} />}
       </div>
 
       {/* Footer actions */}
@@ -549,7 +601,15 @@ function JobDetail({ job, onClose }: { job: Job; onClose: () => void }) {
             )}
             target="_blank"
             rel="noopener noreferrer"
-            onClick={() => recordNotification({ type: "job_ready", customerId: job.customerId, jobId: job.id, customerName: job.customerName, phone: job.phone })}
+            onClick={() =>
+              recordNotification({
+                type: "job_ready",
+                customerId: job.customerId,
+                jobId: job.id,
+                customerName: job.customerName,
+                phone: job.phone,
+              })
+            }
             className="w-full flex items-center justify-center gap-2 rounded-md bg-green-600 py-2.5 text-sm font-semibold text-white hover:bg-green-700"
           >
             <MessageCircle className="h-4 w-4" /> Notify Customer — Car Ready
@@ -650,7 +710,8 @@ function ActiveJobs() {
                 {items.map((j) => {
                   const overdue = j.elapsedMin > j.estimateMin;
                   const hasPhotos = (j.photos?.length ?? 0) > 0;
-                  const qcPending = j.status === "Awaiting QC" && (j.qcItems ?? []).some((i) => !i.checked);
+                  const qcPending =
+                    j.status === "Awaiting QC" && (j.qcItems ?? []).some((i) => !i.checked);
                   return (
                     <div
                       key={j.id}
@@ -675,8 +736,15 @@ function ActiveJobs() {
                       </div>
                       <div className="mt-2 text-[11px] line-clamp-2">{j.serviceName}</div>
                       <div className="mt-2 flex items-center justify-between text-[11px]">
-                        <span className="text-muted-foreground truncate">{j.tech} · {j.bay}</span>
-                        <span className={cn("inline-flex items-center gap-1 font-mono font-semibold shrink-0", overdue ? "text-primary" : "text-muted-foreground")}>
+                        <span className="text-muted-foreground truncate">
+                          {j.tech} · {j.bay}
+                        </span>
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-1 font-mono font-semibold shrink-0",
+                            overdue ? "text-primary" : "text-muted-foreground",
+                          )}
+                        >
                           <Clock className="h-3 w-3" />
                           {j.elapsedMin}m
                         </span>
@@ -715,13 +783,21 @@ function ActiveJobs() {
             Active Techs
           </div>
           {Object.entries(techMap).map(([name, count]) => (
-            <div key={name} className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5">
+            <div
+              key={name}
+              className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5"
+            >
               <div className="grid h-7 w-7 place-items-center rounded-full bg-primary/15 text-[11px] font-bold text-primary">
-                {name.split(" ").map((p) => p[0]).join("")}
+                {name
+                  .split(" ")
+                  .map((p) => p[0])
+                  .join("")}
               </div>
               <div className="leading-tight">
                 <div className="text-xs font-semibold">{name}</div>
-                <div className="text-[10px] text-muted-foreground">{count} job{count !== 1 ? "s" : ""} active</div>
+                <div className="text-[10px] text-muted-foreground">
+                  {count} job{count !== 1 ? "s" : ""} active
+                </div>
               </div>
             </div>
           ))}

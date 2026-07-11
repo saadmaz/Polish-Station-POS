@@ -28,6 +28,7 @@ import { useAuth } from "./auth";
 import { hasModule, isManagerOrAbove, type ModuleKey } from "./permissions";
 import { calcTier, getQCTemplate, DEFAULT_NOTIFICATION_SETTINGS } from "./db";
 import type {
+  AuditLog,
   Booking,
   Customer,
   Equipment,
@@ -77,6 +78,7 @@ interface Store {
   equipmentList: Equipment[];
   maintenanceLogsList: MaintenanceLog[];
   purchaseOrdersList: PurchaseOrder[];
+  auditList: AuditLog[];
 
   // computed
   openShift: Shift | undefined;
@@ -236,6 +238,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     DEFAULT_NOTIFICATION_SETTINGS,
   );
   const [sentNotificationsList, setSentNotificationsList] = useState<SentNotification[]>([]);
+  const [auditList, setAuditList] = useState<AuditLog[]>([]);
 
   // Ref always holds latest state — safe to use in async mutations without stale closures
   const S = useRef({
@@ -443,6 +446,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             done();
           },
           fail("sentNotifications"),
+        ),
+      );
+    // Matches firestore.rules exactly: `audit` reads require Manager+ and no
+    // module claim. Settings' Audit Log panel used to read this from a
+    // localStorage stand-in that nothing ever wrote to, so it always showed
+    // empty even though every mutation elsewhere already calls logAudit().
+    if (isManagerOrAbove(staff.role))
+      add(() =>
+        onSnapshot(
+          fs("audit"),
+          (s) => {
+            setAuditList(s.docs.map((d) => ({ id: d.id, ...d.data() }) as AuditLog));
+            done();
+          },
+          fail("audit"),
         ),
       );
 
@@ -935,6 +953,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     equipmentList,
     maintenanceLogsList,
     purchaseOrdersList,
+    auditList,
     openShift,
     lowStockItems,
     overdueEquipment,

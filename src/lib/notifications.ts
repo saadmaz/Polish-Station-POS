@@ -17,12 +17,12 @@ export function fillTemplate(template: string, vars: Record<string, string>): st
 }
 
 export const TEMPLATE_VARS = [
-  { key: "customerName",   desc: "Customer full name" },
-  { key: "vehicle",        desc: "Vehicle model" },
-  { key: "plate",          desc: "Licence plate" },
-  { key: "serviceName",    desc: "Service name" },
+  { key: "customerName", desc: "Customer full name" },
+  { key: "vehicle", desc: "Vehicle model" },
+  { key: "plate", desc: "Licence plate" },
+  { key: "serviceName", desc: "Service name" },
   { key: "daysSinceVisit", desc: "Days since last visit" },
-  { key: "reviewLink",     desc: "Google Review link" },
+  { key: "reviewLink", desc: "Google Review link" },
 ];
 
 export const DEFAULT_TEMPLATES = {

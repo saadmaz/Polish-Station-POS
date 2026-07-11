@@ -4,7 +4,7 @@
       "collectionGroup": "jobs",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "status",    "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
@@ -12,7 +12,7 @@
       "collectionGroup": "jobs",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "tech",      "order": "ASCENDING" },
+        { "fieldPath": "tech", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
@@ -20,7 +20,7 @@
       "collectionGroup": "bookings",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "date",   "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" }
       ]
     },
@@ -45,14 +45,14 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "equipmentId", "order": "ASCENDING" },
-        { "fieldPath": "date",        "order": "DESCENDING" }
+        { "fieldPath": "date", "order": "DESCENDING" }
       ]
     },
     {
       "collectionGroup": "audit",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "entity",    "order": "ASCENDING" },
+        { "fieldPath": "entity", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     },
@@ -61,7 +61,7 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "customerId", "order": "ASCENDING" },
-        { "fieldPath": "sentAt",     "order": "DESCENDING" }
+        { "fieldPath": "sentAt", "order": "DESCENDING" }
       ]
     }
   ],

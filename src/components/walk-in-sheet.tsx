@@ -16,7 +16,15 @@ interface WalkInSheetProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const EMPTY = { name: "", phone: "", plate: "", vehicleModel: "", serviceId: "", tech: "", bay: "" };
+const EMPTY = {
+  name: "",
+  phone: "",
+  plate: "",
+  vehicleModel: "",
+  serviceId: "",
+  tech: "",
+  bay: "",
+};
 
 export function WalkInSheet({ open, onOpenChange }: WalkInSheetProps) {
   const { services, customers, openShift, addJob } = useStore();
@@ -33,7 +41,13 @@ export function WalkInSheet({ open, onOpenChange }: WalkInSheetProps) {
     set("phone", value);
     const match = customers.find((c) => c.phone.replace(/\s/g, "") === value.replace(/\s/g, ""));
     if (match) {
-      setForm((f) => ({ ...f, phone: value, name: match.name, plate: match.vehicles[0]?.plate ?? f.plate, vehicleModel: match.vehicles[0]?.model ?? f.vehicleModel }));
+      setForm((f) => ({
+        ...f,
+        phone: value,
+        name: match.name,
+        plate: match.vehicles[0]?.plate ?? f.plate,
+        vehicleModel: match.vehicles[0]?.model ?? f.vehicleModel,
+      }));
     }
   }
 
@@ -45,7 +59,9 @@ export function WalkInSheet({ open, onOpenChange }: WalkInSheetProps) {
 
     // Find matching customer id
     const customer = customers.find(
-      (c) => c.phone.replace(/\s/g, "") === form.phone.replace(/\s/g, "") || c.name.toLowerCase() === form.name.toLowerCase(),
+      (c) =>
+        c.phone.replace(/\s/g, "") === form.phone.replace(/\s/g, "") ||
+        c.name.toLowerCase() === form.name.toLowerCase(),
     );
 
     setSubmitting(true);
@@ -163,7 +179,9 @@ export function WalkInSheet({ open, onOpenChange }: WalkInSheetProps) {
               >
                 <option value="">Assign later</option>
                 {["Bay 1", "Bay 2", "Bay 3", "Bay 4", "Bay 5"].map((b) => (
-                  <option key={b} value={b}>{b}</option>
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
                 ))}
               </select>
             </div>

@@ -1,9 +1,23 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import * as db from "@/lib/db";
-import type { Service } from "@/lib/db";
-import { CheckCircle2, Car, Clock, Calendar, ChevronRight, ChevronLeft } from "lucide-react";
+import {
+  getBookableServicesFn,
+  getFullSlotsFn,
+  createBookingFn,
+  type BookableService,
+} from "@/server/bookings";
+import {
+  CheckCircle2,
+  Car,
+  Clock,
+  Calendar,
+  ChevronRight,
+  ChevronLeft,
+  Loader2,
+} from "lucide-react";
+
+type Service = BookableService;
 
 export const Route = createFileRoute("/book")({
   component: BookPage,
@@ -12,11 +26,11 @@ export const Route = createFileRoute("/book")({
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const CAT_COLOR: Record<string, string> = {
-  Exterior:           "bg-blue-100 text-blue-700",
-  Interior:           "bg-amber-100 text-amber-700",
-  "Full Detail":      "bg-purple-100 text-purple-700",
+  Exterior: "bg-blue-100 text-blue-700",
+  Interior: "bg-amber-100 text-amber-700",
+  "Full Detail": "bg-purple-100 text-purple-700",
   "Paint Protection": "bg-green-100 text-green-700",
-  Coating:            "bg-rose-100 text-rose-700",
+  Coating: "bg-rose-100 text-rose-700",
 };
 
 function fmt(n: number) {
@@ -37,13 +51,25 @@ function fmtTime(t: string) {
   return `${hour}:${m.toString().padStart(2, "0")} ${ampm}`;
 }
 
+// Local Y-M-D, not d.toISOString().slice(0, 10) — that converts to UTC first,
+// which silently rolls the date back by one for any positive-UTC-offset
+// timezone (including Sri Lanka, where this business operates): a card
+// visually labeled "11" would submit "date: ...-10", one day behind what
+// the customer actually clicked.
+function toLocalYMD(d: Date): string {
+  const y = d.getFullYear();
+  const m = (d.getMonth() + 1).toString().padStart(2, "0");
+  const day = d.getDate().toString().padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function getDateCards() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return Array.from({ length: 14 }, (_, i) => {
     const d = new Date(today.getTime() + i * 86400000);
     return {
-      date: d.toISOString().slice(0, 10),
+      date: toLocalYMD(d),
       dayName: d.toLocaleDateString("en-GB", { weekday: "short" }).toUpperCase(),
       dayNum: d.getDate(),
       monthName: d.toLocaleDateString("en-GB", { month: "short" }).toUpperCase(),
@@ -60,20 +86,6 @@ function generateSlots(durationMin: number): string[] {
     slots.push(`${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`);
   }
   return slots;
-}
-
-function isSlotFull(date: string, time: string): boolean {
-  return (
-    db.bookings
-      .list()
-      .filter(
-        (b) =>
-          b.date === date &&
-          b.time === time &&
-          b.status !== "Cancelled" &&
-          b.status !== "No-Show",
-      ).length >= 5
-  );
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -152,16 +164,19 @@ function ProgressBar({ step }: { step: Step }) {
 
 // ─── Step 1: Service ──────────────────────────────────────────────────────────
 
-function ServiceStep({ onSelect }: { onSelect: (s: Service) => void }) {
-  const serviceList = db.services.list();
+function ServiceStep({
+  services,
+  onSelect,
+}: {
+  services: Service[];
+  onSelect: (s: Service) => void;
+}) {
   return (
     <div>
       <h2 className="mb-1 text-xl font-bold text-gray-900">Choose a Service</h2>
-      <p className="mb-6 text-sm text-gray-500">
-        Select the detailing service you'd like to book.
-      </p>
+      <p className="mb-6 text-sm text-gray-500">Select the detailing service you'd like to book.</p>
       <div className="space-y-3">
-        {serviceList.map((s) => (
+        {services.map((s) => (
           <button
             key={s.id}
             onClick={() => onSelect(s)}
@@ -200,13 +215,7 @@ function ServiceStep({ onSelect }: { onSelect: (s: Service) => void }) {
 
 // ─── Step 2: Date ─────────────────────────────────────────────────────────────
 
-function DateStep({
-  onSelect,
-  onBack,
-}: {
-  onSelect: (d: string) => void;
-  onBack: () => void;
-}) {
+function DateStep({ onSelect, onBack }: { onSelect: (d: string) => void; onBack: () => void }) {
   const dateCards = useMemo(() => getDateCards(), []);
   return (
     <div>
@@ -230,9 +239,7 @@ function DateStep({
             </span>
             <span className="text-lg font-bold leading-tight text-gray-900">{dayNum}</span>
             <span className="text-[10px] font-medium text-gray-400">{monthName}</span>
-            {isToday && (
-              <span className="mt-0.5 text-[9px] font-semibold text-red-500">TODAY</span>
-            )}
+            {isToday && <span className="mt-0.5 text-[9px] font-semibold text-red-500">TODAY</span>}
           </button>
         ))}
       </div>
@@ -254,10 +261,22 @@ function TimeStep({
   onBack: () => void;
 }) {
   const slots = useMemo(() => generateSlots(service.durationMin), [service.durationMin]);
-  const fullSlots = useMemo(
-    () => new Set(slots.filter((t) => isSlotFull(date, t))),
-    [slots, date],
-  );
+  const [fullSlots, setFullSlots] = useState<Set<string> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setFullSlots(null);
+    getFullSlotsFn({ data: { date } })
+      .then((full) => {
+        if (!cancelled) setFullSlots(new Set(full));
+      })
+      .catch(() => {
+        if (!cancelled) setFullSlots(new Set()); // fail open — worst case a full slot slips through server-side re-check on submit
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [date]);
 
   const displayDate = new Date(date + "T00:00:00").toLocaleDateString("en-GB", {
     weekday: "long",
@@ -280,6 +299,10 @@ function TimeStep({
       {slots.length === 0 ? (
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-8 text-center text-sm text-gray-400">
           No available slots for this service on the selected date.
+        </div>
+      ) : fullSlots === null ? (
+        <div className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 p-8 text-sm text-gray-400">
+          <Loader2 className="h-4 w-4 animate-spin" /> Checking availability…
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
@@ -314,11 +337,15 @@ function DetailsStep({
   onChange,
   onBack,
   onSubmit,
+  submitting,
+  submitError,
 }: {
   form: FormState;
   onChange: (f: Partial<FormState>) => void;
   onBack: () => void;
   onSubmit: () => void;
+  submitting: boolean;
+  submitError: string | null;
 }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -347,9 +374,7 @@ function DetailsStep({
         <ChevronLeft className="h-4 w-4" /> Back
       </button>
       <h2 className="mb-1 text-xl font-bold text-gray-900">Your Details</h2>
-      <p className="mb-4 text-sm text-gray-500">
-        Fill in your contact and vehicle information.
-      </p>
+      <p className="mb-4 text-sm text-gray-500">Fill in your contact and vehicle information.</p>
 
       {/* Booking summary */}
       <div className="mb-6 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm">
@@ -399,9 +424,7 @@ function DetailsStep({
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">
-              Vehicle Plate
-            </label>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">Vehicle Plate</label>
             <input
               type="text"
               value={form.plate}
@@ -411,9 +434,7 @@ function DetailsStep({
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">
-              Vehicle Model
-            </label>
+            <label className="mb-1.5 block text-sm font-medium text-gray-700">Vehicle Model</label>
             <input
               type="text"
               value={form.vehicleModel}
@@ -424,9 +445,7 @@ function DetailsStep({
           </div>
         </div>
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
-            Special Requests
-          </label>
+          <label className="mb-1.5 block text-sm font-medium text-gray-700">Special Requests</label>
           <textarea
             value={form.notes}
             onChange={(e) => onChange({ notes: e.target.value })}
@@ -437,13 +456,21 @@ function DetailsStep({
         </div>
       </div>
 
+      {submitError && (
+        <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center text-sm text-red-600">
+          {submitError}
+        </p>
+      )}
+
       <button
+        disabled={submitting}
         onClick={() => {
           if (validate()) onSubmit();
         }}
-        className="mt-6 w-full rounded-xl bg-red-500 py-3 font-semibold text-white transition-all hover:bg-red-600 active:scale-[0.99]"
+        className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-red-500 py-3 font-semibold text-white transition-all hover:bg-red-600 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
       >
-        Confirm Booking
+        {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+        {submitting ? "Booking…" : "Confirm Booking"}
       </button>
       <p className="mt-3 text-center text-xs text-gray-400">
         Our team will confirm your appointment via WhatsApp or phone.
@@ -496,9 +523,7 @@ function ConfirmationStep({ bookingId, form }: { bookingId: string; form: FormSt
         <CheckCircle2 className="h-10 w-10 text-green-500" />
       </div>
       <h2 className="mb-1 text-2xl font-bold text-gray-900">Booking Received!</h2>
-      <p className="mb-6 text-sm text-gray-500">
-        Our team will confirm your appointment shortly.
-      </p>
+      <p className="mb-6 text-sm text-gray-500">Our team will confirm your appointment shortly.</p>
 
       <div className="mb-6 space-y-2 rounded-xl border border-gray-100 bg-gray-50 p-4 text-left">
         {(
@@ -509,15 +534,20 @@ function ConfirmationStep({ bookingId, form }: { bookingId: string; form: FormSt
             ["Time", fmtTime(form.time)],
             ["Name", form.name],
             ...(form.plate
-              ? [["Vehicle", `${form.plate}${form.vehicleModel ? ` · ${form.vehicleModel}` : ""}`] as [string, string]]
+              ? [
+                  [
+                    "Vehicle",
+                    `${form.plate}${form.vehicleModel ? ` · ${form.vehicleModel}` : ""}`,
+                  ] as [string, string],
+                ]
               : []),
           ] as [string, string][]
         ).map(([label, value]) => (
-            <div key={label} className="flex justify-between text-sm">
-              <span className="text-gray-500">{label}</span>
-              <span className="font-medium text-gray-900">{value}</span>
-            </div>
-          ))}
+          <div key={label} className="flex justify-between text-sm">
+            <span className="text-gray-500">{label}</span>
+            <span className="font-medium text-gray-900">{value}</span>
+          </div>
+        ))}
         <div className="flex justify-between border-t border-gray-200 pt-2 text-sm">
           <span className="text-gray-500">Estimated Price</span>
           <span className="font-bold text-red-600">{form.service && fmt(form.service.price)}</span>
@@ -560,40 +590,59 @@ function BookPage() {
     notes: "",
   });
   const [bookingId, setBookingId] = useState("");
+  const [services, setServices] = useState<Service[] | null>(null);
+  const [servicesError, setServicesError] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const isEmbed =
     typeof window !== "undefined" &&
     new URLSearchParams(window.location.search).get("embed") === "true";
 
+  useEffect(() => {
+    getBookableServicesFn()
+      .then(setServices)
+      .catch(() => setServicesError(true));
+  }, []);
+
   function update(partial: Partial<FormState>) {
     setForm((prev) => ({ ...prev, ...partial }));
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!form.service) return;
-    const id = db.bookings.nextId();
-    db.bookings.upsert({
-      id,
-      customerId: null,
-      customerName: form.name.trim(),
-      phone: form.phone.trim(),
-      plate: form.plate.trim().toUpperCase(),
-      vehicleModel: form.vehicleModel.trim(),
-      serviceId: form.service.id,
-      serviceName: form.service.name,
-      category: form.service.category,
-      durationMin: form.service.durationMin,
-      price: form.service.price,
-      date: form.date,
-      time: form.time,
-      tech: "—",
-      bay: "—",
-      status: "Pending",
-      notes: form.notes.trim(),
-      createdAt: new Date().toISOString(),
-    });
-    setBookingId(id);
-    setStep(5);
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const result = await createBookingFn({
+        data: {
+          serviceId: form.service.id,
+          date: form.date,
+          time: form.time,
+          name: form.name.trim(),
+          phone: form.phone.trim(),
+          plate: form.plate.trim(),
+          vehicleModel: form.vehicleModel.trim(),
+          notes: form.notes.trim(),
+        },
+      });
+      if (!result.success) {
+        setSubmitError(
+          result.error === "slot_full"
+            ? "That time slot just filled up. Please go back and pick another."
+            : result.error === "rate_limited"
+              ? "Too many booking attempts from this number. Please try again in a few minutes, or call us directly."
+              : "Something went wrong submitting your booking. Please try again.",
+        );
+        return;
+      }
+      setBookingId(result.bookingId);
+      setStep(5);
+    } catch {
+      setSubmitError("Something went wrong submitting your booking. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -615,8 +664,20 @@ function BookPage() {
 
       <main className="mx-auto max-w-xl px-4 py-8">
         {step < 5 && <ProgressBar step={step} />}
-        {step === 1 && (
+        {step === 1 && servicesError && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-8 text-center text-sm text-red-500">
+            Couldn't load our services right now. Please refresh the page, or call us to book
+            directly.
+          </div>
+        )}
+        {step === 1 && !servicesError && !services && (
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 p-8 text-sm text-gray-400">
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading services…
+          </div>
+        )}
+        {step === 1 && services && (
           <ServiceStep
+            services={services}
             onSelect={(s) => {
               update({ service: s, date: "", time: "" });
               setStep(2);
@@ -649,6 +710,8 @@ function BookPage() {
             onChange={update}
             onBack={() => setStep(3)}
             onSubmit={handleSubmit}
+            submitting={submitting}
+            submitError={submitError}
           />
         )}
         {step === 5 && <ConfirmationStep bookingId={bookingId} form={form} />}

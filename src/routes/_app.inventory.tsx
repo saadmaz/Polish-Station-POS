@@ -43,8 +43,18 @@ function ItemForm({
   onCancel: () => void;
 }) {
   const [form, setForm] = useState<typeof BLANK>(
-    initial ? { name: initial.name, sku: initial.sku, category: initial.category, unit: initial.unit, stock: initial.stock, reorder: initial.reorder, cost: initial.cost, supplier: initial.supplier }
-    : BLANK,
+    initial
+      ? {
+          name: initial.name,
+          sku: initial.sku,
+          category: initial.category,
+          unit: initial.unit,
+          stock: initial.stock,
+          reorder: initial.reorder,
+          cost: initial.cost,
+          supplier: initial.supplier,
+        }
+      : BLANK,
   );
 
   function set<K extends keyof typeof BLANK>(k: K, v: (typeof BLANK)[K]) {
@@ -65,40 +75,89 @@ function ItemForm({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="sm:col-span-2">
           <label className="text-sm font-medium">Item Name *</label>
-          <input required className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" value={form.name} onChange={(e) => set("name", e.target.value)} />
+          <input
+            required
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            value={form.name}
+            onChange={(e) => set("name", e.target.value)}
+          />
         </div>
         <div>
           <label className="text-sm font-medium">SKU</label>
-          <input className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring" value={form.sku} onChange={(e) => set("sku", e.target.value)} />
+          <input
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+            value={form.sku}
+            onChange={(e) => set("sku", e.target.value)}
+          />
         </div>
         <div>
           <label className="text-sm font-medium">Category</label>
-          <input className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" value={form.category} onChange={(e) => set("category", e.target.value)} />
+          <input
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            value={form.category}
+            onChange={(e) => set("category", e.target.value)}
+          />
         </div>
         <div>
           <label className="text-sm font-medium">Unit</label>
-          <input className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" placeholder="L, kg, pc, kit…" value={form.unit} onChange={(e) => set("unit", e.target.value)} />
+          <input
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            placeholder="L, kg, pc, kit…"
+            value={form.unit}
+            onChange={(e) => set("unit", e.target.value)}
+          />
         </div>
         <div>
           <label className="text-sm font-medium">Supplier</label>
-          <input className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" value={form.supplier} onChange={(e) => set("supplier", e.target.value)} />
+          <input
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            value={form.supplier}
+            onChange={(e) => set("supplier", e.target.value)}
+          />
         </div>
         <div>
           <label className="text-sm font-medium">Current Stock</label>
-          <input type="number" min={0} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring" value={form.stock} onChange={(e) => set("stock", Number(e.target.value))} />
+          <input
+            type="number"
+            min={0}
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+            value={form.stock}
+            onChange={(e) => set("stock", Number(e.target.value))}
+          />
         </div>
         <div>
           <label className="text-sm font-medium">Reorder Point</label>
-          <input type="number" min={0} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring" value={form.reorder} onChange={(e) => set("reorder", Number(e.target.value))} />
+          <input
+            type="number"
+            min={0}
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+            value={form.reorder}
+            onChange={(e) => set("reorder", Number(e.target.value))}
+          />
         </div>
         <div>
           <label className="text-sm font-medium">Unit Cost (LKR)</label>
-          <input type="number" min={0} className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring" value={form.cost} onChange={(e) => set("cost", Number(e.target.value))} />
+          <input
+            type="number"
+            min={0}
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+            value={form.cost}
+            onChange={(e) => set("cost", Number(e.target.value))}
+          />
         </div>
       </div>
       <div className="flex gap-2 pt-2">
-        <button type="button" onClick={onCancel} className="flex-1 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent">Cancel</button>
-        <button type="submit" className="flex-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex-1 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="flex-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90"
+        >
           {initial ? "Save Changes" : "Add Item"}
         </button>
       </div>
@@ -115,7 +174,10 @@ function AdjustWidget({ item }: { item: InventoryItem }) {
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2">
+      <button
+        onClick={() => setOpen(true)}
+        className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2"
+      >
         Adjust
       </button>
     );
@@ -132,7 +194,10 @@ function AdjustWidget({ item }: { item: InventoryItem }) {
 
   return (
     <div className="flex items-center gap-1">
-      <button onClick={() => apply(-1)} className="rounded bg-primary/10 p-1 text-primary hover:bg-primary/20">
+      <button
+        onClick={() => apply(-1)}
+        className="rounded bg-primary/10 p-1 text-primary hover:bg-primary/20"
+      >
         <Minus className="h-3 w-3" />
       </button>
       <input
@@ -142,13 +207,22 @@ function AdjustWidget({ item }: { item: InventoryItem }) {
         className="w-14 rounded border border-input bg-background px-1.5 py-1 text-xs font-mono text-center focus:outline-none focus:ring-1 focus:ring-ring"
         value={delta}
         onChange={(e) => setDelta(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") apply(1); if (e.key === "Escape") setOpen(false); }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") apply(1);
+          if (e.key === "Escape") setOpen(false);
+        }}
         placeholder="qty"
       />
-      <button onClick={() => apply(1)} className="rounded bg-success/10 p-1 text-success hover:bg-success/20">
+      <button
+        onClick={() => apply(1)}
+        className="rounded bg-success/10 p-1 text-success hover:bg-success/20"
+      >
         <Plus className="h-3 w-3" />
       </button>
-      <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground">
+      <button
+        onClick={() => setOpen(false)}
+        className="text-muted-foreground hover:text-foreground"
+      >
         <X className="h-3 w-3" />
       </button>
     </div>
@@ -168,7 +242,11 @@ function Inventory() {
 
   const filtered = inventory.filter((i) => {
     const q = search.toLowerCase();
-    const matchSearch = !q || i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q) || i.supplier.toLowerCase().includes(q);
+    const matchSearch =
+      !q ||
+      i.name.toLowerCase().includes(q) ||
+      i.sku.toLowerCase().includes(q) ||
+      i.supplier.toLowerCase().includes(q);
     const matchCat = categoryFilter === "All" || i.category === categoryFilter;
     const st = stockStatus(i.stock, i.reorder);
     const matchSt =
@@ -221,7 +299,9 @@ function Inventory() {
           { label: "Stock Value", value: `LKR ${totalValue.toLocaleString()}`, tone: "" },
         ].map((s) => (
           <div key={s.label} className="rounded-xl border border-border bg-card p-4 shadow-card">
-            <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">{s.label}</div>
+            <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
+              {s.label}
+            </div>
             <div className={cn("mt-1.5 font-display text-xl font-bold", s.tone)}>{s.value}</div>
           </div>
         ))}
@@ -252,10 +332,20 @@ function Inventory() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <select className="rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-          {categories.map((c) => <option key={c}>{c}</option>)}
+        <select
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value)}
+        >
+          {categories.map((c) => (
+            <option key={c}>{c}</option>
+          ))}
         </select>
-        <select className="rounded-md border border-input bg-background px-3 py-1.5 text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+        <select
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+        >
           <option value="All">All Statuses</option>
           <option value="OK">In Stock</option>
           <option value="Low">Low Stock</option>
@@ -290,7 +380,9 @@ function Inventory() {
                   <td className="px-3 py-3 text-right font-mono font-semibold">
                     {i.stock} <span className="text-muted-foreground">{i.unit}</span>
                   </td>
-                  <td className="px-3 py-3 text-right font-mono text-muted-foreground">{i.reorder}</td>
+                  <td className="px-3 py-3 text-right font-mono text-muted-foreground">
+                    {i.reorder}
+                  </td>
                   <td className="px-3 py-3 text-right font-mono">LKR {i.cost.toLocaleString()}</td>
                   <td className="px-3 py-3 text-muted-foreground">{i.supplier}</td>
                   <td className="px-3 py-3">
@@ -301,10 +393,18 @@ function Inventory() {
                   </td>
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-1">
-                      <button onClick={() => setFormMode(i)} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground" title="Edit">
+                      <button
+                        onClick={() => setFormMode(i)}
+                        className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        title="Edit"
+                      >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
-                      <button onClick={() => handleDelete(i.id, i.name)} className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-primary" title="Delete">
+                      <button
+                        onClick={() => handleDelete(i.id, i.name)}
+                        className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-primary"
+                        title="Delete"
+                      >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
@@ -313,7 +413,11 @@ function Inventory() {
               );
             })}
             {filtered.length === 0 && (
-              <tr><td colSpan={10} className="text-center py-10 text-muted-foreground">No items match your filter</td></tr>
+              <tr>
+                <td colSpan={10} className="text-center py-10 text-muted-foreground">
+                  No items match your filter
+                </td>
+              </tr>
             )}
           </tbody>
         </table>

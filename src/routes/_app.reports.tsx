@@ -4,9 +4,16 @@ import { PageHeader } from "@/components/page-header";
 import { Download } from "lucide-react";
 import { useStore } from "@/lib/store";
 import {
-  AreaChart, Area, BarChart, Bar,
-  XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
 } from "recharts";
 
 export const Route = createFileRoute("/_app/reports")({
@@ -19,8 +26,14 @@ type Period = "today" | "7d" | "30d" | "all";
 function dateFrom(period: Period): string {
   const d = new Date();
   if (period === "today") return d.toISOString().slice(0, 10);
-  if (period === "7d") { d.setDate(d.getDate() - 7); return d.toISOString(); }
-  if (period === "30d") { d.setDate(d.getDate() - 30); return d.toISOString(); }
+  if (period === "7d") {
+    d.setDate(d.getDate() - 7);
+    return d.toISOString();
+  }
+  if (period === "30d") {
+    d.setDate(d.getDate() - 30);
+    return d.toISOString();
+  }
   return "1970-01-01";
 }
 
@@ -52,23 +65,33 @@ function Reports() {
   const since = dateFrom(period);
   const filteredInvoices = invoices.filter((i) => i.createdAt >= since && i.status !== "Void");
   const filteredJobs = jobs.filter((j) => j.createdAt >= since);
-  const filteredBookings = bookings.filter((b) => (b.date + "T00:00:00") >= since);
+  const filteredBookings = bookings.filter((b) => b.date + "T00:00:00" >= since);
 
   // Revenue stats
   const totalRevenue = filteredInvoices.reduce((s, i) => s + i.total, 0);
-  const cashRevenue = filteredInvoices.filter((i) => i.method === "Cash").reduce((s, i) => s + i.total, 0);
-  const cardRevenue = filteredInvoices.filter((i) => i.method !== "Cash").reduce((s, i) => s + i.total, 0);
-  const avgInvoice = filteredInvoices.length > 0 ? Math.round(totalRevenue / filteredInvoices.length) : 0;
+  const cashRevenue = filteredInvoices
+    .filter((i) => i.method === "Cash")
+    .reduce((s, i) => s + i.total, 0);
+  const cardRevenue = filteredInvoices
+    .filter((i) => i.method !== "Cash")
+    .reduce((s, i) => s + i.total, 0);
+  const avgInvoice =
+    filteredInvoices.length > 0 ? Math.round(totalRevenue / filteredInvoices.length) : 0;
 
   // Job stats
   const completedJobs = filteredJobs.filter((j) => j.status === "Done Today" || j.completedAt);
   const onTimeJobs = completedJobs.filter((j) => j.elapsedMin <= j.estimateMin);
-  const onTimePct = completedJobs.length > 0 ? Math.round((onTimeJobs.length / completedJobs.length) * 100) : 0;
-  const avgDuration = completedJobs.length > 0 ? Math.round(completedJobs.reduce((s, j) => s + j.elapsedMin, 0) / completedJobs.length) : 0;
+  const onTimePct =
+    completedJobs.length > 0 ? Math.round((onTimeJobs.length / completedJobs.length) * 100) : 0;
+  const avgDuration =
+    completedJobs.length > 0
+      ? Math.round(completedJobs.reduce((s, j) => s + j.elapsedMin, 0) / completedJobs.length)
+      : 0;
 
   // Booking stats
   const noShows = filteredBookings.filter((b) => b.status === "No-Show").length;
-  const noShowPct = filteredBookings.length > 0 ? Math.round((noShows / filteredBookings.length) * 100) : 0;
+  const noShowPct =
+    filteredBookings.length > 0 ? Math.round((noShows / filteredBookings.length) * 100) : 0;
   const checkedIn = filteredBookings.filter((b) => b.status === "Checked-In").length;
 
   // Customer stats
@@ -77,13 +100,16 @@ function Reports() {
   const sinceDate = since.slice(0, 10);
   filteredJobs.forEach((j) => {
     if (!j.plate) return;
-    const hadPriorJob = jobs.some((x) => x.plate === j.plate && x.createdAt.slice(0, 10) < sinceDate);
+    const hadPriorJob = jobs.some(
+      (x) => x.plate === j.plate && x.createdAt.slice(0, 10) < sinceDate,
+    );
     if (hadPriorJob) returningPlates.add(j.plate);
     else newPlates.add(j.plate);
   });
-  const retentionPct = (returningPlates.size + newPlates.size) > 0
-    ? Math.round((returningPlates.size / (returningPlates.size + newPlates.size)) * 100)
-    : 0;
+  const retentionPct =
+    returningPlates.size + newPlates.size > 0
+      ? Math.round((returningPlates.size / (returningPlates.size + newPlates.size)) * 100)
+      : 0;
 
   // Inventory stats
   const stockValue = inventory.reduce((s, i) => s + i.stock * i.cost, 0);
@@ -92,9 +118,12 @@ function Reports() {
 
   // Shift stats
   const closedShifts = shifts.filter((s) => s.status === "CLOSED");
-  const avgVariance = closedShifts.length > 0
-    ? Math.round(closedShifts.reduce((s, sh) => s + Math.abs(sh.variance ?? 0), 0) / closedShifts.length)
-    : 0;
+  const avgVariance =
+    closedShifts.length > 0
+      ? Math.round(
+          closedShifts.reduce((s, sh) => s + Math.abs(sh.variance ?? 0), 0) / closedShifts.length,
+        )
+      : 0;
 
   // Chart data — last 14 days for "today"/"7d", last 30 for "30d", last 60 for "all"
   const chartDays = period === "today" ? 14 : period === "7d" ? 14 : period === "30d" ? 30 : 60;
@@ -107,11 +136,19 @@ function Reports() {
       metric: totalRevenue > 0 ? `LKR ${totalRevenue.toLocaleString()}` : "LKR 0",
       delta: `Avg invoice LKR ${avgInvoice.toLocaleString()}`,
       color: "text-success",
-      exportFn: () => exportCSV(
-        ["Invoice ID", "Customer", "Date", "Total", "Method", "Status"],
-        filteredInvoices.map((i) => [i.id, i.customerName, i.createdAt.slice(0, 10), i.total, i.method, i.status]),
-        "revenue-report",
-      ),
+      exportFn: () =>
+        exportCSV(
+          ["Invoice ID", "Customer", "Date", "Total", "Method", "Status"],
+          filteredInvoices.map((i) => [
+            i.id,
+            i.customerName,
+            i.createdAt.slice(0, 10),
+            i.total,
+            i.method,
+            i.status,
+          ]),
+          "revenue-report",
+        ),
     },
     {
       name: "Job Performance",
@@ -119,11 +156,20 @@ function Reports() {
       metric: `${filteredJobs.length} jobs`,
       delta: `${onTimePct}% on-time`,
       color: "text-info",
-      exportFn: () => exportCSV(
-        ["Job ID", "Customer", "Service", "Tech", "Status", "Elapsed", "Estimate"],
-        filteredJobs.map((j) => [j.id, j.customerName, j.serviceName, j.tech, j.status, j.elapsedMin, j.estimateMin]),
-        "job-performance",
-      ),
+      exportFn: () =>
+        exportCSV(
+          ["Job ID", "Customer", "Service", "Tech", "Status", "Elapsed", "Estimate"],
+          filteredJobs.map((j) => [
+            j.id,
+            j.customerName,
+            j.serviceName,
+            j.tech,
+            j.status,
+            j.elapsedMin,
+            j.estimateMin,
+          ]),
+          "job-performance",
+        ),
     },
     {
       name: "Booking Analytics",
@@ -131,11 +177,19 @@ function Reports() {
       metric: `${filteredBookings.length} bookings`,
       delta: `${noShowPct}% no-show rate`,
       color: "text-warning",
-      exportFn: () => exportCSV(
-        ["Booking ID", "Customer", "Service", "Date", "Time", "Status"],
-        filteredBookings.map((b) => [b.id, b.customerName, b.serviceName, b.date, b.time, b.status]),
-        "bookings-report",
-      ),
+      exportFn: () =>
+        exportCSV(
+          ["Booking ID", "Customer", "Service", "Date", "Time", "Status"],
+          filteredBookings.map((b) => [
+            b.id,
+            b.customerName,
+            b.serviceName,
+            b.date,
+            b.time,
+            b.status,
+          ]),
+          "bookings-report",
+        ),
     },
     {
       name: "Customer Report",
@@ -143,11 +197,19 @@ function Reports() {
       metric: `${retentionPct}% retention`,
       delta: `${customers.length} total customers`,
       color: "text-primary",
-      exportFn: () => exportCSV(
-        ["Name", "Phone", "Tier", "Visits", "Spend", "Last Visit"],
-        customers.map((c) => [c.name, c.phone, c.tier, c.visits, c.spend, c.lastVisit?.slice(0, 10) ?? ""]),
-        "customers-report",
-      ),
+      exportFn: () =>
+        exportCSV(
+          ["Name", "Phone", "Tier", "Visits", "Spend", "Last Visit"],
+          customers.map((c) => [
+            c.name,
+            c.phone,
+            c.tier,
+            c.visits,
+            c.spend,
+            c.lastVisit?.slice(0, 10) ?? "",
+          ]),
+          "customers-report",
+        ),
     },
     {
       name: "Inventory Report",
@@ -155,23 +217,52 @@ function Reports() {
       metric: `LKR ${stockValue.toLocaleString()}`,
       delta: `${inventory.length} SKUs on file`,
       color: "text-warning",
-      exportFn: () => exportCSV(
-        ["Item", "SKU", "Category", "Stock", "Reorder", "Unit Cost", "Value"],
-        inventory.map((i) => [i.name, i.sku, i.category, i.stock, i.reorder, i.cost, i.stock * i.cost]),
-        "inventory-report",
-      ),
+      exportFn: () =>
+        exportCSV(
+          ["Item", "SKU", "Category", "Stock", "Reorder", "Unit Cost", "Value"],
+          inventory.map((i) => [
+            i.name,
+            i.sku,
+            i.category,
+            i.stock,
+            i.reorder,
+            i.cost,
+            i.stock * i.cost,
+          ]),
+          "inventory-report",
+        ),
     },
     {
       name: "Shift Summary",
       desc: `${closedShifts.length} shifts closed · avg variance LKR ${avgVariance}`,
       metric: `${shifts.length} shifts`,
-      delta: shifts.filter((s) => s.status === "OPEN").length > 0 ? "1 shift open" : "No open shift",
+      delta:
+        shifts.filter((s) => s.status === "OPEN").length > 0 ? "1 shift open" : "No open shift",
       color: "text-info",
-      exportFn: () => exportCSV(
-        ["Shift ID", "Staff", "Opened", "Closed", "Cash Sales", "Card Sales", "Expenses", "Variance"],
-        shifts.map((s) => [s.id, s.staffName, s.openedAt.slice(0, 16), s.closedAt?.slice(0, 16) ?? "", s.cashSales, s.cardSales, s.totalExpenses, s.variance ?? ""]),
-        "shift-summary",
-      ),
+      exportFn: () =>
+        exportCSV(
+          [
+            "Shift ID",
+            "Staff",
+            "Opened",
+            "Closed",
+            "Cash Sales",
+            "Card Sales",
+            "Expenses",
+            "Variance",
+          ],
+          shifts.map((s) => [
+            s.id,
+            s.staffName,
+            s.openedAt.slice(0, 16),
+            s.closedAt?.slice(0, 16) ?? "",
+            s.cashSales,
+            s.cardSales,
+            s.totalExpenses,
+            s.variance ?? "",
+          ]),
+          "shift-summary",
+        ),
     },
   ];
 
@@ -183,7 +274,12 @@ function Reports() {
     a.click();
   }
 
-  const periodLabel: Record<Period, string> = { today: "Today", "7d": "Last 7 days", "30d": "Last 30 days", all: "All time" };
+  const periodLabel: Record<Period, string> = {
+    today: "Today",
+    "7d": "Last 7 days",
+    "30d": "Last 30 days",
+    all: "All time",
+  };
 
   return (
     <div className="p-6">
@@ -207,7 +303,10 @@ function Reports() {
       {/* Summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {reports.map((r) => (
-          <div key={r.name} className="rounded-xl border border-border bg-card p-5 shadow-card hover:shadow-elevated transition-shadow">
+          <div
+            key={r.name}
+            className="rounded-xl border border-border bg-card p-5 shadow-card hover:shadow-elevated transition-shadow"
+          >
             <div className="flex justify-between items-start">
               <div>
                 <h3 className="font-display font-bold">{r.name}</h3>
@@ -223,7 +322,9 @@ function Reports() {
             </div>
             <div className="mt-4">
               <div className={`font-display text-2xl font-extrabold ${r.color}`}>{r.metric}</div>
-              <div className="text-[11px] text-muted-foreground font-semibold mt-0.5">{r.delta}</div>
+              <div className="text-[11px] text-muted-foreground font-semibold mt-0.5">
+                {r.delta}
+              </div>
             </div>
           </div>
         ))}
@@ -246,14 +347,36 @@ function Reports() {
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} />
-            <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+            <YAxis
+              tick={{ fontSize: 11 }}
+              tickLine={false}
+              axisLine={false}
+              tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+            />
             <Tooltip
-              formatter={(val: number, name: string) => [`LKR ${val.toLocaleString()}`, name === "cash" ? "Cash" : "Card"]}
+              formatter={(val: number, name: string) => [
+                `LKR ${val.toLocaleString()}`,
+                name === "cash" ? "Cash" : "Card",
+              ]}
               contentStyle={{ fontSize: 12, borderRadius: 8 }}
             />
-            <Legend formatter={(v) => v === "cash" ? "Cash" : "Card"} />
-            <Area type="monotone" dataKey="cash" stroke="hsl(var(--primary))" fill="url(#gCash)" strokeWidth={2} dot={false} />
-            <Area type="monotone" dataKey="card" stroke="#6366f1" fill="url(#gCard)" strokeWidth={2} dot={false} />
+            <Legend formatter={(v) => (v === "cash" ? "Cash" : "Card")} />
+            <Area
+              type="monotone"
+              dataKey="cash"
+              stroke="hsl(var(--primary))"
+              fill="url(#gCash)"
+              strokeWidth={2}
+              dot={false}
+            />
+            <Area
+              type="monotone"
+              dataKey="card"
+              stroke="#6366f1"
+              fill="url(#gCard)"
+              strokeWidth={2}
+              dot={false}
+            />
           </AreaChart>
         </ResponsiveContainer>
       </div>
@@ -265,8 +388,16 @@ function Reports() {
           <BarChart data={dailyData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} />
-            <YAxis allowDecimals={false} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
-            <Tooltip formatter={(val: number) => [val, "Jobs"]} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+            <YAxis
+              allowDecimals={false}
+              tick={{ fontSize: 11 }}
+              tickLine={false}
+              axisLine={false}
+            />
+            <Tooltip
+              formatter={(val: number) => [val, "Jobs"]}
+              contentStyle={{ fontSize: 12, borderRadius: 8 }}
+            />
             <Bar dataKey="jobs" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>

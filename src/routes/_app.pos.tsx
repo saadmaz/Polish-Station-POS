@@ -4,7 +4,18 @@ import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip, statusVariant } from "@/components/status-chip";
-import { Plus, Trash2, Banknote, CreditCard, ArrowRightLeft, Search, FileDown, FileText, MessageCircle, Star } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Banknote,
+  CreditCard,
+  ArrowRightLeft,
+  Search,
+  FileDown,
+  FileText,
+  MessageCircle,
+  Star,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { PaymentMethod, InvoiceLine } from "@/lib/db";
 import { downloadInvoicePDF, downloadQuotationPDF } from "@/lib/pdf";
@@ -28,7 +39,18 @@ interface ChargedInfo {
 }
 
 function POS() {
-  const { services, customers, jobs, invoices, openShift, addInvoice, moveJob, voidInvoice, notificationSettingsData, recordNotification } = useStore();
+  const {
+    services,
+    customers,
+    jobs,
+    invoices,
+    openShift,
+    addInvoice,
+    moveJob,
+    voidInvoice,
+    notificationSettingsData,
+    recordNotification,
+  } = useStore();
 
   // Customer / job selection
   const [customerSearch, setCustomerSearch] = useState("");
@@ -47,7 +69,10 @@ function POS() {
 
   const selectedJob = jobs.find((j) => j.id === selectedJobId);
   const customerName = selectedJob?.customerName ?? manualCustomer;
-  const customerId = selectedJob?.customerId ?? customers.find((c) => c.name.toLowerCase() === customerName.toLowerCase())?.id ?? null;
+  const customerId =
+    selectedJob?.customerId ??
+    customers.find((c) => c.name.toLowerCase() === customerName.toLowerCase())?.id ??
+    null;
   const customerRecord = customers.find((c) => c.id === customerId);
 
   // Auto-populate line items when a job is selected
@@ -65,11 +90,14 @@ function POS() {
     const svc = services.find((s) => s.id === serviceId);
     const key = lineCounter + 1;
     setLineCounter(key);
-    setLines((ls) => [...ls, { key, name: svc?.name ?? "Custom item", qty: 1, unitPrice: svc?.price ?? 0, discount: 0 }]);
+    setLines((ls) => [
+      ...ls,
+      { key, name: svc?.name ?? "Custom item", qty: 1, unitPrice: svc?.price ?? 0, discount: 0 },
+    ]);
   }
 
   function updateLine(key: number, field: keyof InvoiceLine, value: string | number) {
-    setLines((ls) => ls.map((l) => l.key === key ? { ...l, [field]: value } : l));
+    setLines((ls) => ls.map((l) => (l.key === key ? { ...l, [field]: value } : l)));
   }
 
   function removeLine(key: number) {
@@ -84,7 +112,10 @@ function POS() {
   const balanceDue = Math.max(0, total - depositPaid);
 
   function handleSaveQuote() {
-    if (lines.length === 0) { toast.error("Add at least one line item"); return; }
+    if (lines.length === 0) {
+      toast.error("Add at least one line item");
+      return;
+    }
     const quoteId = newId("QUO");
     downloadQuotationPDF({
       id: quoteId,
@@ -98,8 +129,14 @@ function POS() {
   }
 
   function handleCharge() {
-    if (lines.length === 0) { toast.error("Add at least one line item"); return; }
-    if (total <= 0) { toast.error("Total must be greater than 0"); return; }
+    if (lines.length === 0) {
+      toast.error("Add at least one line item");
+      return;
+    }
+    if (total <= 0) {
+      toast.error("Total must be greater than 0");
+      return;
+    }
     setCharging(true);
 
     const inv = addInvoice({
@@ -112,7 +149,8 @@ function POS() {
       tip,
       total,
       method,
-      status: depositPaid > 0 && balanceDue === 0 ? "Paid" : depositPaid > 0 ? "Partially Paid" : "Paid",
+      status:
+        depositPaid > 0 && balanceDue === 0 ? "Paid" : depositPaid > 0 ? "Partially Paid" : "Paid",
       sessionId: openShift?.id ?? null,
       depositApplied: depositPaid > 0 ? depositPaid : undefined,
     });
@@ -147,7 +185,9 @@ function POS() {
     setCharging(false);
   }
 
-  const readyJobs = jobs.filter((j) => j.status === "Ready" || j.status === "Awaiting QC" || j.status === "Done Today");
+  const readyJobs = jobs.filter(
+    (j) => j.status === "Ready" || j.status === "Awaiting QC" || j.status === "Done Today",
+  );
   const filteredJobs = customerSearch
     ? readyJobs.filter(
         (j) =>
@@ -159,7 +199,10 @@ function POS() {
   return (
     <div className="p-6 grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6 h-full">
       <div className="space-y-6">
-        <PageHeader title="POS / Checkout" subtitle={openShift ? `Shift active · ${openShift.staffName}` : "No active shift"} />
+        <PageHeader
+          title="POS / Checkout"
+          subtitle={openShift ? `Shift active · ${openShift.staffName}` : "No active shift"}
+        />
 
         {/* Job selector */}
         <div className="rounded-xl border border-border bg-card shadow-card p-4">
@@ -188,7 +231,9 @@ function POS() {
                 <span className="font-mono text-[11px] text-muted-foreground w-16">{j.id}</span>
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold truncate">{j.customerName}</div>
-                  <div className="text-[11px] text-muted-foreground truncate">{j.plate} · {j.serviceName}</div>
+                  <div className="text-[11px] text-muted-foreground truncate">
+                    {j.plate} · {j.serviceName}
+                  </div>
                 </div>
                 <span className="font-mono text-xs">LKR {j.price.toLocaleString()}</span>
                 <StatusChip variant={statusVariant(j.status)}>{j.status}</StatusChip>
@@ -212,8 +257,16 @@ function POS() {
           )}
           {selectedJob && (
             <div className="mt-3 flex items-center justify-between text-sm rounded-md bg-primary/5 border border-primary/20 px-3 py-2">
-              <span><strong>{selectedJob.customerName}</strong> · {selectedJob.plate}</span>
-              <button onClick={() => { setSelectedJobId(null); setLines([]); }} className="text-muted-foreground hover:text-foreground">
+              <span>
+                <strong>{selectedJob.customerName}</strong> · {selectedJob.plate}
+              </span>
+              <button
+                onClick={() => {
+                  setSelectedJobId(null);
+                  setLines([]);
+                }}
+                className="text-muted-foreground hover:text-foreground"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -228,11 +281,15 @@ function POS() {
               <select
                 className="rounded-md border border-input bg-background px-2 py-1.5 text-xs focus:outline-none"
                 value=""
-                onChange={(e) => { if (e.target.value) addLine(e.target.value); }}
+                onChange={(e) => {
+                  if (e.target.value) addLine(e.target.value);
+                }}
               >
                 <option value="">+ Add service…</option>
                 {services.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name} — LKR {s.price.toLocaleString()}</option>
+                  <option key={s.id} value={s.id}>
+                    {s.name} — LKR {s.price.toLocaleString()}
+                  </option>
                 ))}
               </select>
               <button
@@ -296,7 +353,10 @@ function POS() {
                       {(l.unitPrice * l.qty - l.discount).toLocaleString()}
                     </td>
                     <td className="px-2 py-2 text-right">
-                      <button onClick={() => removeLine(l.key)} className="text-muted-foreground hover:text-primary">
+                      <button
+                        onClick={() => removeLine(l.key)}
+                        className="text-muted-foreground hover:text-primary"
+                      >
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </td>
@@ -330,46 +390,63 @@ function POS() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {[...invoices].reverse().slice(0, 10).map((i) => (
-                  <tr key={i.id} className="hover:bg-muted/40">
-                    <td className="px-4 py-2.5 font-mono text-xs">{i.id}</td>
-                    <td className="px-3 py-2.5 font-medium">{i.customerName}</td>
-                    <td className="px-3 py-2.5 text-muted-foreground text-xs">
-                      {new Date(i.createdAt).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                    </td>
-                    <td className="px-3 py-2.5 text-right font-mono font-semibold">
-                      LKR {i.total.toLocaleString()}
-                    </td>
-                    <td className="px-3 py-2.5 text-muted-foreground">{i.method}</td>
-                    <td className="px-3 py-2.5">
-                      <StatusChip variant={statusVariant(i.status)}>{i.status}</StatusChip>
-                    </td>
-                    <td className="px-2 py-2.5">
-                      <div className="flex items-center gap-2 justify-end">
-                        <button
-                          onClick={() => {
-                            const job = i.jobId ? jobs.find((j) => j.id === i.jobId) : undefined;
-                            downloadInvoicePDF(i, job);
-                          }}
-                          title="Download PDF"
-                          className="text-muted-foreground hover:text-primary"
-                        >
-                          <FileDown className="h-3.5 w-3.5" />
-                        </button>
-                        {i.status !== "Void" && (
+                {[...invoices]
+                  .reverse()
+                  .slice(0, 10)
+                  .map((i) => (
+                    <tr key={i.id} className="hover:bg-muted/40">
+                      <td className="px-4 py-2.5 font-mono text-xs">{i.id}</td>
+                      <td className="px-3 py-2.5 font-medium">{i.customerName}</td>
+                      <td className="px-3 py-2.5 text-muted-foreground text-xs">
+                        {new Date(i.createdAt).toLocaleString([], {
+                          day: "numeric",
+                          month: "short",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono font-semibold">
+                        LKR {i.total.toLocaleString()}
+                      </td>
+                      <td className="px-3 py-2.5 text-muted-foreground">{i.method}</td>
+                      <td className="px-3 py-2.5">
+                        <StatusChip variant={statusVariant(i.status)}>{i.status}</StatusChip>
+                      </td>
+                      <td className="px-2 py-2.5">
+                        <div className="flex items-center gap-2 justify-end">
                           <button
-                            onClick={() => { if (confirm(`Void ${i.id}?`)) { voidInvoice(i.id); toast.success(`${i.id} voided`); } }}
-                            className="text-[11px] text-muted-foreground hover:text-primary underline underline-offset-2"
+                            onClick={() => {
+                              const job = i.jobId ? jobs.find((j) => j.id === i.jobId) : undefined;
+                              downloadInvoicePDF(i, job);
+                            }}
+                            title="Download PDF"
+                            className="text-muted-foreground hover:text-primary"
                           >
-                            Void
+                            <FileDown className="h-3.5 w-3.5" />
                           </button>
-                        )}
-                      </div>
+                          {i.status !== "Void" && (
+                            <button
+                              onClick={() => {
+                                if (confirm(`Void ${i.id}?`)) {
+                                  voidInvoice(i.id);
+                                  toast.success(`${i.id} voided`);
+                                }
+                              }}
+                              className="text-[11px] text-muted-foreground hover:text-primary underline underline-offset-2"
+                            >
+                              Void
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                {invoices.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="text-center py-6 text-muted-foreground text-sm">
+                      No invoices yet today
                     </td>
                   </tr>
-                ))}
-                {invoices.length === 0 && (
-                  <tr><td colSpan={6} className="text-center py-6 text-muted-foreground text-sm">No invoices yet today</td></tr>
                 )}
               </tbody>
             </table>
@@ -383,10 +460,13 @@ function POS() {
           <div className="mb-3 rounded-md bg-muted/40 px-3 py-2">
             <div className="text-xs text-muted-foreground">Customer</div>
             <div className="font-display font-bold">{customerRecord.name}</div>
-            <div className="text-xs text-muted-foreground">{customerRecord.tier} · {customerRecord.visits} visits · LKR {customerRecord.spend.toLocaleString()} lifetime</div>
+            <div className="text-xs text-muted-foreground">
+              {customerRecord.tier} · {customerRecord.visits} visits · LKR{" "}
+              {customerRecord.spend.toLocaleString()} lifetime
+            </div>
           </div>
         )}
-        {!customerRecord && (customerName) && (
+        {!customerRecord && customerName && (
           <div className="mb-3 text-sm font-semibold">{customerName}</div>
         )}
 
@@ -414,7 +494,8 @@ function POS() {
         </div>
         {depositPaid > 0 && (
           <div className="text-xs text-muted-foreground text-center -mt-2 mb-2">
-            Full total LKR {total.toLocaleString()} · deposit LKR {depositPaid.toLocaleString()} already paid
+            Full total LKR {total.toLocaleString()} · deposit LKR {depositPaid.toLocaleString()}{" "}
+            already paid
           </div>
         )}
 
@@ -425,7 +506,9 @@ function POS() {
               onClick={() => setTip(tip === amt ? 0 : amt)}
               className={cn(
                 "rounded-md border py-2 text-xs font-medium transition-colors",
-                tip === amt ? "border-primary bg-primary/10 text-primary" : "border-input hover:bg-accent",
+                tip === amt
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-input hover:bg-accent",
               )}
             >
               Tip LKR {amt}
@@ -437,13 +520,11 @@ function POS() {
           Payment Method
         </div>
         <div className="grid grid-cols-3 gap-2 mb-4">
-          {(
-            [
-              { v: "Cash" as const, icon: Banknote },
-              { v: "Card" as const, icon: CreditCard },
-              { v: "Transfer" as const, icon: ArrowRightLeft },
-            ]
-          ).map(({ v, icon: Icon }) => (
+          {[
+            { v: "Cash" as const, icon: Banknote },
+            { v: "Card" as const, icon: CreditCard },
+            { v: "Transfer" as const, icon: ArrowRightLeft },
+          ].map(({ v, icon: Icon }) => (
             <button
               key={v}
               onClick={() => setMethod(v)}
@@ -466,11 +547,16 @@ function POS() {
               <p className="text-sm font-semibold text-green-700 dark:text-green-400 flex items-center gap-1.5">
                 <Star className="h-4 w-4" /> Payment complete — {chargedInfo.invoiceId}
               </p>
-              <button onClick={() => setChargedInfo(null)} className="text-green-600 hover:text-green-800 dark:text-green-400">
+              <button
+                onClick={() => setChargedInfo(null)}
+                className="text-green-600 hover:text-green-800 dark:text-green-400"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <p className="text-xs text-green-700 dark:text-green-300">Ask {chargedInfo.customerName.split(" ")[0]} for a Google review?</p>
+            <p className="text-xs text-green-700 dark:text-green-300">
+              Ask {chargedInfo.customerName.split(" ")[0]} for a Google review?
+            </p>
             {chargedInfo.phone && notificationSettingsData.googleReviewLink ? (
               <a
                 href={buildWALink(
@@ -487,7 +573,13 @@ function POS() {
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => {
-                  recordNotification({ type: "review_request", customerId: chargedInfo.customerId, jobId: chargedInfo.jobId, customerName: chargedInfo.customerName, phone: chargedInfo.phone });
+                  recordNotification({
+                    type: "review_request",
+                    customerId: chargedInfo.customerId,
+                    jobId: chargedInfo.jobId,
+                    customerName: chargedInfo.customerName,
+                    phone: chargedInfo.phone,
+                  });
                   setChargedInfo(null);
                 }}
                 className="flex w-full items-center justify-center gap-2 rounded-md bg-green-600 py-2 text-sm font-medium text-white hover:bg-green-700"
@@ -495,7 +587,9 @@ function POS() {
                 <MessageCircle className="h-4 w-4" /> Send Review Request via WhatsApp
               </a>
             ) : !notificationSettingsData.googleReviewLink ? (
-              <p className="text-xs text-amber-600">Set your Google Review link in Notifications → Templates.</p>
+              <p className="text-xs text-amber-600">
+                Set your Google Review link in Notifications → Templates.
+              </p>
             ) : null}
           </div>
         )}
@@ -521,7 +615,9 @@ function POS() {
         </button>
 
         {!openShift && (
-          <p className="mt-2 text-center text-[11px] text-warning">No active shift — open a shift first</p>
+          <p className="mt-2 text-center text-[11px] text-warning">
+            No active shift — open a shift first
+          </p>
         )}
       </aside>
     </div>
@@ -539,7 +635,16 @@ function Row({ label, value }: { label: string; value: string }) {
 
 function X({ className }: { className?: string }) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
       <path d="M18 6 6 18M6 6l12 12" />
     </svg>
   );

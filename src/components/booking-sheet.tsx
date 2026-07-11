@@ -52,10 +52,11 @@ async function decodeVIN(vin: string): Promise<string | null> {
     if (!res.ok) return null;
     const data = await res.json();
     const get = (label: string): string =>
-      (data.Results as Array<{ Variable: string; Value: string | null }>)
-        ?.find((r) => r.Variable === label)?.Value ?? "";
-    const year  = get("Model Year");
-    const make  = get("Make");
+      (data.Results as Array<{ Variable: string; Value: string | null }>)?.find(
+        (r) => r.Variable === label,
+      )?.Value ?? "";
+    const year = get("Model Year");
+    const make = get("Make");
     const model = get("Model");
     if (!make || !model) return null;
     return [year, make, model].filter(Boolean).join(" ");
@@ -72,9 +73,14 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
   const [submitting, setSubmitting] = useState(false);
 
   // Plate lookup state
-  const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "not-found" | "error">("idle");
+  const [lookupState, setLookupState] = useState<
+    "idle" | "loading" | "found" | "not-found" | "error"
+  >("idle");
   const [lookupSuggestion, setLookupSuggestion] = useState<{
-    name?: string; phone?: string; vehicleModel?: string; vehicleColor?: string;
+    name?: string;
+    phone?: string;
+    vehicleModel?: string;
+    vehicleColor?: string;
   } | null>(null);
   const lookupRef = useRef<AbortController | null>(null);
 
@@ -84,9 +90,7 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
 
   function handlePhone(value: string) {
     set("phone", value);
-    const match = customers.find(
-      (c) => c.phone.replace(/\s/g, "") === value.replace(/\s/g, ""),
-    );
+    const match = customers.find((c) => c.phone.replace(/\s/g, "") === value.replace(/\s/g, ""));
     if (match) {
       setForm((f) => ({
         ...f,
@@ -151,10 +155,10 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
     if (!lookupSuggestion) return;
     setForm((f) => ({
       ...f,
-      name:          lookupSuggestion.name          ?? f.name,
-      phone:         lookupSuggestion.phone         ?? f.phone,
-      vehicleModel:  lookupSuggestion.vehicleModel  ?? f.vehicleModel,
-      vehicleColor:  lookupSuggestion.vehicleColor  ?? f.vehicleColor,
+      name: lookupSuggestion.name ?? f.name,
+      phone: lookupSuggestion.phone ?? f.phone,
+      vehicleModel: lookupSuggestion.vehicleModel ?? f.vehicleModel,
+      vehicleColor: lookupSuggestion.vehicleColor ?? f.vehicleColor,
     }));
     setLookupState("idle");
     setLookupSuggestion(null);
@@ -166,7 +170,7 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
     const svc = services.find((s) => s.id === serviceId);
     if (!svc) return;
     const suggestDeposit = svc.price >= 15000;
-    const depositAmt = suggestDeposit ? Math.round(svc.price * 0.30) : 0;
+    const depositAmt = suggestDeposit ? Math.round(svc.price * 0.3) : 0;
     setForm((f) => ({
       ...f,
       serviceId,
@@ -235,7 +239,6 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 gap-4 py-4">
-
           {/* Phone — auto-fills customer */}
           <div className="space-y-1.5">
             <label className="text-sm font-medium">Phone</label>
@@ -293,9 +296,18 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
                 <div className="flex items-start gap-2">
                   <CheckCircle2 className="h-3.5 w-3.5 text-success mt-0.5 shrink-0" />
                   <div className="text-xs text-success">
-                    {lookupSuggestion.name && <div className="font-semibold">{lookupSuggestion.name}</div>}
-                    {lookupSuggestion.vehicleModel && <div>{lookupSuggestion.vehicleModel}{lookupSuggestion.vehicleColor ? ` · ${lookupSuggestion.vehicleColor}` : ""}</div>}
-                    {lookupSuggestion.phone && <div className="font-mono">{lookupSuggestion.phone}</div>}
+                    {lookupSuggestion.name && (
+                      <div className="font-semibold">{lookupSuggestion.name}</div>
+                    )}
+                    {lookupSuggestion.vehicleModel && (
+                      <div>
+                        {lookupSuggestion.vehicleModel}
+                        {lookupSuggestion.vehicleColor ? ` · ${lookupSuggestion.vehicleColor}` : ""}
+                      </div>
+                    )}
+                    {lookupSuggestion.phone && (
+                      <div className="font-mono">{lookupSuggestion.phone}</div>
+                    )}
                   </div>
                 </div>
                 <button
@@ -377,7 +389,9 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
                 onChange={(e) => set("time", e.target.value)}
               >
                 {HOURS.map((t) => (
-                  <option key={t} value={t}>{t}</option>
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
                 ))}
               </select>
             </div>
@@ -403,7 +417,9 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
               >
                 <option value="">TBA</option>
                 {["Bay 1", "Bay 2", "Bay 3", "Bay 4", "Bay 5"].map((b) => (
-                  <option key={b} value={b}>{b}</option>
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
                 ))}
               </select>
             </div>
@@ -421,9 +437,7 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
                   setForm((f) => ({
                     ...f,
                     requireDeposit: checked,
-                    depositAmount: checked
-                      ? Math.round((selectedService?.price ?? 0) * 0.30)
-                      : 0,
+                    depositAmount: checked ? Math.round((selectedService?.price ?? 0) * 0.3) : 0,
                   }));
                 }}
               />
@@ -441,7 +455,8 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
                   Deposit Amount (LKR)
                   {selectedService && (
                     <span className="ml-2 text-muted-foreground/70">
-                      · {Math.round((form.depositAmount / selectedService.price) * 100)}% of service price
+                      · {Math.round((form.depositAmount / selectedService.price) * 100)}% of service
+                      price
                     </span>
                   )}
                 </label>
@@ -460,10 +475,12 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
                         <button
                           key={pct}
                           type="button"
-                          onClick={() => set("depositAmount", Math.round(selectedService.price * pct / 100))}
+                          onClick={() =>
+                            set("depositAmount", Math.round((selectedService.price * pct) / 100))
+                          }
                           className={cn(
                             "rounded-md px-2 py-1.5 text-[11px] font-semibold border transition-colors",
-                            Math.round(selectedService.price * pct / 100) === form.depositAmount
+                            Math.round((selectedService.price * pct) / 100) === form.depositAmount
                               ? "bg-primary/10 border-primary/40 text-primary"
                               : "border-input text-muted-foreground hover:bg-muted",
                           )}
@@ -475,7 +492,8 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
                   )}
                 </div>
                 <div className="text-[11px] text-muted-foreground">
-                  Balance due at pickup: LKR {((selectedService?.price ?? 0) - form.depositAmount).toLocaleString()}
+                  Balance due at pickup: LKR{" "}
+                  {((selectedService?.price ?? 0) - form.depositAmount).toLocaleString()}
                 </div>
               </div>
             )}

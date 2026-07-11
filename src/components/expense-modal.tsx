@@ -21,9 +21,7 @@ export function ExpenseModal({ open, onClose }: ExpenseModalProps) {
 
   if (!open) return null;
 
-  const shiftExpenses = openShift
-    ? expenses.filter((e) => e.sessionId === openShift.id)
-    : [];
+  const shiftExpenses = openShift ? expenses.filter((e) => e.sessionId === openShift.id) : [];
 
   function reset() {
     setAmount("");
@@ -56,13 +54,18 @@ export function ExpenseModal({ open, onClose }: ExpenseModalProps) {
       <div className="relative z-10 w-full max-w-md rounded-2xl bg-card border border-border shadow-elevated p-6 mx-4">
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-display text-lg font-bold">Cash Out / Deposit</h2>
-          <button onClick={onClose} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted">
+          <button
+            onClick={onClose}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {!openShift && (
-          <p className="text-sm text-muted-foreground text-center py-6">No shift is currently open.</p>
+          <p className="text-sm text-muted-foreground text-center py-6">
+            No shift is currently open.
+          </p>
         )}
 
         {openShift && (
@@ -72,16 +75,24 @@ export function ExpenseModal({ open, onClose }: ExpenseModalProps) {
               <button
                 type="button"
                 onClick={() => setType("EXPENSE")}
-                className={cn("flex-1 flex items-center justify-center gap-2 rounded-md py-2 text-sm font-medium transition-colors",
-                  type === "EXPENSE" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-2 rounded-md py-2 text-sm font-medium transition-colors",
+                  type === "EXPENSE"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
               >
                 <ArrowUpRight className="h-4 w-4" /> Cash Out
               </button>
               <button
                 type="button"
                 onClick={() => setType("DEPOSIT")}
-                className={cn("flex-1 flex items-center justify-center gap-2 rounded-md py-2 text-sm font-medium transition-colors",
-                  type === "DEPOSIT" ? "bg-success text-white shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-2 rounded-md py-2 text-sm font-medium transition-colors",
+                  type === "DEPOSIT"
+                    ? "bg-success text-white shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
               >
                 <ArrowDownLeft className="h-4 w-4" /> Bank Deposit
               </button>
@@ -89,10 +100,16 @@ export function ExpenseModal({ open, onClose }: ExpenseModalProps) {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <label className="block">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Amount (LKR)</span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Amount (LKR)
+                </span>
                 <input
-                  type="number" min={1} step={1} required
-                  value={amount} onChange={(e) => setAmount(e.target.value)}
+                  type="number"
+                  min={1}
+                  step={1}
+                  required
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
                   placeholder="0"
                   className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
@@ -100,10 +117,17 @@ export function ExpenseModal({ open, onClose }: ExpenseModalProps) {
 
               {type === "EXPENSE" && (
                 <label className="block">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Category</span>
-                  <select value={category} onChange={(e) => setCategory(e.target.value)}
-                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
-                    {EXPENSE_CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Category
+                  </span>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    {EXPENSE_CATEGORIES.map((c) => (
+                      <option key={c}>{c}</option>
+                    ))}
                   </select>
                 </label>
               )}
@@ -114,27 +138,36 @@ export function ExpenseModal({ open, onClose }: ExpenseModalProps) {
                 </span>
                 <input
                   type="text"
-                  value={paidTo} onChange={(e) => setPaidTo(e.target.value)}
+                  value={paidTo}
+                  onChange={(e) => setPaidTo(e.target.value)}
                   placeholder={type === "EXPENSE" ? "Vendor name" : "Account / ref no."}
                   className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
               </label>
 
               <label className="block">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Description</span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Description
+                </span>
                 <input
                   type="text"
-                  value={description} onChange={(e) => setDescription(e.target.value)}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
                   placeholder="Optional note"
                   className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
               </label>
 
               <button
-                type="submit" disabled={saving || !amount}
-                className={cn("w-full rounded-md py-2.5 text-sm font-medium text-white transition-colors shadow-sm",
-                  type === "EXPENSE" ? "bg-primary hover:bg-primary/90" : "bg-success hover:bg-success/90",
-                  (!amount || saving) && "opacity-50 cursor-not-allowed")}
+                type="submit"
+                disabled={saving || !amount}
+                className={cn(
+                  "w-full rounded-md py-2.5 text-sm font-medium text-white transition-colors shadow-sm",
+                  type === "EXPENSE"
+                    ? "bg-primary hover:bg-primary/90"
+                    : "bg-success hover:bg-success/90",
+                  (!amount || saving) && "opacity-50 cursor-not-allowed",
+                )}
               >
                 {type === "EXPENSE" ? "Record Cash Out" : "Record Deposit"}
               </button>
@@ -143,7 +176,9 @@ export function ExpenseModal({ open, onClose }: ExpenseModalProps) {
             {/* Session log */}
             {shiftExpenses.length > 0 && (
               <div className="mt-5 border-t border-border pt-4">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">This shift</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                  This shift
+                </p>
                 <div className="space-y-1 max-h-40 overflow-y-auto">
                   {[...shiftExpenses].reverse().map((ex) => (
                     <div key={ex.id} className="flex items-center justify-between text-sm">
@@ -151,7 +186,12 @@ export function ExpenseModal({ open, onClose }: ExpenseModalProps) {
                         {ex.type === "DEPOSIT" ? "↓ Deposit" : `↑ ${ex.category}`}
                         {ex.paidTo ? ` · ${ex.paidTo}` : ""}
                       </span>
-                      <span className={cn("font-mono font-semibold", ex.type === "DEPOSIT" ? "text-success" : "text-primary")}>
+                      <span
+                        className={cn(
+                          "font-mono font-semibold",
+                          ex.type === "DEPOSIT" ? "text-success" : "text-primary",
+                        )}
+                      >
                         {ex.type === "DEPOSIT" ? "+" : "-"}LKR {ex.amount.toLocaleString()}
                       </span>
                     </div>

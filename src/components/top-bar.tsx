@@ -73,7 +73,10 @@ export function TopBar() {
           )}
 
           {lowStockItems.length > 0 && (
-            <span className="hidden md:inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground" title={`${lowStockItems.length} low/out-of-stock items`}>
+            <span
+              className="hidden md:inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground"
+              title={`${lowStockItems.length} low/out-of-stock items`}
+            >
               {lowStockItems.length}
             </span>
           )}

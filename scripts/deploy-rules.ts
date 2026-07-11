@@ -46,9 +46,11 @@ if (getApps().length === 0) {
 // The app's credential can mint an OAuth access token scoped for cloud-platform,
 // which covers the firebaserules API.
 const app = getApps()[0];
-const { access_token: token } = await (app.options.credential as {
-  getAccessToken: () => Promise<{ access_token: string }>;
-}).getAccessToken();
+const { access_token: token } = await (
+  app.options.credential as {
+    getAccessToken: () => Promise<{ access_token: string }>;
+  }
+).getAccessToken();
 
 // Touch Firestore so an obviously-broken credential fails early and clearly.
 getFirestore();
@@ -91,7 +93,10 @@ async function release(releaseName: string, rulesetName: string) {
 try {
   console.log(`Deploying rules to ${projectId} (bucket ${bucket})`);
   await release("cloud.firestore", await createRuleset("firestore.rules", "firestore.rules"));
-  await release(`firebase.storage/${bucket}`, await createRuleset("storage.rules", "storage.rules"));
+  await release(
+    `firebase.storage/${bucket}`,
+    await createRuleset("storage.rules", "storage.rules"),
+  );
   console.log("✅ Rules deployed");
   process.exit(0);
 } catch (e) {

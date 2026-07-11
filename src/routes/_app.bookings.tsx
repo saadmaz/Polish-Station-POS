@@ -1,7 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Plus, ChevronLeft, ChevronRight, LogIn, X, Trash2, CheckCircle2, Banknote, Globe, Copy, Check } from "lucide-react";
+import {
+  Plus,
+  ChevronLeft,
+  ChevronRight,
+  LogIn,
+  X,
+  Trash2,
+  CheckCircle2,
+  Banknote,
+  Globe,
+  Copy,
+  Check,
+} from "lucide-react";
 import { useStore } from "@/lib/store";
 import { BookingSheet } from "@/components/booking-sheet";
 import { StatusChip, statusVariant } from "@/components/status-chip";
@@ -31,7 +43,11 @@ function addDays(dateStr: string, n: number): string {
 }
 
 function formatDate(dateStr: string): string {
-  return new Date(dateStr + "T00:00:00").toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+  return new Date(dateStr + "T00:00:00").toLocaleDateString([], {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
 }
 
 // ─── Booking detail popover ───────────────────────────────────────────────────
@@ -69,21 +85,36 @@ function BookingCard({
       </div>
 
       <div className="text-sm space-y-1">
-        <div><span className="text-muted-foreground">Service:</span> {booking.serviceName}</div>
-        <div><span className="text-muted-foreground">Time:</span> {booking.time} · {booking.durationMin}m</div>
-        <div><span className="text-muted-foreground">Tech:</span> {booking.tech}</div>
-        <div><span className="text-muted-foreground">Price:</span> LKR {booking.price.toLocaleString()}</div>
-        {booking.notes && <div><span className="text-muted-foreground">Notes:</span> {booking.notes}</div>}
+        <div>
+          <span className="text-muted-foreground">Service:</span> {booking.serviceName}
+        </div>
+        <div>
+          <span className="text-muted-foreground">Time:</span> {booking.time} ·{" "}
+          {booking.durationMin}m
+        </div>
+        <div>
+          <span className="text-muted-foreground">Tech:</span> {booking.tech}
+        </div>
+        <div>
+          <span className="text-muted-foreground">Price:</span> LKR {booking.price.toLocaleString()}
+        </div>
+        {booking.notes && (
+          <div>
+            <span className="text-muted-foreground">Notes:</span> {booking.notes}
+          </div>
+        )}
       </div>
 
       {/* Deposit status */}
       {hasDeposit && (
-        <div className={cn(
-          "flex items-center justify-between rounded-md px-3 py-2 text-xs",
-          depositPaid
-            ? "bg-success/10 border border-success/30 text-success"
-            : "bg-warning/10 border border-warning/30 text-warning",
-        )}>
+        <div
+          className={cn(
+            "flex items-center justify-between rounded-md px-3 py-2 text-xs",
+            depositPaid
+              ? "bg-success/10 border border-success/30 text-success"
+              : "bg-warning/10 border border-warning/30 text-warning",
+          )}
+        >
           <div className="flex items-center gap-1.5">
             <Banknote className="h-3.5 w-3.5" />
             <span className="font-semibold">
@@ -155,7 +186,9 @@ function Bookings() {
     });
   }
 
-  const todayBookings = bookings.filter((b) => b.date === currentDate).sort((a, b) => a.time.localeCompare(b.time));
+  const todayBookings = bookings
+    .filter((b) => b.date === currentDate)
+    .sort((a, b) => a.time.localeCompare(b.time));
 
   // Week dates
   const weekDates = Array.from({ length: 7 }, (_, i) => {
@@ -197,7 +230,9 @@ function Bookings() {
     const dayBookings = bookings.filter((b) => b.date === date);
     const bays = ["Bay 1", "Bay 2", "Bay 3", "Bay 4", "Bay 5"];
     const byBay: Record<string, Booking[]> = {};
-    bays.forEach((bay) => { byBay[bay] = []; });
+    bays.forEach((bay) => {
+      byBay[bay] = [];
+    });
     dayBookings.forEach((b) => {
       const bay = b.bay && b.bay !== "—" ? b.bay : "Bay 1";
       if (!byBay[bay]) byBay[bay] = [];
@@ -205,14 +240,19 @@ function Bookings() {
     });
     // unassigned bookings go into the first available bay column
     const unassigned = dayBookings.filter((b) => !b.bay || b.bay === "—");
-    unassigned.forEach((b) => { byBay["Bay 1"].push(b); });
+    unassigned.forEach((b) => {
+      byBay["Bay 1"].push(b);
+    });
 
     return (
       <div className="grid grid-cols-[60px_repeat(5,1fr)] divide-x divide-border overflow-x-auto">
         <div>
           <div className="h-10 border-b border-border" />
           {HOURS.map((h) => (
-            <div key={h} className="h-16 border-b border-border px-2 py-1 text-[11px] font-mono text-muted-foreground">
+            <div
+              key={h}
+              className="h-16 border-b border-border px-2 py-1 text-[11px] font-mono text-muted-foreground"
+            >
               {String(h).padStart(2, "0")}:00
             </div>
           ))}
@@ -223,7 +263,9 @@ function Bookings() {
               {bay}
             </div>
             <div className="relative">
-              {HOURS.map((h) => <div key={h} className="h-16 border-b border-border" />)}
+              {HOURS.map((h) => (
+                <div key={h} className="h-16 border-b border-border" />
+              ))}
               {byBay[bay]?.map((b) => {
                 const [h, m] = b.time.split(":").map(Number);
                 const startPx = (h - 8) * 64 + (m / 60) * 64;
@@ -237,7 +279,13 @@ function Bookings() {
                       "absolute left-1.5 right-1.5 rounded-md border-l-[3px] bg-card px-2 py-1.5 cursor-pointer overflow-hidden hover:shadow-card transition-shadow",
                       b.status === "Cancelled" && "opacity-40",
                     )}
-                    style={{ top: startPx, height: isActive ? "auto" : heightPx, minHeight: heightPx, borderLeftColor: color, zIndex: isActive ? 20 : 1 }}
+                    style={{
+                      top: startPx,
+                      height: isActive ? "auto" : heightPx,
+                      minHeight: heightPx,
+                      borderLeftColor: color,
+                      zIndex: isActive ? 20 : 1,
+                    }}
                     onClick={() => setActiveCard(isActive ? null : b.id)}
                   >
                     {isActive ? (
@@ -251,11 +299,15 @@ function Bookings() {
                     ) : (
                       <>
                         <div className="text-[11px] font-bold truncate">{b.customerName}</div>
-                        <div className="text-[10px] text-muted-foreground truncate">{b.serviceName}</div>
+                        <div className="text-[10px] text-muted-foreground truncate">
+                          {b.serviceName}
+                        </div>
                         {heightPx > 44 && (
                           <div className="text-[10px] text-muted-foreground">{b.tech}</div>
                         )}
-                        {b.status === "Checked-In" && <CheckCircle2 className="absolute top-1 right-1 h-3 w-3 text-success" />}
+                        {b.status === "Checked-In" && (
+                          <CheckCircle2 className="absolute top-1 right-1 h-3 w-3 text-success" />
+                        )}
                       </>
                     )}
                   </div>
@@ -282,7 +334,9 @@ function Bookings() {
                   onClick={() => setView(v)}
                   className={cn(
                     "rounded-md px-3 py-1.5 capitalize",
-                    view === v ? "bg-charcoal text-charcoal-foreground" : "text-muted-foreground hover:text-foreground",
+                    view === v
+                      ? "bg-charcoal text-charcoal-foreground"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   {v}
@@ -305,18 +359,30 @@ function Bookings() {
         }
       />
 
-      <div className="rounded-xl border border-border bg-card shadow-card overflow-hidden" onClick={() => setActiveCard(null)}>
+      <div
+        className="rounded-xl border border-border bg-card shadow-card overflow-hidden"
+        onClick={() => setActiveCard(null)}
+      >
         {/* Date nav */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-border">
           <div className="flex items-center gap-3">
-            <button onClick={() => setCurrentDate((d) => addDays(d, view === "week" ? -7 : -1))} className="rounded-md p-1.5 hover:bg-muted">
+            <button
+              onClick={() => setCurrentDate((d) => addDays(d, view === "week" ? -7 : -1))}
+              className="rounded-md p-1.5 hover:bg-muted"
+            >
               <ChevronLeft className="h-4 w-4" />
             </button>
             <div className="font-display font-bold">{formatDate(currentDate)}</div>
-            <button onClick={() => setCurrentDate((d) => addDays(d, view === "week" ? 7 : 1))} className="rounded-md p-1.5 hover:bg-muted">
+            <button
+              onClick={() => setCurrentDate((d) => addDays(d, view === "week" ? 7 : 1))}
+              className="rounded-md p-1.5 hover:bg-muted"
+            >
               <ChevronRight className="h-4 w-4" />
             </button>
-            <button onClick={() => setCurrentDate(new Date().toISOString().slice(0, 10))} className="text-xs text-muted-foreground hover:text-foreground border border-input rounded-md px-2 py-1">
+            <button
+              onClick={() => setCurrentDate(new Date().toISOString().slice(0, 10))}
+              className="text-xs text-muted-foreground hover:text-foreground border border-input rounded-md px-2 py-1"
+            >
               Today
             </button>
           </div>
@@ -333,7 +399,10 @@ function Bookings() {
               <div>
                 <div className="h-10 border-b border-border" />
                 {HOURS.map((h) => (
-                  <div key={h} className="h-14 border-b border-border px-2 py-1 text-[11px] font-mono text-muted-foreground">
+                  <div
+                    key={h}
+                    className="h-14 border-b border-border px-2 py-1 text-[11px] font-mono text-muted-foreground"
+                  >
                     {String(h).padStart(2, "0")}:00
                   </div>
                 ))}
@@ -343,11 +412,23 @@ function Bookings() {
                 const isToday = date === new Date().toISOString().slice(0, 10);
                 return (
                   <div key={date} className="relative">
-                    <div className={cn("h-10 border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wider", isToday ? "bg-primary/10 text-primary" : "bg-muted/40 text-muted-foreground")}>
-                      {new Date(date + "T00:00:00").toLocaleDateString([], { weekday: "short", day: "numeric" })}
+                    <div
+                      className={cn(
+                        "h-10 border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wider",
+                        isToday
+                          ? "bg-primary/10 text-primary"
+                          : "bg-muted/40 text-muted-foreground",
+                      )}
+                    >
+                      {new Date(date + "T00:00:00").toLocaleDateString([], {
+                        weekday: "short",
+                        day: "numeric",
+                      })}
                     </div>
                     <div className="relative">
-                      {HOURS.map((h) => <div key={h} className="h-14 border-b border-border" />)}
+                      {HOURS.map((h) => (
+                        <div key={h} className="h-14 border-b border-border" />
+                      ))}
                       {dayBookings.map((b) => {
                         const [h, m] = b.time.split(":").map(Number);
                         const startPx = (h - 8) * 56 + (m / 60) * 56;
@@ -359,10 +440,17 @@ function Bookings() {
                             className="absolute left-1 right-1 rounded-md border-l-[3px] bg-card px-1.5 py-1 cursor-pointer overflow-hidden hover:shadow-card"
                             style={{ top: startPx, height: heightPx, borderLeftColor: color }}
                             title={`${b.customerName} — ${b.serviceName}`}
-                            onClick={(e) => { e.stopPropagation(); setActiveCard(b.id === activeCard ? null : b.id); setCurrentDate(date); setView("day"); }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveCard(b.id === activeCard ? null : b.id);
+                              setCurrentDate(date);
+                              setView("day");
+                            }}
                           >
                             <div className="text-[10px] font-bold truncate">{b.customerName}</div>
-                            <div className="text-[10px] text-muted-foreground truncate">{b.serviceName}</div>
+                            <div className="text-[10px] text-muted-foreground truncate">
+                              {b.serviceName}
+                            </div>
                           </div>
                         );
                       })}
@@ -391,63 +479,78 @@ function Bookings() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {bookings.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)).map((b) => (
-                <tr key={b.id} className="hover:bg-muted/40">
-                  <td className="px-5 py-3 font-mono text-xs">
-                    <div>{b.date}</div>
-                    <div className="text-muted-foreground">{b.time}</div>
-                  </td>
-                  <td className="px-3 py-3 font-medium">{b.customerName}</td>
-                  <td className="px-3 py-3">
-                    <div className="font-mono text-xs">{b.plate}</div>
-                    <div className="text-muted-foreground text-xs">{b.vehicleModel}</div>
-                  </td>
-                  <td className="px-3 py-3">{b.serviceName}</td>
-                  <td className="px-3 py-3 text-muted-foreground">{b.tech}</td>
-                  <td className="px-3 py-3 text-right font-mono font-semibold">LKR {b.price.toLocaleString()}</td>
-                  <td className="px-3 py-3">
-                    {b.depositStatus && b.depositStatus !== "none" && (
-                      <span className={cn(
-                        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                        b.depositStatus === "paid" ? "bg-success/10 text-success" : "bg-warning/10 text-warning",
-                      )}>
-                        <Banknote className="h-3 w-3" />
-                        {b.depositStatus === "paid" ? "Dep. Paid" : "Dep. Req."}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-3">
-                    <StatusChip variant={statusVariant(b.status)}>{b.status}</StatusChip>
-                  </td>
-                  <td className="px-3 py-3">
-                    <div className="flex items-center gap-1">
-                      {b.depositStatus === "required" && (
-                        <button
-                          onClick={() => handleMarkDepositPaid(b.id)}
-                          className="rounded p-1.5 text-warning hover:bg-warning/10"
-                          title="Mark deposit received"
+              {bookings
+                .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
+                .map((b) => (
+                  <tr key={b.id} className="hover:bg-muted/40">
+                    <td className="px-5 py-3 font-mono text-xs">
+                      <div>{b.date}</div>
+                      <div className="text-muted-foreground">{b.time}</div>
+                    </td>
+                    <td className="px-3 py-3 font-medium">{b.customerName}</td>
+                    <td className="px-3 py-3">
+                      <div className="font-mono text-xs">{b.plate}</div>
+                      <div className="text-muted-foreground text-xs">{b.vehicleModel}</div>
+                    </td>
+                    <td className="px-3 py-3">{b.serviceName}</td>
+                    <td className="px-3 py-3 text-muted-foreground">{b.tech}</td>
+                    <td className="px-3 py-3 text-right font-mono font-semibold">
+                      LKR {b.price.toLocaleString()}
+                    </td>
+                    <td className="px-3 py-3">
+                      {b.depositStatus && b.depositStatus !== "none" && (
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                            b.depositStatus === "paid"
+                              ? "bg-success/10 text-success"
+                              : "bg-warning/10 text-warning",
+                          )}
                         >
-                          <Banknote className="h-3.5 w-3.5" />
-                        </button>
+                          <Banknote className="h-3 w-3" />
+                          {b.depositStatus === "paid" ? "Dep. Paid" : "Dep. Req."}
+                        </span>
                       )}
-                      {(b.status === "Confirmed" || b.status === "Pending") && (
+                    </td>
+                    <td className="px-3 py-3">
+                      <StatusChip variant={statusVariant(b.status)}>{b.status}</StatusChip>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-1">
+                        {b.depositStatus === "required" && (
+                          <button
+                            onClick={() => handleMarkDepositPaid(b.id)}
+                            className="rounded p-1.5 text-warning hover:bg-warning/10"
+                            title="Mark deposit received"
+                          >
+                            <Banknote className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {(b.status === "Confirmed" || b.status === "Pending") && (
+                          <button
+                            onClick={() => handleCheckin(b.id)}
+                            className="inline-flex items-center gap-1 rounded-md bg-success/10 border border-success/30 text-success px-2 py-1 text-xs font-semibold hover:bg-success/20"
+                            title="Check In"
+                          >
+                            <LogIn className="h-3 w-3" /> Check In
+                          </button>
+                        )}
                         <button
-                          onClick={() => handleCheckin(b.id)}
-                          className="inline-flex items-center gap-1 rounded-md bg-success/10 border border-success/30 text-success px-2 py-1 text-xs font-semibold hover:bg-success/20"
-                          title="Check In"
+                          onClick={() => handleDelete(b.id)}
+                          className="rounded p-1.5 text-muted-foreground hover:text-primary hover:bg-muted"
                         >
-                          <LogIn className="h-3 w-3" /> Check In
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
-                      )}
-                      <button onClick={() => handleDelete(b.id)} className="rounded p-1.5 text-muted-foreground hover:text-primary hover:bg-muted">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              {bookings.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="text-center py-10 text-muted-foreground">
+                    No bookings yet
                   </td>
                 </tr>
-              ))}
-              {bookings.length === 0 && (
-                <tr><td colSpan={8} className="text-center py-10 text-muted-foreground">No bookings yet</td></tr>
               )}
             </tbody>
           </table>
@@ -473,7 +576,10 @@ function Bookings() {
                   Share the link or embed the widget on your website.
                 </p>
               </div>
-              <button onClick={() => setWidgetOpen(false)} className="rounded-md p-1.5 hover:bg-muted">
+              <button
+                onClick={() => setWidgetOpen(false)}
+                className="rounded-md p-1.5 hover:bg-muted"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -513,7 +619,11 @@ function Bookings() {
                     onClick={copyEmbed}
                     className="absolute top-2 right-2 flex items-center gap-1 rounded-md bg-background border border-input px-2 py-1 text-xs font-medium hover:bg-muted"
                   >
-                    {copied ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
+                    {copied ? (
+                      <Check className="h-3 w-3 text-success" />
+                    ) : (
+                      <Copy className="h-3 w-3" />
+                    )}
                     {copied ? "Copied!" : "Copy"}
                   </button>
                 </div>
