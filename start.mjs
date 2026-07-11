@@ -1,8 +1,25 @@
+import http from "http";
+import https from "https";
 import { createServer } from "http";
 import { createReadStream, existsSync, readFileSync, statSync, unlinkSync } from "fs";
 import { join, extname } from "path";
 import { fileURLToPath } from "url";
 import { Readable } from "stream";
+
+// Outbound connection policy for the whole server process (must be set before
+// firebase-admin is imported, below). The shared host intermittently leaves a
+// keep-alive socket to googleapis.com in a dead state; firebase-admin then
+// REUSES that corpse and the request hangs 45s+, which is what made login stall
+// — and because the bad socket kept getting reused, client-side retries stalled
+// on it too (the failures were "sticky"). Disabling socket reuse means every
+// outbound request opens a fresh connection, so one stuck request can't poison
+// the next: the client's retry lands on a clean socket and succeeds. The cost
+// is a TLS handshake per request (~100-300ms), a fair trade for reliable login
+// on this host. A socket-inactivity timeout also fails a stuck request fast
+// instead of letting it hang.
+const outboundAgent = (Ctor) => new Ctor({ keepAlive: false, timeout: 12000 });
+http.globalAgent = outboundAgent(http.Agent);
+https.globalAgent = outboundAgent(https.Agent);
 
 // Must run before anything else: Passenger spawns this file directly (no shell env
 // sourcing), so FIREBASE_* / VITE_SENTRY_DSN must be loaded from .env here or
