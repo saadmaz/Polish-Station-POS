@@ -44,7 +44,7 @@ async function main() {
   const existing = await staffRef.get();
 
   // Preserve an already-changed PIN and the mustChangePin flag on re-run.
-  const pinHash = existing.exists ? existing.data()!.pinHash : await bcrypt.hash(PIN, 12);
+  const pinHash = existing.exists ? existing.data()!.pinHash : await bcrypt.hash(PIN, 10);
   const mustChangePin = existing.exists ? (existing.data()!.mustChangePin ?? false) : true;
 
   const batch = adminDb.batch();

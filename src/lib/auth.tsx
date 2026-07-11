@@ -109,28 +109,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         // Role and permissions come from the token claims, the same values
         // firestore.rules enforces on. Reading them from a document instead
-        // would let the UI and the rules disagree.
+        // would let the UI and the rules disagree. The claims alone are enough
+        // to enter the app — no Firestore read on the login critical path.
         const { claims } = await user.getIdTokenResult();
         const role = claims.role as StaffRole | undefined;
 
-        // colour is cosmetic and not worth a claim; it lives in staff_public.
-        const snap = await getDoc(doc(db, "staff_public", user.uid));
-
-        if (!role || !snap.exists() || snap.data().active === false) {
+        if (!role) {
           await signOut(firebaseAuth);
           setStaff(null);
         } else {
           setStaff({
             id: user.uid,
-            name: (claims.name as string) ?? (snap.data().name as string),
+            name: (claims.name as string) ?? "Staff",
             role,
-            color: snap.data().color as string,
+            color: "oklch(0.55 0.21 27)", // brand default until the doc arrives
             permissions: sanitizePermissions(claims.perms),
           });
           resetTimer();
+
+          // Cosmetics + deactivation sweep off the critical path: fetch the
+          // public profile in the background for the real colour, and sign
+          // out if the account has been deactivated since the token was
+          // minted (server functions and rules already reject it regardless).
+          void getDoc(doc(db, "staff_public", user.uid))
+            .then(async (snap) => {
+              if (!snap.exists() || snap.data().active === false) {
+                await signOut(firebaseAuth);
+                setStaff(null);
+              } else {
+                const d = snap.data();
+                setStaff((prev) =>
+                  prev && prev.id === user.uid
+                    ? { ...prev, name: (d.name as string) ?? prev.name, color: (d.color as string) ?? prev.color }
+                    : prev,
+                );
+              }
+            })
+            .catch(() => {}); // transient read failure ≠ invalid session
         }
       } catch {
-        // Token revoked, or staff_public unreadable — either way, no session.
+        // Token revoked — no session.
         await signOut(firebaseAuth);
         setStaff(null);
       }

@@ -198,7 +198,7 @@ export const createStaffFn = createServerFn({ method: "POST" })
         role: data.role,
         color: data.color,
         permissions,
-        pinHash: await bcrypt.hash(data.pin, 12),
+        pinHash: await bcrypt.hash(data.pin, 10),
         active: true,
         // An admin-issued PIN is a bootstrap credential, never a password.
         mustChangePin: true,
@@ -355,7 +355,7 @@ export const resetPinFn = createServerFn({ method: "POST" })
 
     await withTimeout(
       targetRef.update({
-        pinHash: await bcrypt.hash(data.newPin, 12),
+        pinHash: await bcrypt.hash(data.newPin, 10),
         // The target chooses their own PIN on next login; the admin never
         // knows the credential the user ends up with.
         mustChangePin: true,

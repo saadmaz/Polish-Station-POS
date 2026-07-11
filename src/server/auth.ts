@@ -145,6 +145,17 @@ export const loginFn = createServerFn({ method: "POST" })
 
     const valid = await bcrypt.compare(pin, staff.pinHash as string);
 
+    // Old hashes were cost 12, which costs ~0.5-1.5s on this shared CPU and
+    // sits on the login critical path. A 4-digit PIN's real defense is the
+    // 5-fail lockout, not hash cost, so rehash to cost 10 transparently on
+    // the next successful login (fire-and-forget, off the response path).
+    if (valid && bcrypt.getRounds(staff.pinHash as string) > 10) {
+      void bcrypt
+        .hash(pin, 10)
+        .then((h) => staffRef.update({ pinHash: h }))
+        .catch((err) => console.error("[loginFn] rehash failed:", err));
+    }
+
     if (!valid) {
       const newFails = ((staff.failCount as number) ?? 0) + 1;
       const update: Record<string, unknown> = { failCount: newFails };
@@ -226,7 +237,7 @@ export const changeOwnPinFn = createServerFn({ method: "POST" })
 
     await withTimeout(
       staffRef.update({
-        pinHash: await bcrypt.hash(newPin, 12),
+        pinHash: await bcrypt.hash(newPin, 10),
         mustChangePin: false,
         failCount: 0,
         lockedUntil: null,

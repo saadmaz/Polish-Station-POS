@@ -448,10 +448,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     // Bind `done` to the real subscription count, not a hardcoded 13 — a
     // stale constant here is what produces an infinite loading spinner.
+    // Unblock the UI on a quorum rather than every listener: the first few
+    // snapshots (services/customers/jobs/bookings lead the multiplexed
+    // channel) are what the landing pages render, and the rest keep
+    // streaming into state after the spinner clears. Waiting for all 13
+    // held the dashboard hostage ~4s for collections it doesn't show.
     const total = subs.length;
+    const quorum = Math.min(4, total);
     let loaded = 0;
     function done() {
-      if (++loaded >= total) setStoreLoading(false);
+      if (++loaded >= quorum) setStoreLoading(false);
     }
     // An errored listener still counts as done — data stays empty, but the UI
     // must never hang on a spinner because a subscription failed.
