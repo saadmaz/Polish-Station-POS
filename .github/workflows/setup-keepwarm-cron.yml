@@ -45,9 +45,37 @@ jobs:
           # it via cPanel → Cron Jobs if you want a single entry.
           CMD='curl -s -o /dev/null --max-time 50 https://pos.polishstation.lk/healthz >/dev/null 2>&1'
 
+          # This installer is a best-effort FOURTH keep-warm layer. The login
+          # path is already warmed without it by: (1) start.mjs self-warming
+          # /healthz on boot, (2) an open tab pinging /healthz every 4 min, and
+          # (3) keep-warm.yml pinging /healthz every 5 min (no cPanel token).
+          # So if the cPanel API token lacks the Cron ACL, we DO NOT fail the
+          # run — we print the one-line manual fix and exit 0, rather than leave
+          # a permanently-red workflow that trains everyone to ignore Actions.
+          manual_instructions() {
+            echo ""
+            echo "⚠️  Could not auto-manage the cPanel cron (see error above)."
+            echo "    Most likely the cPanel API token is missing the 'Cron' ACL."
+            echo "    The app is still kept warm by boot self-warm + tab pings +"
+            echo "    the keep-warm.yml Action, so this is an optimization only."
+            echo ""
+            echo "    To enable the 2-minute server-side cron, EITHER:"
+            echo "    • cPanel → Security → Manage API Tokens → grant this token the"
+            echo "      'Cron' feature, then re-run this workflow, OR"
+            echo "    • cPanel → Cron Jobs → add (every 2 min, i.e. */2 * * * *):"
+            echo "      $CMD"
+            echo "    If an older cron pointing at '/' exists, repoint it at /healthz."
+          }
+
           echo "=== current crontab ==="
           LIST=$(capi Cron listcron)
           echo "$LIST" | head -c 2000; echo
+
+          if echo "$LIST" | grep -qi '"error":"Access denied"'; then
+            echo "cPanel API token cannot access the Cron module."
+            manual_instructions
+            exit 0
+          fi
 
           if echo "$LIST" | grep -q "pos.polishstation.lk/healthz"; then
             echo "keep-warm /healthz cron already present — nothing to do"
@@ -64,5 +92,11 @@ jobs:
             --data-urlencode "command=$CMD")
           echo "$RESULT" | head -c 1000; echo
 
-          echo "$RESULT" | grep -qi '"status":1\|linekey' || { echo "cron add failed"; exit 1; }
-          echo "✅ keep-warm cron installed"
+          if echo "$RESULT" | grep -qi '"status":1\|linekey'; then
+            echo "✅ keep-warm cron installed"
+          else
+            echo "cron add did not confirm success."
+            manual_instructions
+            # Non-fatal: the app-level warm-up layers already cover this.
+            exit 0
+          fi
