@@ -65,132 +65,191 @@ export function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise
   ]);
 }
 
-// In-process cache for the username → staffId index. Each Firestore REST call
-// from the shared host costs ~300-600ms, and this mapping almost never changes
-// (only on a rename, done through updateStaffFn). A short TTL bounds staleness
-// across Passenger workers, and everything security-relevant (pinHash, active,
-// lockout) is still read fresh from the staff doc on every login.
-const USERNAME_TTL_MS = 5 * 60 * 1000;
-const usernameCache = new Map<string, { staffId: string; at: number }>();
+// ── In-memory staff cache ───────────────────────────────────────────────────
+// Login must NOT depend on a live Firestore read. This shared host
+// intermittently stalls the outbound route to firestore.googleapis.com for
+// seconds at a time — proven in production, and proven NOT to be a stale-socket
+// issue (brand-new connections stall too). A stalled read hung login. So keep
+// the whole (tiny) staff collection in process memory, refreshed in the
+// background; login does an in-memory lookup + bcrypt + local token mint with
+// ZERO per-request network I/O. A network stall then only delays the background
+// refresh (serving slightly stale staff data), never a login.
 
-/** Resolve a username to its staffId via the `usernames` index collection.
- *  Doc-ID uniqueness is what guarantees two people cannot claim one name. */
-export async function resolveUsername(username: string): Promise<string | null> {
-  const key = usernameKey(username);
-
-  const hit = usernameCache.get(key);
-  if (hit && Date.now() - hit.at < USERNAME_TTL_MS) return hit.staffId;
-
-  const snap = await withTimeout(
-    adminDb.collection("usernames").doc(key).get(),
-    10_000,
-    "username lookup",
-  );
-  if (!snap.exists) return null;
-  const staffId = snap.data()?.staffId;
-  if (typeof staffId !== "string") return null;
-
-  usernameCache.set(key, { staffId, at: Date.now() });
-  return staffId;
+interface CachedStaff {
+  id: string;
+  username: string;
+  pinHash: string;
+  role: StaffRole;
+  name: string;
+  permissions: ModuleKey[];
+  active: boolean;
+  mustChangePin: boolean;
+  pinRounds: number;
 }
 
-/** Claims baked into the custom token and read by firestore.rules. */
-function claimsFor(staff: Record<string, unknown>) {
+let staffById = new Map<string, CachedStaff>();
+let staffIdByUsername = new Map<string, string>();
+let cacheLoadedAt = 0;
+let refreshInFlight: Promise<void> | null = null;
+
+const STAFF_CACHE_TTL_MS = 60 * 1000;
+
+function toCached(id: string, d: Record<string, unknown>): CachedStaff {
+  const pinHash = (d.pinHash as string) ?? "";
   return {
-    role: staff.role as StaffRole,
-    name: staff.name as string,
-    perms: sanitizePermissions(staff.permissions) as ModuleKey[],
+    id,
+    username: (d.username as string) ?? "",
+    pinHash,
+    role: d.role as StaffRole,
+    name: (d.name as string) ?? "Staff",
+    permissions: sanitizePermissions(d.permissions),
+    active: d.active !== false,
+    mustChangePin: d.mustChangePin === true,
+    pinRounds: pinHash ? bcrypt.getRounds(pinHash) : 10,
   };
 }
+
+/** Reload the whole staff collection into memory. De-duped so concurrent
+ *  callers share one in-flight read; time-boxed so a stall can't wedge it. */
+function refreshStaffCache(): Promise<void> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    try {
+      const snap = await withTimeout(adminDb.collection("staff").get(), 8_000, "staff cache load");
+      const byId = new Map<string, CachedStaff>();
+      const byName = new Map<string, string>();
+      for (const doc of snap.docs) {
+        const rec = toCached(doc.id, doc.data());
+        byId.set(doc.id, rec);
+        if (rec.username) byName.set(usernameKey(rec.username), doc.id);
+      }
+      staffById = byId;
+      staffIdByUsername = byName;
+      cacheLoadedAt = Date.now();
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
+}
+
+/** Ensure the cache is usable for a login: block only on the very first load
+ *  (retrying against the flaky host); otherwise refresh in the background. */
+async function ensureStaffCache(): Promise<void> {
+  if (cacheLoadedAt === 0) {
+    for (let i = 0; i < 5 && cacheLoadedAt === 0; i++) {
+      try {
+        await refreshStaffCache();
+      } catch {
+        /* flaky host — try again */
+      }
+    }
+  } else if (Date.now() - cacheLoadedAt > STAFF_CACHE_TTL_MS) {
+    void refreshStaffCache().catch(() => {});
+  }
+}
+
+/** Called by /healthz (on boot + the keep-warm cron) to populate/refresh the
+ *  cache in the background, so real logins always hit a ready cache. */
+export function warmStaffCache(): Promise<void> {
+  return refreshStaffCache().catch(() => {});
+}
+
+/** Called by staff mutations so a create/edit/reset/deactivate/delete is
+ *  reflected immediately rather than only after the TTL. Best-effort. */
+export function invalidateStaffCache(): Promise<void> {
+  return refreshStaffCache().catch(() => {});
+}
+
+// ── In-memory login lockout ─────────────────────────────────────────────────
+// Brute-force guard for the 4-digit PIN, kept in memory (per worker) instead of
+// Firestore-persisted so a failed login writes nothing over the network. 5
+// fails → 5-minute lock; resets on process restart, an acceptable weakening for
+// a shop POS versus the alternative of a stall-prone Firestore write on the
+// login path.
+interface Lock {
+  fails: number;
+  until: number;
+}
+const lockouts = new Map<string, Lock>();
+const LOCK_THRESHOLD = 5;
+const LOCK_MS = 5 * 60 * 1000;
 
 export const loginFn = createServerFn({ method: "POST" })
   .validator((raw: unknown) => LoginSchema.parse(raw))
   .handler(async ({ data }): Promise<LoginResult> => {
     const { username, pin } = data;
+    const key = usernameKey(username);
 
-    const staffId = await resolveUsername(username);
+    await ensureStaffCache();
 
-    // An unknown username must be indistinguishable from a wrong PIN, both in
-    // the response body and in how long it takes to produce it.
+    let staffId = staffIdByUsername.get(key);
+    // A just-created user may not be in the cache yet — one forced refresh
+    // covers that (and genuinely-unknown usernames, which are rare). Everything
+    // else is served straight from memory: no Firestore on the login path.
     if (!staffId) {
+      await warmStaffCache();
+      staffId = staffIdByUsername.get(key);
+    }
+    const staff = staffId ? staffById.get(staffId) : undefined;
+
+    // An unknown username must be indistinguishable from a wrong PIN.
+    if (!staff) {
       await new Promise((r) => setTimeout(r, 200));
       return { success: false, error: "invalid_credentials" };
     }
 
-    const staffRef = adminDb.collection("staff").doc(staffId);
-    const snap = await withTimeout(staffRef.get(), 10_000, "staff lookup");
+    if (!staff.active) return { success: false, error: "inactive" };
 
-    if (!snap.exists) {
-      await new Promise((r) => setTimeout(r, 200));
-      return { success: false, error: "invalid_credentials" };
+    const lock = lockouts.get(staff.id);
+    if (lock && lock.until > Date.now()) {
+      return {
+        success: false,
+        error: "locked",
+        remainingSec: Math.ceil((lock.until - Date.now()) / 1000),
+      };
     }
 
-    const staff = snap.data()!;
-
-    if (staff.active === false) {
-      return { success: false, error: "inactive" };
-    }
-
-    // Server-side lockout — persisted in Firestore, survives page refresh
-    if (staff.lockedUntil) {
-      const lockedMs: number =
-        typeof staff.lockedUntil.toMillis === "function"
-          ? staff.lockedUntil.toMillis()
-          : Number(staff.lockedUntil);
-      if (lockedMs > Date.now()) {
-        const remainingSec = Math.ceil((lockedMs - Date.now()) / 1000);
-        return { success: false, error: "locked", remainingSec };
-      }
-    }
-
-    const valid = await bcrypt.compare(pin, staff.pinHash as string);
-
-    // Old hashes were cost 12, which costs ~0.5-1.5s on this shared CPU and
-    // sits on the login critical path. A 4-digit PIN's real defense is the
-    // 5-fail lockout, not hash cost, so rehash to cost 10 transparently on
-    // the next successful login (fire-and-forget, off the response path).
-    if (valid && bcrypt.getRounds(staff.pinHash as string) > 10) {
-      void bcrypt
-        .hash(pin, 10)
-        .then((h) => staffRef.update({ pinHash: h }))
-        .catch((err) => console.error("[loginFn] rehash failed:", err));
-    }
+    const valid = staff.pinHash ? await bcrypt.compare(pin, staff.pinHash) : false;
 
     if (!valid) {
-      const newFails = ((staff.failCount as number) ?? 0) + 1;
-      const update: Record<string, unknown> = { failCount: newFails };
-      if (newFails >= 5) {
-        // Lock for 5 minutes, reset counter
-        update.lockedUntil = new Date(Date.now() + 5 * 60 * 1000);
-        update.failCount = 0;
+      const l = lockouts.get(staff.id) ?? { fails: 0, until: 0 };
+      l.fails += 1;
+      if (l.fails >= LOCK_THRESHOLD) {
+        l.until = Date.now() + LOCK_MS;
+        l.fails = 0;
       }
-      await withTimeout(staffRef.update(update), 10_000, "fail-count write");
+      lockouts.set(staff.id, l);
       return { success: false, error: "invalid_credentials" };
     }
 
-    // Successful login — reset the fail counter, but only when it's actually
-    // dirty, and never make the user wait on it: the write is best-effort
-    // bookkeeping (~300-600ms per Firestore round trip from this host), while
-    // the response only needs the token. Token minting is local RSA signing.
-    if ((staff.failCount as number) > 0 || staff.lockedUntil != null) {
-      void staffRef
-        .update({ failCount: 0, lockedUntil: null })
-        .catch((err) => console.error("[loginFn] failCount reset failed:", err));
+    lockouts.delete(staff.id); // successful login clears the fail counter
+
+    // Rehash legacy cost-12 hashes down to cost 10 transparently (fire-and-
+    // forget; updates the cache entry so we don't rehash on every login).
+    if (staff.pinRounds > 10) {
+      void bcrypt
+        .hash(pin, 10)
+        .then((h) => {
+          staff.pinHash = h;
+          staff.pinRounds = 10;
+          return adminDb.collection("staff").doc(staff.id).update({ pinHash: h });
+        })
+        .catch(() => {});
     }
 
-    // Local RSA signing in production, but time-boxed anyway so no await in
-    // this handler can hang the request indefinitely on the flaky shared host.
+    // Local RSA signing (no network), but time-boxed as belt-and-suspenders.
     const customToken = await withTimeout(
-      adminAuth.createCustomToken(staffId, claimsFor(staff)),
+      adminAuth.createCustomToken(staff.id, {
+        role: staff.role,
+        name: staff.name,
+        perms: staff.permissions,
+      }),
       8_000,
       "token mint",
     );
 
-    return {
-      success: true,
-      customToken,
-      mustChangePin: staff.mustChangePin === true,
-    };
+    return { success: true, customToken, mustChangePin: staff.mustChangePin };
   });
 
 // ── Change own PIN ────────────────────────────────────────────────────────────

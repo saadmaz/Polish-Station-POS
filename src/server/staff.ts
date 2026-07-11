@@ -3,7 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { adminAuth, adminDb } from "./firebase-admin";
-import { USERNAME_RE, PIN_RE, usernameKey, withTimeout } from "./auth";
+import { USERNAME_RE, PIN_RE, usernameKey, withTimeout, invalidateStaffCache } from "./auth";
 import {
   ALL_MODULES,
   isAdmin,
@@ -225,6 +225,7 @@ export const createStaffFn = createServerFn({ method: "POST" })
       throw err;
     }
 
+    await invalidateStaffCache();
     return { success: true, staffId };
   });
 
@@ -286,6 +287,7 @@ export const updateStaffFn = createServerFn({ method: "POST" })
     // best-effort: the staff doc is already updated and re-checked server-side.
     revokeBestEffort(data.targetStaffId);
 
+    await invalidateStaffCache();
     return { success: true };
   });
 
@@ -327,6 +329,7 @@ export const setStaffActiveFn = createServerFn({ method: "POST" })
     // Deactivation must end any session already open on a shop tablet.
     if (!data.active) revokeBestEffort(data.targetStaffId);
 
+    await invalidateStaffCache();
     return { success: true };
   });
 
@@ -369,6 +372,7 @@ export const resetPinFn = createServerFn({ method: "POST" })
 
     revokeBestEffort(data.targetStaffId);
 
+    await invalidateStaffCache();
     return { success: true };
   });
 
@@ -417,5 +421,6 @@ export const deleteStaffFn = createServerFn({ method: "POST" })
 
     revokeBestEffort(data.targetStaffId);
 
+    await invalidateStaffCache();
     return { success: true };
   });

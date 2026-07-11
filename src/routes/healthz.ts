@@ -55,10 +55,13 @@ export const Route = createFileRoute("/healthz")({
           // and is only pulled in server-side. The first call is what pays
           // init — which is the whole point of calling it from a warm-up.
           const { adminDb, adminAuth } = await import("@/server/firebase-admin");
-          // Warm both hot paths in parallel:
-          //  • Firestore read  → the login path (loginFn's index/staff reads)
+          const { warmStaffCache } = await import("@/server/auth");
+          // Warm every hot path in parallel:
+          //  • staff cache      → login reads it from memory (no per-request I/O)
+          //  • Firestore read   → keeps the admin Firestore connection warm
           //  • token verify     → the change-PIN / staff-management path
           await Promise.all([
+            warmStaffCache(),
             adminDb.collection("staff").limit(1).get(),
             warmTokenVerify(adminAuth),
           ]);
