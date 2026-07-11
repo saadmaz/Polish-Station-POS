@@ -44,7 +44,13 @@ function ChangePin() {
 
     setBusy(true);
     try {
-      const idToken = await firebaseAuth.currentUser?.getIdToken(true);
+      // getIdToken() not getIdToken(true): the token from the just-completed
+      // sign-in is valid for ~1h, so force-refreshing it added a needless
+      // ~2-4s round-trip to securetoken.googleapis.com before the PIN could
+      // even be submitted. changeOwnPinFn only needs a non-expired token (it
+      // re-proves identity with the current PIN), and getIdToken() still
+      // auto-refreshes if the token has actually expired.
+      const idToken = await firebaseAuth.currentUser?.getIdToken();
       if (!idToken) {
         toast.error("Session expired — please sign in again");
         await logout();

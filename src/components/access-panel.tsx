@@ -61,7 +61,12 @@ const PALETTE = [
 ];
 
 async function idToken(): Promise<string | null> {
-  return (await firebaseAuth.currentUser?.getIdToken(true)) ?? null;
+  // getIdToken() (not getIdToken(true)): return the cached ID token and only
+  // hit the network to refresh when it's actually expired. Forcing a refresh
+  // added a ~2-4s round-trip to securetoken.googleapis.com on every call for
+  // no benefit — the server re-reads the caller's role from the staff doc and
+  // never trusts the token claim, so a freshly-minted token buys nothing.
+  return (await firebaseAuth.currentUser?.getIdToken()) ?? null;
 }
 
 export function AccessPanel() {
