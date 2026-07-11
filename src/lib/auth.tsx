@@ -60,6 +60,48 @@ const MUST_CHANGE_KEY = "ps_must_change_pin";
 
 // ── Context ───────────────────────────────────────────────────────────────────
 
+// ── Resilient login ─────────────────────────────────────────────────────────
+
+function withClientTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${what} timed out after ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
+/**
+ * The app runs on shared hosting whose outbound network intermittently stalls a
+ * single Firestore call inside loginFn — the request reaches the server and
+ * simply never returns (observed hanging 45s+), even on a warm worker, roughly
+ * 1 attempt in 4. A keep-warm can't fix a per-request stall, so the client
+ * time-boxes each attempt and retries: with ~75% per-attempt success, three
+ * tries make login succeed ~98% of the time and cap the worst case at ~30s
+ * instead of an indefinite hang.
+ *
+ * Retrying is safe: a correct PIN never increments the fail counter, and a
+ * wrong PIN / locked / inactive account returns a *result* in well under the
+ * per-attempt timeout, so those answers are returned immediately and never
+ * trigger a retry — only a genuine timeout/network error does.
+ */
+async function loginWithRetry(
+  username: string,
+  pin: string,
+  attempts = 3,
+  perAttemptMs = 10_000,
+): Promise<LoginResult> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await withClientTimeout(loginFn({ data: { username, pin } }), perAttemptMs, "login");
+    } catch (err) {
+      lastErr = err; // transient stall/network — try again
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("Login failed");
+}
+
 const AuthContext = createContext<AuthState | null>(null);
 
 // ── Provider ──────────────────────────────────────────────────────────────────
@@ -193,7 +235,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (username: string, pin: string): Promise<LoginError | null> => {
     try {
-      const result: LoginResult = await loginFn({ data: { username, pin } });
+      const result: LoginResult = await loginWithRetry(username, pin);
 
       if (!result.success) {
         if (result.error === "locked") return { code: "locked", remainingSec: result.remainingSec };
@@ -206,7 +248,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (result.mustChangePin) sessionStorage.setItem(MUST_CHANGE_KEY, "1");
       setMustChangePin(result.mustChangePin);
 
-      await signInWithCustomToken(firebaseAuth, result.customToken);
+      // signInWithCustomToken is a network call too — time-box it so a stalled
+      // identitytoolkit request surfaces as a retryable error instead of an
+      // indefinite "Signing in…" hang.
+      await withClientTimeout(
+        signInWithCustomToken(firebaseAuth, result.customToken),
+        15_000,
+        "sign-in",
+      );
       return null; // null = success
     } catch (err) {
       return {

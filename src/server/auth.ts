@@ -178,7 +178,13 @@ export const loginFn = createServerFn({ method: "POST" })
         .catch((err) => console.error("[loginFn] failCount reset failed:", err));
     }
 
-    const customToken = await adminAuth.createCustomToken(staffId, claimsFor(staff));
+    // Local RSA signing in production, but time-boxed anyway so no await in
+    // this handler can hang the request indefinitely on the flaky shared host.
+    const customToken = await withTimeout(
+      adminAuth.createCustomToken(staffId, claimsFor(staff)),
+      8_000,
+      "token mint",
+    );
 
     return {
       success: true,
