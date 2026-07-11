@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as HealthzRouteImport } from './routes/healthz'
 import { Route as ChangePinRouteImport } from './routes/change-pin'
 import { Route as BookRouteImport } from './routes/book'
 import { Route as AppRouteImport } from './routes/_app'
@@ -31,6 +32,11 @@ import { Route as AppBayBoardRouteImport } from './routes/_app.bay-board'
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HealthzRoute = HealthzRouteImport.update({
+  id: '/healthz',
+  path: '/healthz',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChangePinRoute = ChangePinRouteImport.update({
@@ -122,6 +128,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/book': typeof BookRoute
   '/change-pin': typeof ChangePinRoute
+  '/healthz': typeof HealthzRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/bay-board': typeof AppBayBoardRoute
   '/bookings': typeof AppBookingsRoute
@@ -141,6 +148,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/book': typeof BookRoute
   '/change-pin': typeof ChangePinRoute
+  '/healthz': typeof HealthzRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/bay-board': typeof AppBayBoardRoute
   '/bookings': typeof AppBookingsRoute
@@ -162,6 +170,7 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/book': typeof BookRoute
   '/change-pin': typeof ChangePinRoute
+  '/healthz': typeof HealthzRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_app/bay-board': typeof AppBayBoardRoute
   '/_app/bookings': typeof AppBookingsRoute
@@ -183,6 +192,7 @@ export interface FileRouteTypes {
     | '/'
     | '/book'
     | '/change-pin'
+    | '/healthz'
     | '/sitemap.xml'
     | '/bay-board'
     | '/bookings'
@@ -202,6 +212,7 @@ export interface FileRouteTypes {
     | '/'
     | '/book'
     | '/change-pin'
+    | '/healthz'
     | '/sitemap.xml'
     | '/bay-board'
     | '/bookings'
@@ -222,6 +233,7 @@ export interface FileRouteTypes {
     | '/_app'
     | '/book'
     | '/change-pin'
+    | '/healthz'
     | '/sitemap.xml'
     | '/_app/bay-board'
     | '/_app/bookings'
@@ -243,6 +255,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   BookRoute: typeof BookRoute
   ChangePinRoute: typeof ChangePinRoute
+  HealthzRoute: typeof HealthzRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
 }
 
@@ -253,6 +266,13 @@ declare module '@tanstack/react-router' {
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/healthz': {
+      id: '/healthz'
+      path: '/healthz'
+      fullPath: '/healthz'
+      preLoaderRoute: typeof HealthzRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/change-pin': {
@@ -416,6 +436,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   BookRoute: BookRoute,
   ChangePinRoute: ChangePinRoute,
+  HealthzRoute: HealthzRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
 }
 export const routeTree = rootRouteImport

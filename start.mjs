@@ -135,6 +135,23 @@ async function main() {
     process.exit(1);
   }
 
+  // Warm firebase-admin + a Firestore connection the moment this worker boots,
+  // by self-invoking the /healthz route through the SSR handler (no network).
+  // Passenger spins idle workers down and cold-spawns new ones; without this,
+  // the first login on a freshly-spawned worker pays firebase-admin init plus
+  // cold-TLS Firestore reads on top of the ~9s Node cold start, which can
+  // exceed LiteSpeed's proxy timeout and 408. Best-effort and fully detached:
+  // a warm-up failure must never affect readiness or crash the process.
+  function warmUp() {
+    try {
+      Promise.resolve(handler.fetch(new Request("http://127.0.0.1/healthz"), {}, {}))
+        .then((r) => console.log("[startup] warm-up /healthz ->", r.status))
+        .catch((e) => console.warn("[startup] warm-up failed:", e && e.message));
+    } catch (e) {
+      console.warn("[startup] warm-up threw:", e && e.message);
+    }
+  }
+
   const server = createServer(async (req, res) => {
     try {
       const urlPath = new URL(req.url, "http://localhost").pathname;
@@ -212,10 +229,12 @@ async function main() {
     }
     server.listen(portOrSocket, () => {
       console.log("[startup] Listening on socket:", portOrSocket);
+      warmUp();
     });
   } else {
     server.listen(Number(portOrSocket), "0.0.0.0", () => {
       console.log("[startup] Listening on port:", portOrSocket);
+      warmUp();
     });
   }
 }

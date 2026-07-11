@@ -178,12 +178,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Keep the app server warm while anyone is signed in. A loaded SPA talks
   // straight to Firestore, so the Node process gets no traffic and Passenger
   // idles it out (~5 min) — then the next server function (add user, change
-  // PIN) pays a ~20s cold start and 408s. A HEAD every 4 min from any open
-  // tab keeps one instance spawned, complementing PassengerMinInstances and
-  // the external cron in case either is ignored by the host.
+  // PIN) pays a ~20s cold start and 408s. Pinging /healthz (not /) every 4 min
+  // from any open tab keeps the login path specifically warm: it exercises
+  // firebase-admin + a Firestore connection, which a bare `/` SSR ping never
+  // touches. So a manager's open dashboard keeps a new employee's first login
+  // on a shop tablet fast. Complements PassengerMinInstances and the cron.
   useEffect(() => {
     if (!staff) return;
-    const ping = () => void fetch("/", { method: "HEAD", cache: "no-store" }).catch(() => {});
+    const ping = () => void fetch("/healthz", { cache: "no-store" }).catch(() => {});
+    ping(); // once on mount too, not only after the first interval
     const t = setInterval(ping, 4 * 60 * 1000);
     return () => clearInterval(t);
   }, [staff]);

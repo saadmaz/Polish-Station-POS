@@ -179,9 +179,12 @@ function POS() {
       moveJob(selectedJobId, "Done Today");
     }
 
-    toast.success(inv.status === "Partially Paid" ? "Partial payment recorded" : "Payment received", {
-      description: `${inv.id} · LKR ${tendered.toLocaleString()} · ${describePaymentMethods(inv)}`,
-    });
+    toast.success(
+      inv.status === "Partially Paid" ? "Partial payment recorded" : "Payment received",
+      {
+        description: `${inv.id} · LKR ${tendered.toLocaleString()} · ${describePaymentMethods(inv)}`,
+      },
+    );
 
     setChargedInfo({
       customerName: customerName || "Guest",

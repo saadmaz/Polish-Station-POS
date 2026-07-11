@@ -37,14 +37,20 @@ jobs:
               "$@"
           }
 
-          CMD='curl -s -o /dev/null --max-time 50 https://pos.polishstation.lk/ >/dev/null 2>&1'
+          # /healthz (not /) on purpose: it warms firebase-admin + a Firestore
+          # connection — the machinery a login/change-PIN server call uses.
+          # A bare `/` ping only kept the HTML tier warm and left the login
+          # path cold, which is what produced first-login 408s. If an older
+          # `/` cron is still present it's now redundant but harmless; remove
+          # it via cPanel → Cron Jobs if you want a single entry.
+          CMD='curl -s -o /dev/null --max-time 50 https://pos.polishstation.lk/healthz >/dev/null 2>&1'
 
           echo "=== current crontab ==="
           LIST=$(capi Cron listcron)
           echo "$LIST" | head -c 2000; echo
 
-          if echo "$LIST" | grep -q "pos.polishstation.lk/"; then
-            echo "keep-warm cron already present — nothing to do"
+          if echo "$LIST" | grep -q "pos.polishstation.lk/healthz"; then
+            echo "keep-warm /healthz cron already present — nothing to do"
             exit 0
           fi
 

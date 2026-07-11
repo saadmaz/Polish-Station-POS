@@ -19,28 +19,25 @@ const staleOpen = await adminDb.collection("shifts").where("status", "==", "OPEN
 await Promise.all(staleOpen.docs.map((d) => d.ref.delete()));
 
 const shiftId = `e2e-shift-${Date.now()}`;
-await adminDb
-  .collection("shifts")
-  .doc(shiftId)
-  .set({
-    id: shiftId,
-    staffId: TEST_STAFF.staffId,
-    staffName: "E2E Admin",
-    status: "OPEN",
-    openedAt: new Date().toISOString(),
-    closedAt: null,
-    openingBalance: 0,
-    openingDenominations: {},
-    closingBalance: null,
-    closingDenominations: null,
-    cashSales: 0,
-    cardSales: 0,
-    totalExpenses: 0,
-    totalDeposits: 0,
-    variance: null,
-    notes: "",
-    verifiedBy: null,
-  });
+await adminDb.collection("shifts").doc(shiftId).set({
+  id: shiftId,
+  staffId: TEST_STAFF.staffId,
+  staffName: "E2E Admin",
+  status: "OPEN",
+  openedAt: new Date().toISOString(),
+  closedAt: null,
+  openingBalance: 0,
+  openingDenominations: {},
+  closingBalance: null,
+  closingDenominations: null,
+  cashSales: 0,
+  cardSales: 0,
+  totalExpenses: 0,
+  totalDeposits: 0,
+  variance: null,
+  notes: "",
+  verifiedBy: null,
+});
 
 const browser = await chromium.launch();
 const page = await (await browser.newContext()).newPage();
@@ -66,10 +63,7 @@ await check("POS page loads with an open shift", async () => {
 });
 
 await check("manual billing: enter customer + custom line item", async () => {
-  await page.fill(
-    'input[placeholder="Or type customer name for manual billing…"]',
-    customerName,
-  );
+  await page.fill('input[placeholder="Or type customer name for manual billing…"]', customerName);
   // Exact match: the top bar's "Search customers, bookings, invoices…"
   // button contains "custom" as a substring and would match a loose
   // has-text("Custom") selector.
@@ -99,10 +93,7 @@ await check("split tender: partial Cash payment marks invoice Partially Paid", a
     "expected Partially Paid status chip on the new invoice row",
   );
 
-  const snap = await adminDb
-    .collection("invoices")
-    .where("customerName", "==", customerName)
-    .get();
+  const snap = await adminDb.collection("invoices").where("customerName", "==", customerName).get();
   assert(snap.size === 1, `expected exactly 1 invoice for ${customerName}, found ${snap.size}`);
   invoiceId = snap.docs[0].id;
   const inv = snap.docs[0].data();

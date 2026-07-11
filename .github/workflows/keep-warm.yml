@@ -27,10 +27,14 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping homepage to keep Passenger warm
+      - name: Ping /healthz to keep the login path (firebase-admin) warm
         run: |
+          # /healthz (not /) on purpose: it exercises firebase-admin + a
+          # Firestore read, the exact machinery a login/change-PIN server call
+          # uses. Pinging bare `/` only kept the HTML tier warm and left the
+          # login path cold — the cause of the first-login 408s.
           for i in 1 2 3; do
-            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 45 https://pos.polishstation.lk/ || echo ERR)
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 45 https://pos.polishstation.lk/healthz || echo ERR)
             echo "ping $i -> $code"
             if [ "$code" = "200" ]; then exit 0; fi
             sleep 15
