@@ -80,5 +80,30 @@ await check(
   },
 );
 
+// changeOwnPinFn path — this is the server function that hung in production on
+// a cold verifyIdToken (the cert-fetch /healthz now also warms). On the fast
+// emulator it just proves the change-PIN LOGIC works end to end.
+const changedPin = "2580";
+await check("new user completes the forced PIN change (changeOwnPinFn)", async () => {
+  const fields = fresh.locator('input[type="password"]');
+  await fields.nth(0).fill(newPin); // current (admin-issued) PIN
+  await fields.nth(1).fill(changedPin); // new PIN
+  await fields.nth(2).fill(changedPin); // confirm
+  await fresh.click('button:has-text("Update PIN")');
+  // Success clears the mustChangePin gate and drops them into the app.
+  await fresh.waitForURL(/dashboard/, { timeout: 20000 });
+});
+
+await check(
+  "changed PIN sticks: fresh sign-in with the NEW pin goes straight to the app",
+  async () => {
+    const relogin = await (await browser.newContext()).newPage();
+    await signIn(relogin, newUsername, changedPin);
+    // mustChangePin is now false → straight to /dashboard, no change-pin gate.
+    await relogin.waitForURL(/dashboard/, { timeout: 20000 });
+    await relogin.close();
+  },
+);
+
 await browser.close();
 summarize("New-user login");
