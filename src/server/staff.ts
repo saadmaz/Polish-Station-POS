@@ -3,7 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { adminAuth, adminDb } from "./firebase-admin";
-import { USERNAME_RE, PIN_RE, usernameKey } from "./auth";
+import { USERNAME_RE, PIN_RE, usernameKey, withTimeout } from "./auth";
 import {
   ALL_MODULES,
   isAdmin,
@@ -47,24 +47,45 @@ interface Caller {
 /**
  * Verify the caller's ID token and read their role from the *staff document*,
  * not from the token claim. A claim can be up to an hour stale; the document is
- * authoritative. `checkRevoked: true` rejects tokens issued before a
- * revocation, which is what makes demotion take effect immediately.
+ * authoritative — which is also why `checkRevoked` is deliberately NOT used:
+ * it adds a blocking identitytoolkit round trip that this shared host tends to
+ * stall (the same class of hang that broke login before preferRest), and a
+ * demoted/deactivated caller is already rejected by the fresh doc read below.
+ * Every await is time-boxed so a stalled upstream fails in seconds instead of
+ * hanging the request into LiteSpeed's 408.
  */
 async function requireCaller(idToken: string): Promise<Caller | null> {
   let uid: string;
   try {
-    uid = (await adminAuth.verifyIdToken(idToken, true)).uid;
+    uid = (await withTimeout(adminAuth.verifyIdToken(idToken), 8_000, "token verify")).uid;
   } catch {
     return null;
   }
 
-  const snap = await adminDb.collection("staff").doc(uid).get();
+  const snap = await withTimeout(
+    adminDb.collection("staff").doc(uid).get(),
+    10_000,
+    "caller lookup",
+  );
   if (!snap.exists) return null;
 
   const staff = snap.data()!;
   if (staff.active === false) return null;
 
   return { uid, role: staff.role as StaffRole };
+}
+
+/**
+ * Revoking refresh tokens is what makes a role change bite before the target
+ * logs out, but it's an identitytoolkit call this host can stall. Attempt it
+ * with a hard deadline and never block the response on failure: the staff doc
+ * (checked server-side on every sensitive call) is already updated, so the
+ * stale claims only linger for client-side rule checks until logout.
+ */
+function revokeBestEffort(staffId: string) {
+  void withTimeout(adminAuth.revokeRefreshTokens(staffId), 8_000, "token revoke").catch(
+    (err) => console.error(`[staff] revokeRefreshTokens(${staffId}) failed:`, err),
+  );
 }
 
 /** Managing users (create / edit / deactivate) is Admin+. */
@@ -99,7 +120,11 @@ function mayAssignRole(caller: Caller, newRole: StaffRole): boolean {
 /** Count active SuperAdmins, optionally ignoring one staffId (the one being
  *  changed). Equality-only query — no composite index required. */
 async function otherActiveSuperAdmins(excludeStaffId: string): Promise<number> {
-  const snap = await adminDb.collection("staff").where("role", "==", "SuperAdmin").get();
+  const snap = await withTimeout(
+    adminDb.collection("staff").where("role", "==", "SuperAdmin").get(),
+    10_000,
+    "superadmin count",
+  );
   return snap.docs.filter((d) => d.id !== excludeStaffId && d.data().active !== false).length;
 }
 
@@ -111,7 +136,11 @@ async function otherActiveSuperAdmins(excludeStaffId: string): Promise<number> {
  *  name could both pass. Closing that needs a `staffNames/{lower}` index doc
  *  the way usernames works — worth doing when jobs move to `techId`. */
 async function nameTaken(name: string, excludeStaffId?: string): Promise<boolean> {
-  const snap = await adminDb.collection("staff").where("name", "==", name).get();
+  const snap = await withTimeout(
+    adminDb.collection("staff").where("name", "==", name).get(),
+    10_000,
+    "name uniqueness check",
+  );
   return snap.docs.some((d) => d.id !== excludeStaffId);
 }
 
@@ -146,10 +175,16 @@ export const createStaffFn = createServerFn({ method: "POST" })
     const key = usernameKey(data.username);
 
     // `.create()` throws if the doc exists — this, not a read-then-write, is
-    // what makes username uniqueness atomic.
+    // what makes username uniqueness atomic. A timeout must NOT be reported as
+    // username_taken, so it is re-thrown for the client's generic error path.
     try {
-      await adminDb.collection("usernames").doc(key).create({ staffId });
-    } catch {
+      await withTimeout(
+        adminDb.collection("usernames").doc(key).create({ staffId }),
+        10_000,
+        "username claim",
+      );
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("timed out")) throw err;
       return { success: false, error: "username_taken" };
     }
 
@@ -177,7 +212,7 @@ export const createStaffFn = createServerFn({ method: "POST" })
         color: data.color,
         active: true,
       });
-      await batch.commit();
+      await withTimeout(batch.commit(), 10_000, "staff create commit");
     } catch (err) {
       // Don't strand the username on a failed create — it would be
       // unclaimable forever with no staff doc to explain why.
@@ -210,7 +245,7 @@ export const updateStaffFn = createServerFn({ method: "POST" })
     if (!caller) return { success: false, error: "unauthorized" };
 
     const targetRef = adminDb.collection("staff").doc(data.targetStaffId);
-    const snap = await targetRef.get();
+    const snap = await withTimeout(targetRef.get(), 10_000, "target lookup");
     if (!snap.exists) return { success: false, error: "not_found" };
 
     const target = snap.data()!;
@@ -243,12 +278,12 @@ export const updateStaffFn = createServerFn({ method: "POST" })
       role: data.role,
       color: data.color,
     });
-    await batch.commit();
+    await withTimeout(batch.commit(), 10_000, "staff update commit");
 
     // Role and permissions live in the token claims, which survive ID-token
-    // refresh. Without revoking, a demoted user keeps their old access until
-    // they happen to log out — the change would be cosmetic.
-    await adminAuth.revokeRefreshTokens(data.targetStaffId);
+    // refresh. Revoke so a demotion bites before the target logs out — but
+    // best-effort: the staff doc is already updated and re-checked server-side.
+    revokeBestEffort(data.targetStaffId);
 
     return { success: true };
   });
@@ -269,7 +304,7 @@ export const setStaffActiveFn = createServerFn({ method: "POST" })
     if (caller.uid === data.targetStaffId) return { success: false, error: "self_target" };
 
     const targetRef = adminDb.collection("staff").doc(data.targetStaffId);
-    const snap = await targetRef.get();
+    const snap = await withTimeout(targetRef.get(), 10_000, "target lookup");
     if (!snap.exists) return { success: false, error: "not_found" };
 
     const targetRole = snap.data()!.role as StaffRole;
@@ -286,10 +321,10 @@ export const setStaffActiveFn = createServerFn({ method: "POST" })
     batch.update(adminDb.collection("staff_public").doc(data.targetStaffId), {
       active: data.active,
     });
-    await batch.commit();
+    await withTimeout(batch.commit(), 10_000, "set-active commit");
 
     // Deactivation must end any session already open on a shop tablet.
-    if (!data.active) await adminAuth.revokeRefreshTokens(data.targetStaffId);
+    if (!data.active) revokeBestEffort(data.targetStaffId);
 
     return { success: true };
   });
@@ -309,7 +344,7 @@ export const resetPinFn = createServerFn({ method: "POST" })
     if (!caller) return { success: false, error: "unauthorized" };
 
     const targetRef = adminDb.collection("staff").doc(data.targetStaffId);
-    const snap = await targetRef.get();
+    const snap = await withTimeout(targetRef.get(), 10_000, "target lookup");
     if (!snap.exists) return { success: false, error: "not_found" };
 
     const targetRole = snap.data()!.role as StaffRole;
@@ -318,16 +353,20 @@ export const resetPinFn = createServerFn({ method: "POST" })
       return { success: false, error: "forbidden" };
     }
 
-    await targetRef.update({
-      pinHash: await bcrypt.hash(data.newPin, 12),
-      // The target chooses their own PIN on next login; the admin never
-      // knows the credential the user ends up with.
-      mustChangePin: true,
-      failCount: 0,
-      lockedUntil: null,
-    });
+    await withTimeout(
+      targetRef.update({
+        pinHash: await bcrypt.hash(data.newPin, 12),
+        // The target chooses their own PIN on next login; the admin never
+        // knows the credential the user ends up with.
+        mustChangePin: true,
+        failCount: 0,
+        lockedUntil: null,
+      }),
+      10_000,
+      "pin reset write",
+    );
 
-    await adminAuth.revokeRefreshTokens(data.targetStaffId);
+    revokeBestEffort(data.targetStaffId);
 
     return { success: true };
   });

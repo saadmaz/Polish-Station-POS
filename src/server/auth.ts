@@ -153,7 +153,7 @@ export const loginFn = createServerFn({ method: "POST" })
         update.lockedUntil = new Date(Date.now() + 5 * 60 * 1000);
         update.failCount = 0;
       }
-      await staffRef.update(update);
+      await withTimeout(staffRef.update(update), 10_000, "fail-count write");
       return { success: false, error: "invalid_credentials" };
     }
 
@@ -198,9 +198,11 @@ export const changeOwnPinFn = createServerFn({ method: "POST" })
 
     let uid: string;
     try {
-      // checkRevoked: a user mid-way through a forced change whose tokens were
-      // revoked must not be able to complete it with the stale token.
-      const decoded = await adminAuth.verifyIdToken(idToken, true);
+      // No checkRevoked here: it adds an identitytoolkit round trip this host
+      // tends to stall (the change-PIN screen hung on it in production), and
+      // the current-PIN re-proof below is the real gate — a revoked-but-valid
+      // token without the current PIN still gets rejected.
+      const decoded = await withTimeout(adminAuth.verifyIdToken(idToken), 8_000, "token verify");
       uid = decoded.uid;
     } catch {
       return { success: false, error: "unauthorized" };
@@ -210,7 +212,7 @@ export const changeOwnPinFn = createServerFn({ method: "POST" })
     if (WEAK_PINS.has(newPin)) return { success: false, error: "weak_pin" };
 
     const staffRef = adminDb.collection("staff").doc(uid);
-    const snap = await staffRef.get();
+    const snap = await withTimeout(staffRef.get(), 10_000, "staff lookup");
     if (!snap.exists) return { success: false, error: "unauthorized" };
 
     const staff = snap.data()!;
@@ -222,12 +224,16 @@ export const changeOwnPinFn = createServerFn({ method: "POST" })
       return { success: false, error: "wrong_pin" };
     }
 
-    await staffRef.update({
-      pinHash: await bcrypt.hash(newPin, 12),
-      mustChangePin: false,
-      failCount: 0,
-      lockedUntil: null,
-    });
+    await withTimeout(
+      staffRef.update({
+        pinHash: await bcrypt.hash(newPin, 12),
+        mustChangePin: false,
+        failCount: 0,
+        lockedUntil: null,
+      }),
+      10_000,
+      "pin change write",
+    );
 
     return { success: true };
   });

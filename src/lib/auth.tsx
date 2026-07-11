@@ -153,6 +153,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [staff, touchActivity]);
 
+  // Keep the app server warm while anyone is signed in. A loaded SPA talks
+  // straight to Firestore, so the Node process gets no traffic and Passenger
+  // idles it out (~5 min) — then the next server function (add user, change
+  // PIN) pays a ~20s cold start and 408s. A HEAD every 4 min from any open
+  // tab keeps one instance spawned, complementing PassengerMinInstances and
+  // the external cron in case either is ignored by the host.
+  useEffect(() => {
+    if (!staff) return;
+    const ping = () => void fetch("/", { method: "HEAD", cache: "no-store" }).catch(() => {});
+    const t = setInterval(ping, 4 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [staff]);
+
   const login = useCallback(async (username: string, pin: string): Promise<LoginError | null> => {
     try {
       const result: LoginResult = await loginFn({ data: { username, pin } });
