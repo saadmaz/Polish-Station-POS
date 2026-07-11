@@ -3,6 +3,7 @@ import { useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Download } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { getPayments, describePaymentMethods, type Invoice } from "@/lib/db";
 import {
   AreaChart,
   Area,
@@ -37,9 +38,11 @@ function dateFrom(period: Period): string {
   return "1970-01-01";
 }
 
-// Build daily revenue/jobs data from invoice + job arrays
+// Build daily revenue/jobs data from invoice + job arrays.
+// Cash/card split is computed per-payment, not per-invoice — a split-tender
+// invoice (part cash, part card) must contribute to both buckets correctly.
 function buildDailyData(
-  invoices: { createdAt: string; total: number; method: string }[],
+  invoices: Invoice[],
   completedJobs: { completedAt?: string | null }[],
   days: number,
 ): { date: string; cash: number; card: number; jobs: number }[] {
@@ -48,12 +51,15 @@ function buildDailyData(
     const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
     const dayInvs = invoices.filter((inv) => inv.createdAt.startsWith(d));
     const dayJobs = completedJobs.filter((j) => j.completedAt?.startsWith(d)).length;
-    result.push({
-      date: d.slice(5), // MM-DD
-      cash: dayInvs.filter((inv) => inv.method === "Cash").reduce((s, inv) => s + inv.total, 0),
-      card: dayInvs.filter((inv) => inv.method !== "Cash").reduce((s, inv) => s + inv.total, 0),
-      jobs: dayJobs,
-    });
+    let cash = 0;
+    let card = 0;
+    for (const inv of dayInvs) {
+      for (const p of getPayments(inv)) {
+        if (p.method === "Cash") cash += p.amount;
+        else card += p.amount;
+      }
+    }
+    result.push({ date: d.slice(5), cash, card, jobs: dayJobs }); // MM-DD
   }
   return result;
 }
@@ -67,14 +73,17 @@ function Reports() {
   const filteredJobs = jobs.filter((j) => j.createdAt >= since);
   const filteredBookings = bookings.filter((b) => b.date + "T00:00:00" >= since);
 
-  // Revenue stats
+  // Revenue stats. Cash/card split is per-payment (a split-tender invoice
+  // contributes to both buckets), not per-invoice.
   const totalRevenue = filteredInvoices.reduce((s, i) => s + i.total, 0);
-  const cashRevenue = filteredInvoices
-    .filter((i) => i.method === "Cash")
-    .reduce((s, i) => s + i.total, 0);
-  const cardRevenue = filteredInvoices
-    .filter((i) => i.method !== "Cash")
-    .reduce((s, i) => s + i.total, 0);
+  let cashRevenue = 0;
+  let cardRevenue = 0;
+  for (const inv of filteredInvoices) {
+    for (const p of getPayments(inv)) {
+      if (p.method === "Cash") cashRevenue += p.amount;
+      else cardRevenue += p.amount;
+    }
+  }
   const avgInvoice =
     filteredInvoices.length > 0 ? Math.round(totalRevenue / filteredInvoices.length) : 0;
 
@@ -144,7 +153,7 @@ function Reports() {
             i.customerName,
             i.createdAt.slice(0, 10),
             i.total,
-            i.method,
+            describePaymentMethods(i),
             i.status,
           ]),
           "revenue-report",

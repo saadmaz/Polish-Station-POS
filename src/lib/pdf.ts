@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import type { Invoice, InvoiceLine, Job, PurchaseOrder } from "./db";
+import { getPayments, getAmountRefunded } from "./db";
 
 // ─── Brand colours (RGB) ─────────────────────────────────────────────────────
 const RED: [number, number, number] = [210, 30, 30];
@@ -75,6 +76,8 @@ interface DocOptions {
   tip?: number;
   total: number;
   method?: string;
+  payments?: { method: string; amount: number; reference: string }[];
+  refundedTotal?: number;
   status: string;
   notes?: string;
 }
@@ -142,7 +145,7 @@ function buildDoc(opts: DocOptions): jsPDF {
   const statusColor =
     opts.status === "Paid"
       ? SUCCESS
-      : opts.status === "Void"
+      : opts.status === "Void" || opts.status === "Refunded"
         ? SLATE
         : opts.status === "ESTIMATE"
           ? AMBER
@@ -291,21 +294,48 @@ function buildDoc(opts: DocOptions): jsPDF {
   y += 14;
 
   // ── Payment / Quotation info ─────────────────────────────────────────────────
-  if (opts.docType === "INVOICE" && opts.method) {
+  // Lists every tender line (split payments show one row per method) —
+  // falls back to the single legacy `method` field for older invoices.
+  if (opts.docType === "INVOICE" && (opts.method || (opts.payments?.length ?? 0) > 0)) {
+    const pays =
+      opts.payments && opts.payments.length > 0
+        ? opts.payments
+        : opts.method
+          ? [{ method: opts.method, amount: opts.total, reference: "" }]
+          : [];
+    const boxH = 9 + pays.length * 4.5;
     doc.setFillColor(...ROW_ALT);
-    doc.roundedRect(ML, y - 5, 80, 14, 1.5, 1.5, "F");
+    doc.roundedRect(ML, y - 5, 95, boxH, 1.5, 1.5, "F");
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7);
     doc.setTextColor(...MUTED);
-    doc.text("PAYMENT METHOD", ML + 4, y);
+    doc.text("PAYMENT", ML + 4, y);
 
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(10);
-    doc.setTextColor(...CHARCOAL);
-    doc.text(opts.method.toUpperCase(), ML + 4, y + 5.5);
+    let py = y + 5;
+    pays.forEach((p) => {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(...CHARCOAL);
+      const label = p.reference
+        ? `${p.method.toUpperCase()} (${p.reference})`
+        : p.method.toUpperCase();
+      doc.text(label, ML + 4, py);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(...SLATE);
+      doc.text(fmt(p.amount), ML + 91, py, { align: "right" });
+      py += 4.5;
+    });
 
-    y += 18;
+    y += boxH + 4;
+
+    if (opts.refundedTotal && opts.refundedTotal > 0) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(200, 50, 50);
+      doc.text(`REFUNDED: ${fmt(opts.refundedTotal)}`, ML, y);
+      y += 7;
+    }
   }
 
   if (opts.docType === "QUOTATION") {
@@ -396,6 +426,12 @@ export function downloadInvoicePDF(invoice: Invoice, job?: Job) {
     tip: invoice.tip,
     total: invoice.total,
     method: invoice.method,
+    payments: getPayments(invoice).map((p) => ({
+      method: p.method,
+      amount: p.amount,
+      reference: p.reference,
+    })),
+    refundedTotal: getAmountRefunded(invoice),
     status: invoice.status,
   });
   doc.save(`${invoice.id}.pdf`);

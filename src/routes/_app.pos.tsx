@@ -2,25 +2,23 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useStore } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
+import { isManagerOrAbove } from "@/lib/permissions";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip, statusVariant } from "@/components/status-chip";
-import {
-  Plus,
-  Trash2,
-  Banknote,
-  CreditCard,
-  ArrowRightLeft,
-  Search,
-  FileDown,
-  FileText,
-  MessageCircle,
-  Star,
-} from "lucide-react";
+import { Plus, Trash2, Search, FileDown, FileText, MessageCircle, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { PaymentMethod, InvoiceLine } from "@/lib/db";
+import type { InvoiceLine, Invoice } from "@/lib/db";
+import {
+  getAmountPaid,
+  getAmountRefunded,
+  getInvoiceBalance,
+  describePaymentMethods,
+} from "@/lib/db";
 import { downloadInvoicePDF, downloadQuotationPDF } from "@/lib/pdf";
 import { newId } from "@/lib/db";
 import { buildWALink, fillTemplate } from "@/lib/notifications";
+import { TenderLineEditor, PaymentModal, type TenderLine } from "@/components/payment-modal";
 
 export const Route = createFileRoute("/_app/pos")({
   head: () => ({ meta: [{ title: "POS / Checkout — Polish Station OS" }] }),
@@ -51,6 +49,7 @@ function POS() {
     notificationSettingsData,
     recordNotification,
   } = useStore();
+  const { staff } = useAuth();
 
   // Customer / job selection
   const [customerSearch, setCustomerSearch] = useState("");
@@ -63,9 +62,13 @@ function POS() {
 
   // Payment
   const [tip, setTip] = useState(0);
-  const [method, setMethod] = useState<PaymentMethod>("Card");
+  const [tenderLines, setTenderLines] = useState<TenderLine[]>([]);
   const [charging, setCharging] = useState(false);
   const [chargedInfo, setChargedInfo] = useState<ChargedInfo | null>(null);
+  const [paymentModal, setPaymentModal] = useState<{
+    invoice: Invoice;
+    mode: "collect" | "refund";
+  } | null>(null);
 
   const selectedJob = jobs.find((j) => j.id === selectedJobId);
   const customerName = selectedJob?.customerName ?? manualCustomer;
@@ -84,6 +87,7 @@ function POS() {
     setLineCounter(key);
     setLines([{ key, name: j.serviceName, qty: 1, unitPrice: j.price, discount: 0 }]);
     setCustomerSearch("");
+    setTenderLines([]);
   }
 
   function addLine(serviceId?: string) {
@@ -110,6 +114,7 @@ function POS() {
   const tax = Math.round(subtotal * 0.18);
   const total = subtotal + tax + tip;
   const balanceDue = Math.max(0, total - depositPaid);
+  const tendered = tenderLines.reduce((s, l) => s + l.amount, 0);
 
   function handleSaveQuote() {
     if (lines.length === 0) {
@@ -137,8 +142,14 @@ function POS() {
       toast.error("Total must be greater than 0");
       return;
     }
+    const validTenders = tenderLines.filter((l) => l.amount > 0);
+    if (validTenders.length === 0) {
+      toast.error("Add at least one payment (Cash/Card/Transfer)");
+      return;
+    }
     setCharging(true);
 
+    const now = new Date().toISOString();
     const inv = addInvoice({
       jobId: selectedJobId,
       customerId,
@@ -148,11 +159,19 @@ function POS() {
       tax,
       tip,
       total,
-      method,
-      status:
-        depositPaid > 0 && balanceDue === 0 ? "Paid" : depositPaid > 0 ? "Partially Paid" : "Paid",
       sessionId: openShift?.id ?? null,
-      depositApplied: depositPaid > 0 ? depositPaid : undefined,
+      // Omit the key entirely rather than setting it to `undefined` —
+      // Firestore's client SDK batch.set() throws on an explicit undefined
+      // field value (this previously broke every checkout with no deposit).
+      ...(depositPaid > 0 ? { depositApplied: depositPaid } : {}),
+      payments: validTenders.map((l) => ({
+        method: l.method,
+        amount: l.amount,
+        reference: l.reference,
+        sessionId: openShift?.id ?? null,
+        staffName: staff?.name ?? "",
+        at: now,
+      })),
     });
 
     // Mark the job Done Today
@@ -160,8 +179,8 @@ function POS() {
       moveJob(selectedJobId, "Done Today");
     }
 
-    toast.success(`Payment received`, {
-      description: `${inv.id} · LKR ${total.toLocaleString()} · ${method}`,
+    toast.success(inv.status === "Partially Paid" ? "Partial payment recorded" : "Payment received", {
+      description: `${inv.id} · LKR ${tendered.toLocaleString()} · ${describePaymentMethods(inv)}`,
     });
 
     setChargedInfo({
@@ -181,7 +200,7 @@ function POS() {
     setManualCustomer("");
     setCustomerSearch("");
     setTip(0);
-    setMethod("Card");
+    setTenderLines([]);
     setCharging(false);
   }
 
@@ -264,6 +283,7 @@ function POS() {
                 onClick={() => {
                   setSelectedJobId(null);
                   setLines([]);
+                  setTenderLines([]);
                 }}
                 className="text-muted-foreground hover:text-foreground"
               >
@@ -393,54 +413,100 @@ function POS() {
                 {[...invoices]
                   .reverse()
                   .slice(0, 10)
-                  .map((i) => (
-                    <tr key={i.id} className="hover:bg-muted/40">
-                      <td className="px-4 py-2.5 font-mono text-xs">{i.id}</td>
-                      <td className="px-3 py-2.5 font-medium">{i.customerName}</td>
-                      <td className="px-3 py-2.5 text-muted-foreground text-xs">
-                        {new Date(i.createdAt).toLocaleString([], {
-                          day: "numeric",
-                          month: "short",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </td>
-                      <td className="px-3 py-2.5 text-right font-mono font-semibold">
-                        LKR {i.total.toLocaleString()}
-                      </td>
-                      <td className="px-3 py-2.5 text-muted-foreground">{i.method}</td>
-                      <td className="px-3 py-2.5">
-                        <StatusChip variant={statusVariant(i.status)}>{i.status}</StatusChip>
-                      </td>
-                      <td className="px-2 py-2.5">
-                        <div className="flex items-center gap-2 justify-end">
-                          <button
-                            onClick={() => {
-                              const job = i.jobId ? jobs.find((j) => j.id === i.jobId) : undefined;
-                              downloadInvoicePDF(i, job);
-                            }}
-                            title="Download PDF"
-                            className="text-muted-foreground hover:text-primary"
-                          >
-                            <FileDown className="h-3.5 w-3.5" />
-                          </button>
-                          {i.status !== "Void" && (
+                  .map((i) => {
+                    const paid = getAmountPaid(i);
+                    const refunded = getAmountRefunded(i);
+                    const balance = getInvoiceBalance(i);
+                    const canCollect =
+                      balance > 0 && i.status !== "Void" && i.status !== "Refunded";
+                    const canRefund =
+                      paid > refunded && i.status !== "Void" && isManagerOrAbove(staff?.role);
+                    const canVoid = paid === 0 && i.status !== "Void";
+                    return (
+                      <tr key={i.id} className="hover:bg-muted/40">
+                        <td className="px-4 py-2.5 font-mono text-xs">{i.id}</td>
+                        <td className="px-3 py-2.5 font-medium">{i.customerName}</td>
+                        <td className="px-3 py-2.5 text-muted-foreground text-xs">
+                          {new Date(i.createdAt).toLocaleString([], {
+                            day: "numeric",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono font-semibold">
+                          LKR {i.total.toLocaleString()}
+                          {i.status === "Partially Paid" && (
+                            <div className="text-[10px] font-normal text-muted-foreground">
+                              LKR {paid.toLocaleString()} paid
+                            </div>
+                          )}
+                          {refunded > 0 && (
+                            <div className="text-[10px] font-normal text-primary">
+                              LKR {refunded.toLocaleString()} refunded
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 text-muted-foreground">
+                          {describePaymentMethods(i)}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <StatusChip variant={statusVariant(i.status)}>{i.status}</StatusChip>
+                        </td>
+                        <td className="px-2 py-2.5">
+                          <div className="flex items-center gap-2 justify-end whitespace-nowrap">
                             <button
                               onClick={() => {
-                                if (confirm(`Void ${i.id}?`)) {
-                                  voidInvoice(i.id);
-                                  toast.success(`${i.id} voided`);
-                                }
+                                const job = i.jobId
+                                  ? jobs.find((j) => j.id === i.jobId)
+                                  : undefined;
+                                downloadInvoicePDF(i, job);
                               }}
-                              className="text-[11px] text-muted-foreground hover:text-primary underline underline-offset-2"
+                              title="Download PDF"
+                              className="text-muted-foreground hover:text-primary"
                             >
-                              Void
+                              <FileDown className="h-3.5 w-3.5" />
                             </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                            {canCollect && (
+                              <button
+                                onClick={() => setPaymentModal({ invoice: i, mode: "collect" })}
+                                className="text-[11px] text-muted-foreground hover:text-primary underline underline-offset-2"
+                              >
+                                Collect
+                              </button>
+                            )}
+                            {canRefund && (
+                              <button
+                                onClick={() => setPaymentModal({ invoice: i, mode: "refund" })}
+                                className="text-[11px] text-muted-foreground hover:text-primary underline underline-offset-2"
+                              >
+                                Refund
+                              </button>
+                            )}
+                            {i.status !== "Void" && (
+                              <button
+                                disabled={!canVoid}
+                                title={
+                                  canVoid
+                                    ? undefined
+                                    : "Money already collected — use Refund instead"
+                                }
+                                onClick={() => {
+                                  if (confirm(`Void ${i.id}?`)) {
+                                    voidInvoice(i.id);
+                                    toast.success(`${i.id} voided`);
+                                  }
+                                }}
+                                className="text-[11px] text-muted-foreground hover:text-primary underline underline-offset-2 disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
+                              >
+                                Void
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 {invoices.length === 0 && (
                   <tr>
                     <td colSpan={6} className="text-center py-6 text-muted-foreground text-sm">
@@ -517,28 +583,14 @@ function POS() {
         </div>
 
         <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-2">
-          Payment Method
+          Payment
         </div>
-        <div className="grid grid-cols-3 gap-2 mb-4">
-          {[
-            { v: "Cash" as const, icon: Banknote },
-            { v: "Card" as const, icon: CreditCard },
-            { v: "Transfer" as const, icon: ArrowRightLeft },
-          ].map(({ v, icon: Icon }) => (
-            <button
-              key={v}
-              onClick={() => setMethod(v)}
-              className={cn(
-                "flex flex-col items-center gap-1 rounded-md border py-2.5 text-xs font-medium transition-colors",
-                method === v
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-input hover:bg-accent",
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {v}
-            </button>
-          ))}
+        <div className="mb-4">
+          <TenderLineEditor
+            lines={tenderLines}
+            onChange={setTenderLines}
+            remaining={depositPaid > 0 ? balanceDue : total}
+          />
         </div>
 
         {chargedInfo && (
@@ -596,14 +648,16 @@ function POS() {
 
         <button
           onClick={handleCharge}
-          disabled={charging || lines.length === 0}
+          disabled={charging || lines.length === 0 || tendered <= 0}
           className="w-full rounded-md gradient-brand py-3 text-sm font-bold uppercase tracking-wider text-primary-foreground shadow-red hover:opacity-95 disabled:opacity-50"
         >
           {charging
             ? "Processing…"
-            : depositPaid > 0
-              ? `Collect LKR ${balanceDue.toLocaleString()} Balance`
-              : `Charge LKR ${total.toLocaleString()}`}
+            : tendered > 0 && tendered < (depositPaid > 0 ? balanceDue : total)
+              ? `Collect LKR ${tendered.toLocaleString()} of LKR ${(depositPaid > 0 ? balanceDue : total).toLocaleString()}`
+              : depositPaid > 0
+                ? `Collect LKR ${balanceDue.toLocaleString()} Balance`
+                : `Charge LKR ${total.toLocaleString()}`}
         </button>
 
         <button
@@ -620,6 +674,14 @@ function POS() {
           </p>
         )}
       </aside>
+
+      {paymentModal && (
+        <PaymentModal
+          invoice={paymentModal.invoice}
+          mode={paymentModal.mode}
+          onClose={() => setPaymentModal(null)}
+        />
+      )}
     </div>
   );
 }

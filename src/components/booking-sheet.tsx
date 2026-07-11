@@ -209,7 +209,10 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
       bay: form.bay || "—",
       status: "Confirmed",
       notes: form.notes,
-      depositAmount: form.requireDeposit ? form.depositAmount : undefined,
+      // Omit rather than set to `undefined` — Firestore's client SDK
+      // setDoc() throws on an explicit undefined field value (this
+      // previously broke every booking created with no deposit required).
+      ...(form.requireDeposit ? { depositAmount: form.depositAmount } : {}),
       depositStatus: form.requireDeposit ? "required" : "none",
     });
 

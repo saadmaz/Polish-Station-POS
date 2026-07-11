@@ -26,7 +26,13 @@ import {
 import { db as fsDb } from "./firebase";
 import { useAuth } from "./auth";
 import { hasModule, isManagerOrAbove, type ModuleKey } from "./permissions";
-import { calcTier, getQCTemplate, DEFAULT_NOTIFICATION_SETTINGS } from "./db";
+import {
+  calcTier,
+  getQCTemplate,
+  DEFAULT_NOTIFICATION_SETTINGS,
+  getPayments,
+  getAmountPaid,
+} from "./db";
 import type {
   AuditLog,
   Booking,
@@ -41,10 +47,12 @@ import type {
   MaintenanceLog,
   NotificationSettings,
   PaymentMethod,
+  PaymentRecord,
   POLine,
   POStatus,
   PurchaseOrder,
   QCItem,
+  RefundRecord,
   SentNotification,
   Service,
   Shift,
@@ -146,9 +154,15 @@ interface Store {
   adjustStock: (id: string, delta: number) => void;
 
   // Invoices
-  addInvoice: (inv: Omit<Invoice, "id" | "createdAt">) => Invoice;
+  addInvoice: (
+    inv: Omit<Invoice, "id" | "createdAt" | "method" | "status" | "payments"> & {
+      payments: Omit<PaymentRecord, "id">[];
+    },
+  ) => Invoice;
   updateInvoice: (inv: Invoice) => void;
   voidInvoice: (id: string) => void;
+  recordInvoicePayment: (invoiceId: string, payment: Omit<PaymentRecord, "id">) => void;
+  refundInvoicePayment: (invoiceId: string, refund: Omit<RefundRecord, "id">) => void;
 
   // Expenses
   addExpense: (e: Omit<Expense, "id" | "createdAt">) => Expense;
@@ -525,13 +539,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   });
 
   // ── Shift total recalculation ──────────────────────────────────────────────
+  // Sums payments/refunds tagged with this shift's sessionId, across ALL
+  // invoices — not just invoices originally opened in this shift. This is
+  // what makes "collect the rest of a bill next week" and "refund today for
+  // a sale from last month" reconcile against the *current* drawer, not the
+  // invoice's original one.
   const recalcShift = useCallback((shiftId: string) => {
     const { expenses: exps, invoices: invs } = S.current;
     const shiftExps = exps.filter((e) => e.sessionId === shiftId);
-    const shiftInvs = invs.filter((i) => i.sessionId === shiftId);
+
+    let cashIn = 0;
+    let cardIn = 0;
+    for (const inv of invs) {
+      for (const p of getPayments(inv)) {
+        if (p.sessionId !== shiftId) continue;
+        if (p.method === "Cash") cashIn += p.amount;
+        else cardIn += p.amount;
+      }
+      for (const r of inv.refunds ?? []) {
+        if (r.sessionId !== shiftId) continue;
+        if (r.method === "Cash") cashIn -= r.amount;
+        else cardIn -= r.amount;
+      }
+    }
+
     patch("shifts", shiftId, {
-      cashSales: shiftInvs.filter((i) => i.method === "Cash").reduce((s, i) => s + i.total, 0),
-      cardSales: shiftInvs.filter((i) => i.method !== "Cash").reduce((s, i) => s + i.total, 0),
+      cashSales: cashIn,
+      cardSales: cardIn,
       totalExpenses: shiftExps
         .filter((e) => e.type === "EXPENSE")
         .reduce((s, e) => s + e.amount, 0),
@@ -711,11 +745,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // ── Invoice mutations ──────────────────────────────────────────────────────
   const addInvoice = useCallback(
-    (data: Omit<Invoice, "id" | "createdAt">): Invoice => {
-      const inv: Invoice = {
+    (
+      data: Omit<Invoice, "id" | "createdAt" | "method" | "status" | "payments"> & {
+        payments: Omit<PaymentRecord, "id">[];
+      },
+    ): Invoice => {
+      const payments: PaymentRecord[] = data.payments.map((p) => ({ ...p, id: newId() }));
+      const draft: Invoice = {
         ...data,
+        payments,
+        method: payments[0]?.method ?? "Cash",
+        status: "Issued",
         id: nextSeqId(S.current.invoices, "INV-", 2090),
         createdAt: new Date().toISOString(),
+      };
+      // getAmountPaid folds in any deposit already collected earlier, so a
+      // checkout that only tenders the remaining balance still resolves to
+      // "Paid" rather than incorrectly staying "Partially Paid".
+      const amountPaid = getAmountPaid(draft);
+      const inv: Invoice = {
+        ...draft,
+        status: amountPaid >= draft.total ? "Paid" : amountPaid > 0 ? "Partially Paid" : "Issued",
       };
       const batch = writeBatch(fsDb);
       batch.set(fd("invoices", inv.id), inv);
@@ -734,8 +784,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       }
       batch.commit().catch((err) => console.error("[store] addInvoice:", err));
-      // Recalc shift totals after Firestore write settles
-      if (data.sessionId) setTimeout(() => recalcShift(data.sessionId!), 500);
+      // Recalc shift totals after Firestore write settles, for every shift
+      // touched by this invoice's tender lines (normally just the open shift).
+      const shiftIds = new Set(payments.map((p) => p.sessionId).filter((x): x is string => !!x));
+      shiftIds.forEach((id) => setTimeout(() => recalcShift(id), 500));
       return inv;
     },
     [recalcShift],
@@ -748,6 +800,48 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!inv) return;
     write("invoices", { ...inv, status: "Void" });
   }, []);
+
+  const recordInvoicePayment = useCallback(
+    (invoiceId: string, payment: Omit<PaymentRecord, "id">) => {
+      const inv = S.current.invoices.find((x) => x.id === invoiceId);
+      if (!inv) return;
+      const payments = [...(inv.payments ?? []), { ...payment, id: newId() }];
+      const updated = { ...inv, payments };
+      const amountPaid = getAmountPaid(updated);
+      write("invoices", {
+        ...updated,
+        status: amountPaid >= inv.total ? "Paid" : "Partially Paid",
+      });
+      if (payment.sessionId) setTimeout(() => recalcShift(payment.sessionId!), 500);
+    },
+    [recalcShift],
+  );
+
+  const refundInvoicePayment = useCallback(
+    (invoiceId: string, refund: Omit<RefundRecord, "id">) => {
+      const inv = S.current.invoices.find((x) => x.id === invoiceId);
+      if (!inv) return;
+      const refunds = [...(inv.refunds ?? []), { ...refund, id: newId() }];
+      const amountPaid = getAmountPaid(inv);
+      const amountRefunded = refunds.reduce((s, r) => s + r.amount, 0);
+      const batch = writeBatch(fsDb);
+      batch.set(fd("invoices", invoiceId), {
+        ...inv,
+        refunds,
+        status: amountRefunded >= amountPaid ? "Refunded" : inv.status,
+      });
+      if (inv.customerId) {
+        const c = S.current.customers.find((x) => x.id === inv.customerId);
+        if (c) {
+          const spend = Math.max(0, c.spend - refund.amount);
+          batch.set(fd("customers", c.id), { ...c, spend, tier: calcTier(spend) });
+        }
+      }
+      batch.commit().catch((err) => console.error("[store] refundInvoicePayment:", err));
+      if (refund.sessionId) setTimeout(() => recalcShift(refund.sessionId!), 500);
+    },
+    [recalcShift],
+  );
 
   // ── Expense mutations ──────────────────────────────────────────────────────
   const addExpense = useCallback(
@@ -997,6 +1091,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addInvoice,
     updateInvoice,
     voidInvoice,
+    recordInvoicePayment,
+    refundInvoicePayment,
     addExpense,
     deleteExpense,
     openShiftFn,

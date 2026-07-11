@@ -47,5 +47,6 @@ STATUS=0
 node scripts/e2e/login.mjs || STATUS=1
 node scripts/e2e/booking-flow.mjs || STATUS=1
 node scripts/e2e/equipment-integrity.mjs || STATUS=1
+node scripts/e2e/payments-flow.mjs || STATUS=1
 
 exit $STATUS

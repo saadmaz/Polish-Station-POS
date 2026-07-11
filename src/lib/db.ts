@@ -4,7 +4,7 @@ import { DEFAULT_TEMPLATES } from "./notifications";
 
 export type JobStatus = "Queue" | "In Bay" | "On Hold" | "Awaiting QC" | "Ready" | "Done Today";
 export type BookingStatus = "Pending" | "Confirmed" | "Checked-In" | "No-Show" | "Cancelled";
-export type InvoiceStatus = "Draft" | "Issued" | "Partially Paid" | "Paid" | "Void";
+export type InvoiceStatus = "Draft" | "Issued" | "Partially Paid" | "Paid" | "Void" | "Refunded";
 export type PaymentMethod = "Cash" | "Card" | "Transfer";
 export type CustomerTier = "Bronze" | "Silver" | "Gold" | "Platinum";
 export type ServiceCategory =
@@ -182,6 +182,26 @@ export interface InvoiceLine {
   discount: number;
 }
 
+export interface PaymentRecord {
+  id: string;
+  method: PaymentMethod;
+  amount: number;
+  reference: string; // optional free-text: last 4 digits, bank slip #, etc.
+  sessionId: string | null; // shift that collected it — may differ from the invoice's original shift
+  staffName: string;
+  at: string;
+}
+
+export interface RefundRecord {
+  id: string;
+  amount: number;
+  method: PaymentMethod;
+  reason: string;
+  sessionId: string | null; // shift that processed the refund
+  staffName: string;
+  at: string;
+}
+
 export interface Invoice {
   id: string;
   jobId: string | null;
@@ -197,6 +217,55 @@ export interface Invoice {
   sessionId: string | null;
   createdAt: string;
   depositApplied?: number;
+  payments?: PaymentRecord[];
+  refunds?: RefundRecord[];
+}
+
+// ─── Payment/refund derived helpers ─────────────────────────────────────────
+// Invoices written before this feature shipped have no `payments` array —
+// synthesize one from the legacy single-method fields so old data keeps
+// working without a Firestore backfill. The legacy amount excludes any
+// deposit already collected earlier (deposits are tracked separately on the
+// booking/job, not as an invoice-level payment).
+
+function legacyPayments(inv: Invoice): PaymentRecord[] {
+  const amount = inv.total - (inv.depositApplied ?? 0);
+  if (amount <= 0) return [];
+  return [
+    {
+      id: `${inv.id}-legacy`,
+      method: inv.method,
+      amount,
+      reference: "",
+      sessionId: inv.sessionId,
+      staffName: "",
+      at: inv.createdAt,
+    },
+  ];
+}
+
+export function getPayments(inv: Invoice): PaymentRecord[] {
+  return inv.payments && inv.payments.length > 0 ? inv.payments : legacyPayments(inv);
+}
+
+// A deposit collected earlier (via the booking flow) is tracked separately
+// from checkout `payments` — add it back in so "amount paid" reflects the
+// true total collected from the customer, in both legacy and new invoices.
+export function getAmountPaid(inv: Invoice): number {
+  return getPayments(inv).reduce((s, p) => s + p.amount, 0) + (inv.depositApplied ?? 0);
+}
+
+export function getAmountRefunded(inv: Invoice): number {
+  return (inv.refunds ?? []).reduce((s, r) => s + r.amount, 0);
+}
+
+export function getInvoiceBalance(inv: Invoice): number {
+  return Math.max(0, inv.total - getAmountPaid(inv));
+}
+
+export function describePaymentMethods(inv: Invoice): string {
+  const methods = Array.from(new Set(getPayments(inv).map((p) => p.method)));
+  return methods.length > 0 ? methods.join(" + ") : inv.method;
 }
 
 export interface InventoryItem {

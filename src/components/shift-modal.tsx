@@ -11,6 +11,7 @@ import { useAuth } from "@/lib/auth";
 import { isManagerOrAbove } from "@/lib/permissions";
 import { useStaffList } from "@/lib/use-staff-list";
 import { cn } from "@/lib/utils";
+import { getPayments } from "@/lib/db";
 import type { Shift } from "@/lib/db";
 
 // ─── Denomination definitions ─────────────────────────────────────────────────
@@ -172,14 +173,26 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
   const sessionDeposits = expensesList.filter(
     (e) => e.sessionId === shift.id && e.type === "DEPOSIT",
   );
-  const sessionInvoices = invoicesList.filter((i) => i.sessionId === shift.id);
 
-  const cashSales = sessionInvoices
-    .filter((i) => i.method === "Cash")
-    .reduce((s, i) => s + i.total, 0);
-  const cardSales = sessionInvoices
-    .filter((i) => i.method !== "Cash")
-    .reduce((s, i) => s + i.total, 0);
+  // Cash/card totals mirror recalcShift in store.tsx: sum payments/refunds
+  // tagged with THIS shift's sessionId across all invoices, not just
+  // invoices opened during this shift — a balance collected or refunded
+  // during this shift affects this drawer regardless of which shift the
+  // original sale happened in.
+  let cashSales = 0;
+  let cardSales = 0;
+  for (const inv of invoicesList) {
+    for (const p of getPayments(inv)) {
+      if (p.sessionId !== shift.id) continue;
+      if (p.method === "Cash") cashSales += p.amount;
+      else cardSales += p.amount;
+    }
+    for (const r of inv.refunds ?? []) {
+      if (r.sessionId !== shift.id) continue;
+      if (r.method === "Cash") cashSales -= r.amount;
+      else cardSales -= r.amount;
+    }
+  }
   const totalExp = sessionExpenses.reduce((s, e) => s + e.amount, 0);
   const totalDep = sessionDeposits.reduce((s, e) => s + e.amount, 0);
 

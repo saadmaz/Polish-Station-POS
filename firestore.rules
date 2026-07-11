@@ -81,7 +81,11 @@ service cloud.firestore {
     match /invoices/{invoiceId} {
       allow read:   if hasModule("pos") && (isManagerOrAbove() || role() in ["Cashier", "Advisor"]);
       allow create: if hasModule("pos") && (isManagerOrAbove() || role() in ["Cashier", "Advisor"]);
-      allow update: if hasModule("pos") && isManagerOrAbove();
+      // Cashier/Advisor need update access too: collecting a follow-up
+      // balance payment on a Partially Paid invoice is an update, not a
+      // create. Refunds are a business-sensitive action gated in the UI
+      // (Manager+ only) rather than here, same pattern as the audit log.
+      allow update: if hasModule("pos") && (isManagerOrAbove() || role() in ["Cashier", "Advisor"]);
       allow delete: if isAdmin();
     }
 
