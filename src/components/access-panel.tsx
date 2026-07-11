@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { toast } from "sonner";
-import { KeyRound, Plus, Pencil, UserCheck, UserX, Loader2, ShieldCheck } from "lucide-react";
+import {
+  KeyRound,
+  Plus,
+  Pencil,
+  UserCheck,
+  UserX,
+  Loader2,
+  ShieldCheck,
+  Trash2,
+  AlertTriangle,
+} from "lucide-react";
 import { db, auth as firebaseAuth } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth";
 import { StatusChip } from "@/components/status-chip";
@@ -10,6 +20,7 @@ import {
   updateStaffFn,
   setStaffActiveFn,
   resetPinFn,
+  deleteStaffFn,
   type StaffActionError,
 } from "@/server/staff";
 import {
@@ -76,6 +87,7 @@ export function AccessPanel() {
   const [editing, setEditing] = useState<StaffRow | null>(null);
   const [creating, setCreating] = useState(false);
   const [resetTarget, setResetTarget] = useState<StaffRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<StaffRow | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -222,6 +234,14 @@ export function AccessPanel() {
                           <KeyRound className="h-3.5 w-3.5" />
                         </IconBtn>
                         <ActiveToggle row={row} disabled={!actionable} onDone={load} />
+                        <IconBtn
+                          title="Delete user"
+                          onClick={() => setDeleteTarget(row)}
+                          disabled={!actionable}
+                          danger
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </IconBtn>
                       </div>
                     </td>
                   </tr>
@@ -260,7 +280,88 @@ export function AccessPanel() {
           onSaved={() => setResetTarget(null)}
         />
       )}
+      {deleteTarget && (
+        <DeleteDialog
+          row={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onDeleted={() => {
+            setDeleteTarget(null);
+            void load();
+          }}
+        />
+      )}
     </>
+  );
+}
+
+// ── Delete confirmation ───────────────────────────────────────────────────────
+
+function DeleteDialog({
+  row,
+  onClose,
+  onDeleted,
+}: {
+  row: StaffRow;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  async function confirmDelete() {
+    setBusy(true);
+    try {
+      const token = await idToken();
+      if (!token) {
+        toast.error("Session expired — sign in again.");
+        return;
+      }
+      const res = await deleteStaffFn({ data: { idToken: token, targetStaffId: row.id } });
+      if (res.success) {
+        toast.success(`${row.name} deleted`);
+        onDeleted();
+      } else {
+        toast.error(ERROR_TEXT[res.error]);
+      }
+    } catch {
+      toast.error("Delete failed — check your connection.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal onClose={onClose}>
+      <div className="flex items-start gap-3">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-destructive/10 text-destructive">
+          <AlertTriangle className="h-5 w-5" />
+        </div>
+        <div>
+          <h3 className="font-display text-base font-bold">Delete {row.name}?</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            This permanently removes the account and frees the username{" "}
+            <span className="font-mono">{row.username}</span> for reuse. Any open session is signed
+            out immediately. This can't be undone.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-5 flex gap-2">
+        <button
+          onClick={confirmDelete}
+          disabled={busy}
+          className="flex flex-1 items-center justify-center gap-2 rounded-md bg-destructive px-4 py-2 text-sm font-medium text-white hover:bg-destructive/90 disabled:opacity-40"
+        >
+          {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+          Delete user
+        </button>
+        <button
+          onClick={onClose}
+          className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+        >
+          Cancel
+        </button>
+      </div>
+    </Modal>
   );
 }
 

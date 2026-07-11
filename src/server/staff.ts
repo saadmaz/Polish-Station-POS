@@ -200,8 +200,9 @@ export const createStaffFn = createServerFn({ method: "POST" })
         permissions,
         pinHash: await bcrypt.hash(data.pin, 10),
         active: true,
-        // An admin-issued PIN is a bootstrap credential, never a password.
-        mustChangePin: true,
+        // The admin-issued PIN IS the working credential — users sign in with
+        // exactly what the admin gives them and are never forced to change it.
+        mustChangePin: false,
         failCount: 0,
         lockedUntil: null,
       });
@@ -356,15 +357,63 @@ export const resetPinFn = createServerFn({ method: "POST" })
     await withTimeout(
       targetRef.update({
         pinHash: await bcrypt.hash(data.newPin, 10),
-        // The target chooses their own PIN on next login; the admin never
-        // knows the credential the user ends up with.
-        mustChangePin: true,
+        // The admin sets the PIN and the user signs in with exactly that — no
+        // forced change on next login.
+        mustChangePin: false,
         failCount: 0,
         lockedUntil: null,
       }),
       10_000,
       "pin reset write",
     );
+
+    revokeBestEffort(data.targetStaffId);
+
+    return { success: true };
+  });
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+
+const DeleteStaffSchema = z.object({
+  idToken: z.string().min(1),
+  targetStaffId: z.string().min(1).max(64),
+});
+
+// Hard delete, distinct from deactivate: removes the account entirely rather
+// than disabling it. Same seniority rules as every other staff mutation — an
+// Admin may delete anyone strictly below them, a SuperAdmin anyone; nobody may
+// delete themselves or the last remaining SuperAdmin.
+export const deleteStaffFn = createServerFn({ method: "POST" })
+  .validator((raw: unknown) => DeleteStaffSchema.parse(raw))
+  .handler(async ({ data }): Promise<StaffActionResult> => {
+    const caller = await requireAdmin(data.idToken);
+    if (!caller) return { success: false, error: "unauthorized" };
+    if (caller.uid === data.targetStaffId) return { success: false, error: "self_target" };
+
+    const targetRef = adminDb.collection("staff").doc(data.targetStaffId);
+    const snap = await withTimeout(targetRef.get(), 10_000, "target lookup");
+    if (!snap.exists) return { success: false, error: "not_found" };
+
+    const target = snap.data()!;
+    const targetRole = target.role as StaffRole;
+    if (!mayActOn(caller, targetRole)) return { success: false, error: "forbidden" };
+
+    // Deleting the final SuperAdmin would strand the business with nobody able
+    // to manage users — same guard as demote/deactivate.
+    if (targetRole === "SuperAdmin" && (await otherActiveSuperAdmins(data.targetStaffId)) === 0) {
+      return { success: false, error: "last_super_admin" };
+    }
+
+    // Remove the private doc, the public roster doc, and the username index
+    // entry (freeing the username for reuse), then end any live session.
+    const batch = adminDb.batch();
+    batch.delete(targetRef);
+    batch.delete(adminDb.collection("staff_public").doc(data.targetStaffId));
+    const username = target.username;
+    if (typeof username === "string" && username) {
+      batch.delete(adminDb.collection("usernames").doc(usernameKey(username)));
+    }
+    await withTimeout(batch.commit(), 10_000, "staff delete commit");
 
     revokeBestEffort(data.targetStaffId);
 

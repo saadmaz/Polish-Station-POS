@@ -1,17 +1,14 @@
-// Reproduces the exact production report: a SuperAdmin creates a user from the
-// dashboard (Settings → Staff & Access), then that new user tries to log in.
-// In production this returned a 408 (server-function timeout) — but that is a
-// COLD-START timing failure on the shared host, not a logic error. This spec
-// runs against the fast local emulator to prove the create → new-user-login
-// LOGIC is correct end to end (username index written, PIN verified, custom
-// token minted, forced-PIN-change gate reached). If this passes, the only
-// remaining production cause is cold-start latency — addressed separately by
-// the firebase-admin warm-up (/healthz + boot self-warm).
+// SuperAdmin creates a user from Settings → Staff & Access, that user signs in
+// with the admin-given PIN (NO forced PIN change — the admin's PIN is the
+// working credential), and finally the SuperAdmin deletes the account.
+// Exercises createStaffFn, loginFn, and deleteStaffFn end to end against the
+// emulator (the project-ID-aligned harness makes verifyIdToken work, so the
+// Admin-authenticated server functions are genuinely tested).
 import { chromium } from "playwright";
 import { BASE_URL, adminDb, check, assert, summarize } from "./_shared.mjs";
 import { TEST_STAFF } from "../seed-emulator.mjs";
 
-console.log("New-user login (SuperAdmin creates user → user signs in):");
+console.log("New user: create → sign in (no forced PIN change) → delete:");
 
 const browser = await chromium.launch();
 const admin = await (await browser.newContext()).newPage();
@@ -19,6 +16,7 @@ const admin = await (await browser.newContext()).newPage();
 const newUsername = `NEWSTAFF${Date.now().toString().slice(-6)}`;
 const newName = "New Staff Member";
 const newPin = "1357";
+let newStaffId = null;
 
 async function signIn(page, username, pin) {
   await page.goto(BASE_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
@@ -41,69 +39,58 @@ await check("SuperAdmin creates a new user", async () => {
   await admin.fill('input[placeholder="e.g. SALMAN"]', newUsername);
   await admin.fill('input[placeholder="4 digits"]', newPin);
   await admin.click('button:has-text("Create user")');
-  // Success toast confirms createStaffFn returned success (Admin SDK wrote the
-  // staff + staff_public + usernames docs). A failure here would mean the
-  // server function rejected the caller — the exact "unauthorized" symptom the
-  // project-ID-aligned emulator (test:e2e --project demo-pos-polishstation)
-  // exists to catch.
   await admin.waitForSelector(`text=${newName} created`, { timeout: 15000 });
 });
 
-await check("new user's staff doc + username index were written correctly", async () => {
+await check("account is NOT flagged for a forced PIN change", async () => {
   const idxSnap = await adminDb.collection("usernames").doc(newUsername.toLowerCase()).get();
   assert(idxSnap.exists, "username index doc was not created");
-  const staffId = idxSnap.data().staffId;
-  const staffSnap = await adminDb.collection("staff").doc(staffId).get();
+  newStaffId = idxSnap.data().staffId;
+  const staffSnap = await adminDb.collection("staff").doc(newStaffId).get();
   assert(staffSnap.exists, "staff doc was not created");
   const s = staffSnap.data();
   assert(s.active === true, "new user should be active");
-  assert(s.mustChangePin === true, "admin-created user must be flagged mustChangePin");
-  assert(typeof s.pinHash === "string" && s.pinHash.length > 0, "pinHash missing");
+  assert(s.mustChangePin === false, "new user must NOT be forced to change PIN");
 });
 
-// The reported failure: signing in AS the new user, on a fresh device/session.
+// The whole point: signing in with the admin-given PIN drops straight into the
+// app — no /change-pin detour.
 const fresh = await (await browser.newContext()).newPage();
-
-await check("new user can sign in and is routed to the forced PIN change", async () => {
+await check("new user signs in with the admin PIN and lands straight in the app", async () => {
   await signIn(fresh, newUsername, newPin);
-  // Admin-issued PIN is a bootstrap credential → must land on /change-pin,
-  // NOT bounce back to the login screen with "couldn't reach the server".
-  await fresh.waitForURL(/change-pin/, { timeout: 20000 });
-  await fresh.waitForSelector("text=/change.*pin/i", { timeout: 10000 });
-});
-
-await check(
-  "new user is NOT stuck on the login screen (regression guard for the 408)",
-  async () => {
-    const onLogin = await fresh.locator("#username").count();
-    assert(onLogin === 0, "new user was bounced back to the login screen");
-  },
-);
-
-// changeOwnPinFn path — this is the server function that hung in production on
-// a cold verifyIdToken (the cert-fetch /healthz now also warms). On the fast
-// emulator it just proves the change-PIN LOGIC works end to end.
-const changedPin = "2580";
-await check("new user completes the forced PIN change (changeOwnPinFn)", async () => {
-  const fields = fresh.locator('input[type="password"]');
-  await fields.nth(0).fill(newPin); // current (admin-issued) PIN
-  await fields.nth(1).fill(changedPin); // new PIN
-  await fields.nth(2).fill(changedPin); // confirm
-  await fresh.click('button:has-text("Update PIN")');
-  // Success clears the mustChangePin gate and drops them into the app.
   await fresh.waitForURL(/dashboard/, { timeout: 20000 });
+  const onChangePin = fresh.url().includes("change-pin");
+  assert(
+    !onChangePin,
+    "new user was sent to the change-PIN screen — should go straight to the app",
+  );
+});
+await fresh.close();
+
+await check("SuperAdmin deletes the user (deleteStaffFn)", async () => {
+  await admin.locator("tr", { hasText: newUsername }).locator('[title="Delete user"]').click();
+  await admin.click('button:has-text("Delete user")'); // confirm dialog
+  await admin.waitForSelector(`text=${newName} deleted`, { timeout: 15000 });
 });
 
-await check(
-  "changed PIN sticks: fresh sign-in with the NEW pin goes straight to the app",
-  async () => {
-    const relogin = await (await browser.newContext()).newPage();
-    await signIn(relogin, newUsername, changedPin);
-    // mustChangePin is now false → straight to /dashboard, no change-pin gate.
-    await relogin.waitForURL(/dashboard/, { timeout: 20000 });
-    await relogin.close();
-  },
-);
+await check("delete removed the staff, public, and username-index docs", async () => {
+  const staffSnap = await adminDb.collection("staff").doc(newStaffId).get();
+  const pubSnap = await adminDb.collection("staff_public").doc(newStaffId).get();
+  const idxSnap = await adminDb.collection("usernames").doc(newUsername.toLowerCase()).get();
+  assert(!staffSnap.exists, "staff doc should be gone");
+  assert(!pubSnap.exists, "staff_public doc should be gone");
+  assert(!idxSnap.exists, "username index doc should be gone (freed for reuse)");
+});
+
+await check("the deleted user can no longer sign in", async () => {
+  const gone = await (await browser.newContext()).newPage();
+  await signIn(gone, newUsername, newPin);
+  // Login must fail → they stay on the login screen, never reach the app.
+  await gone.waitForTimeout(4000);
+  assert(!gone.url().includes("dashboard"), "deleted user reached the app");
+  assert((await gone.locator("#username").count()) === 1, "deleted user left the login screen");
+  await gone.close();
+});
 
 await browser.close();
-summarize("New-user login");
+summarize("New user lifecycle");
