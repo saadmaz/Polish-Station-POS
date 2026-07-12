@@ -15,7 +15,7 @@ import {
   getInvoiceBalance,
   describePaymentMethods,
   calcTax,
-  TAX_LABEL,
+  taxLabel,
 } from "@/lib/db";
 import { downloadInvoicePDF, downloadQuotationPDF } from "@/lib/pdf";
 import { newId } from "@/lib/db";
@@ -50,6 +50,7 @@ function POS() {
     voidInvoice,
     notificationSettingsData,
     recordNotification,
+    businessInfo,
   } = useStore();
   const { staff } = useAuth();
 
@@ -127,7 +128,7 @@ function POS() {
   const depositPaid = selectedJob?.depositPaid ?? 0;
 
   const subtotal = lines.reduce((s, l) => s + l.unitPrice * l.qty - l.discount, 0);
-  const tax = calcTax(subtotal);
+  const tax = calcTax(subtotal, businessInfo.vatRate);
   const total = subtotal + tax + tip;
   const balanceDue = Math.max(0, total - depositPaid);
   const tendered = tenderLines.reduce((s, l) => s + l.amount, 0);
@@ -149,7 +150,7 @@ function POS() {
     toast.success(`Quotation ${quoteId} downloaded`);
   }
 
-  function handleCharge() {
+  async function handleCharge() {
     if (lines.length === 0) {
       toast.error("Add at least one line item");
       return;
@@ -166,7 +167,7 @@ function POS() {
     setCharging(true);
 
     const now = new Date().toISOString();
-    const inv = addInvoice({
+    const inv = await addInvoice({
       jobId: selectedJobId,
       customerId,
       customerName: customerName || "Guest",
@@ -340,69 +341,71 @@ function POS() {
             </div>
           </div>
           {lines.length > 0 ? (
-            <table className="w-full text-sm">
-              <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                <tr className="border-b border-border">
-                  <th className="text-left px-4 py-2">Item</th>
-                  <th className="text-right px-3 py-2 w-16">Qty</th>
-                  <th className="text-right px-3 py-2 w-28">Unit</th>
-                  <th className="text-right px-3 py-2 w-28">Disc.</th>
-                  <th className="text-right px-3 py-2 w-32">Total</th>
-                  <th className="w-10" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {lines.map((l) => (
-                  <tr key={l.key}>
-                    <td className="px-4 py-2">
-                      <input
-                        className="w-full bg-transparent text-sm font-medium focus:outline-none"
-                        value={l.name}
-                        onChange={(e) => updateLine(l.key, "name", e.target.value)}
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input
-                        type="number"
-                        min={1}
-                        className="w-14 rounded bg-muted px-2 py-1 text-right text-sm font-mono focus:outline-none"
-                        value={l.qty}
-                        onChange={(e) => updateLine(l.key, "qty", Number(e.target.value))}
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input
-                        type="number"
-                        min={0}
-                        className="w-24 rounded bg-muted px-2 py-1 text-right text-sm font-mono focus:outline-none"
-                        value={l.unitPrice}
-                        onChange={(e) => updateLine(l.key, "unitPrice", Number(e.target.value))}
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input
-                        type="number"
-                        min={0}
-                        className="w-24 rounded bg-muted px-2 py-1 text-right text-sm font-mono text-primary focus:outline-none"
-                        value={l.discount}
-                        onChange={(e) => updateLine(l.key, "discount", Number(e.target.value))}
-                      />
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono font-semibold">
-                      {(l.unitPrice * l.qty - l.discount).toLocaleString()}
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      <button
-                        onClick={() => removeLine(l.key)}
-                        className="text-muted-foreground hover:text-primary"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                  <tr className="border-b border-border">
+                    <th className="text-left px-4 py-2">Item</th>
+                    <th className="text-right px-3 py-2 w-16">Qty</th>
+                    <th className="text-right px-3 py-2 w-28">Unit</th>
+                    <th className="text-right px-3 py-2 w-28">Disc.</th>
+                    <th className="text-right px-3 py-2 w-32">Total</th>
+                    <th className="w-10" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {lines.map((l) => (
+                    <tr key={l.key}>
+                      <td className="px-4 py-2">
+                        <input
+                          className="w-full bg-transparent text-sm font-medium focus:outline-none"
+                          value={l.name}
+                          onChange={(e) => updateLine(l.key, "name", e.target.value)}
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="number"
+                          min={1}
+                          className="w-14 rounded bg-muted px-2 py-1 text-right text-sm font-mono focus:outline-none"
+                          value={l.qty}
+                          onChange={(e) => updateLine(l.key, "qty", Number(e.target.value))}
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="number"
+                          min={0}
+                          className="w-24 rounded bg-muted px-2 py-1 text-right text-sm font-mono focus:outline-none"
+                          value={l.unitPrice}
+                          onChange={(e) => updateLine(l.key, "unitPrice", Number(e.target.value))}
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="number"
+                          min={0}
+                          className="w-24 rounded bg-muted px-2 py-1 text-right text-sm font-mono text-primary focus:outline-none"
+                          value={l.discount}
+                          onChange={(e) => updateLine(l.key, "discount", Number(e.target.value))}
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono font-semibold">
+                        {(l.unitPrice * l.qty - l.discount).toLocaleString()}
+                      </td>
+                      <td className="px-2 py-2 text-right">
+                        <button
+                          onClick={() => removeLine(l.key)}
+                          className="text-muted-foreground hover:text-primary"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : (
             <div className="text-center text-sm text-muted-foreground py-10">
               Select a job above or add line items manually
@@ -415,7 +418,7 @@ function POS() {
           <h3 className="font-display text-sm font-bold mb-3 uppercase tracking-wider text-muted-foreground">
             Recent Invoices
           </h3>
-          <div className="rounded-xl border border-border bg-card shadow-card overflow-hidden">
+          <div className="rounded-xl border border-border bg-card shadow-card overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-charcoal text-charcoal-foreground text-[11px] uppercase tracking-wider">
                 <tr>
@@ -557,7 +560,7 @@ function POS() {
 
         <div className="space-y-2 text-sm border-y border-border py-4">
           <Row label="Subtotal" value={`LKR ${subtotal.toLocaleString()}`} />
-          <Row label={TAX_LABEL} value={`LKR ${tax.toLocaleString()}`} />
+          <Row label={taxLabel(businessInfo.vatRate)} value={`LKR ${tax.toLocaleString()}`} />
           <Row label="Tip" value={`LKR ${tip.toLocaleString()}`} />
           {depositPaid > 0 && (
             <div className="flex justify-between text-success font-medium pt-1 border-t border-border">

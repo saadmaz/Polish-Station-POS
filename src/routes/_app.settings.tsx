@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
 import { AccessPanel } from "@/components/access-panel";
 import { useStore } from "@/lib/store";
 import * as db from "@/lib/db";
-import type { Service, ServiceCategory } from "@/lib/db";
+import type { BusinessInfo, Service, ServiceCategory } from "@/lib/db";
 import {
   Building2,
   Tag,
@@ -122,41 +122,32 @@ function SectionTitle({ title, desc }: { title: string; desc: string }) {
   );
 }
 
-const BIZ_KEY = "ps_business_info";
-const BIZ_DEFAULTS = {
-  name: "Polish Station (Pvt) Ltd",
-  trading: "Polish Station",
-  vat: "VAT-184220985-7000",
-  phone: "+94 11 250 8821",
-  email: "hello@polishstation.lk",
-  address: "No. 142, Havelock Rd, Colombo 05",
-  hours: "Mon–Sat · 08:00–18:00",
-  vatRate: "18%",
-};
-type BizInfo = typeof BIZ_DEFAULTS;
-
-function loadBiz(): BizInfo {
-  try {
-    return { ...BIZ_DEFAULTS, ...JSON.parse(localStorage.getItem(BIZ_KEY) ?? "{}") };
-  } catch {
-    return BIZ_DEFAULTS;
-  }
-}
-
+// Stored in the settings/business Firestore doc (shared by every till and
+// consumed by POS tax math + PDF letterheads), not per-device localStorage.
 function BusinessPanel() {
-  const [form, setForm] = useState<BizInfo>(loadBiz);
+  const { businessInfo, saveBusinessInfo } = useStore();
+  const [form, setForm] = useState<BusinessInfo>(businessInfo);
+  const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  function set(k: keyof BizInfo, v: string) {
+  // Follow remote updates (another till saving) until this form is touched.
+  useEffect(() => {
+    if (!dirty) setForm(businessInfo);
+  }, [businessInfo, dirty]);
+
+  function set(k: keyof BusinessInfo, v: string | number) {
     setForm((f) => ({ ...f, [k]: v }));
+    setDirty(true);
     setSaved(false);
   }
   function save() {
-    localStorage.setItem(BIZ_KEY, JSON.stringify(form));
+    saveBusinessInfo(form);
+    setDirty(false);
     setSaved(true);
   }
   function reset() {
-    setForm(loadBiz());
+    setForm(businessInfo);
+    setDirty(false);
     setSaved(false);
   }
 
@@ -164,7 +155,7 @@ function BusinessPanel() {
     <>
       <SectionTitle
         title="Business"
-        desc="Information used on invoices and customer-facing communications."
+        desc="Shared across all devices — used on invoices, PDFs and for the VAT rate charged at checkout."
       />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {(
@@ -176,8 +167,7 @@ function BusinessPanel() {
             ["Email", "email"],
             ["Address", "address"],
             ["Opening Hours", "hours"],
-            ["VAT Rate", "vatRate"],
-          ] as [string, keyof BizInfo][]
+          ] as [string, Exclude<keyof BusinessInfo, "vatRate">][]
         ).map(([label, key]) => (
           <label key={key} className="block">
             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -190,6 +180,26 @@ function BusinessPanel() {
             />
           </label>
         ))}
+        <label className="block">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            VAT Rate (%)
+          </span>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step={0.5}
+            value={form.vatRate}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              set("vatRate", Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0);
+            }}
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+          />
+          <span className="mt-1 block text-[11px] text-muted-foreground">
+            Applied to every new POS checkout and printed on invoices/quotations.
+          </span>
+        </label>
       </div>
       <div className="mt-6 flex items-center gap-2 justify-end">
         {saved && <span className="text-xs text-success font-medium">Saved ✓</span>}
@@ -327,45 +337,47 @@ function CatalogPanel() {
         </div>
       )}
 
-      <table className="w-full text-sm">
-        <thead className="text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
-          <tr>
-            <th className="text-left py-2">Service</th>
-            <th className="text-left py-2">Category</th>
-            <th className="text-right py-2">Duration</th>
-            <th className="text-right py-2">Price</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {services.map((s) => (
-            <tr key={s.id}>
-              <td className="py-3 font-medium">{s.name}</td>
-              <td className="py-3 text-muted-foreground">{s.category}</td>
-              <td className="py-3 text-right font-mono">{s.durationMin}m</td>
-              <td className="py-3 text-right font-mono font-semibold">
-                LKR {s.price.toLocaleString()}
-              </td>
-              <td className="py-3 text-right flex gap-2 justify-end">
-                <button
-                  onClick={() => openEdit(s)}
-                  className="text-xs text-primary hover:underline"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => {
-                    if (confirm(`Delete "${s.name}"?`)) deleteService(s.id);
-                  }}
-                  className="text-xs text-destructive hover:underline"
-                >
-                  Del
-                </button>
-              </td>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
+            <tr>
+              <th className="text-left py-2">Service</th>
+              <th className="text-left py-2">Category</th>
+              <th className="text-right py-2">Duration</th>
+              <th className="text-right py-2">Price</th>
+              <th />
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {services.map((s) => (
+              <tr key={s.id}>
+                <td className="py-3 font-medium">{s.name}</td>
+                <td className="py-3 text-muted-foreground">{s.category}</td>
+                <td className="py-3 text-right font-mono">{s.durationMin}m</td>
+                <td className="py-3 text-right font-mono font-semibold">
+                  LKR {s.price.toLocaleString()}
+                </td>
+                <td className="py-3 text-right flex gap-2 justify-end">
+                  <button
+                    onClick={() => openEdit(s)}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (confirm(`Delete "${s.name}"?`)) deleteService(s.id);
+                    }}
+                    className="text-xs text-destructive hover:underline"
+                  >
+                    Del
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <div className="mt-4 flex justify-end">
         <button
           onClick={openAdd}
@@ -630,38 +642,40 @@ function AuditPanel() {
           No audit events recorded yet.
         </p>
       ) : (
-        <table className="w-full text-sm">
-          <thead className="text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
-            <tr>
-              <th className="text-left py-2">Time</th>
-              <th className="text-left py-2">User</th>
-              <th className="text-left py-2">Entity</th>
-              <th className="text-left py-2">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {events.slice(0, 50).map((e) => (
-              <tr key={e.id}>
-                <td className="py-2.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
-                  {new Date(e.createdAt).toLocaleString([], {
-                    day: "numeric",
-                    month: "short",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </td>
-                <td className="py-2.5 font-medium">{e.staffName || e.staffId || "—"}</td>
-                <td className="py-2.5">
-                  <StatusChip variant="neutral">{e.entity}</StatusChip>
-                </td>
-                <td className="py-2.5 text-muted-foreground">
-                  {e.action.replace(/_/g, " ")}
-                  {e.entityId ? ` · ${e.entityId}` : ""}
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
+              <tr>
+                <th className="text-left py-2">Time</th>
+                <th className="text-left py-2">User</th>
+                <th className="text-left py-2">Entity</th>
+                <th className="text-left py-2">Action</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {events.slice(0, 50).map((e) => (
+                <tr key={e.id}>
+                  <td className="py-2.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
+                    {new Date(e.createdAt).toLocaleString([], {
+                      day: "numeric",
+                      month: "short",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </td>
+                  <td className="py-2.5 font-medium">{e.staffName || e.staffId || "—"}</td>
+                  <td className="py-2.5">
+                    <StatusChip variant="neutral">{e.entity}</StatusChip>
+                  </td>
+                  <td className="py-2.5 text-muted-foreground">
+                    {e.action.replace(/_/g, " ")}
+                    {e.entityId ? ` · ${e.entityId}` : ""}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </>
   );

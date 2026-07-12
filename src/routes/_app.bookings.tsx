@@ -464,96 +464,98 @@ function Bookings() {
 
         {/* List view */}
         {view === "list" && (
-          <table className="w-full text-sm">
-            <thead className="bg-charcoal text-charcoal-foreground text-[11px] uppercase tracking-wider">
-              <tr>
-                <th className="text-left px-5 py-2.5">Time</th>
-                <th className="text-left px-3 py-2.5">Customer</th>
-                <th className="text-left px-3 py-2.5">Vehicle</th>
-                <th className="text-left px-3 py-2.5">Service</th>
-                <th className="text-left px-3 py-2.5">Tech</th>
-                <th className="text-right px-3 py-2.5">Price</th>
-                <th className="text-left px-3 py-2.5">Deposit</th>
-                <th className="text-left px-3 py-2.5">Status</th>
-                <th className="w-28 px-3 py-2.5" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {bookings
-                .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
-                .map((b) => (
-                  <tr key={b.id} className="hover:bg-muted/40">
-                    <td className="px-5 py-3 font-mono text-xs">
-                      <div>{b.date}</div>
-                      <div className="text-muted-foreground">{b.time}</div>
-                    </td>
-                    <td className="px-3 py-3 font-medium">{b.customerName}</td>
-                    <td className="px-3 py-3">
-                      <div className="font-mono text-xs">{b.plate}</div>
-                      <div className="text-muted-foreground text-xs">{b.vehicleModel}</div>
-                    </td>
-                    <td className="px-3 py-3">{b.serviceName}</td>
-                    <td className="px-3 py-3 text-muted-foreground">{b.tech}</td>
-                    <td className="px-3 py-3 text-right font-mono font-semibold">
-                      LKR {b.price.toLocaleString()}
-                    </td>
-                    <td className="px-3 py-3">
-                      {b.depositStatus && b.depositStatus !== "none" && (
-                        <span
-                          className={cn(
-                            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                            b.depositStatus === "paid"
-                              ? "bg-success/10 text-success"
-                              : "bg-warning/10 text-warning",
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-charcoal text-charcoal-foreground text-[11px] uppercase tracking-wider">
+                <tr>
+                  <th className="text-left px-5 py-2.5">Time</th>
+                  <th className="text-left px-3 py-2.5">Customer</th>
+                  <th className="text-left px-3 py-2.5">Vehicle</th>
+                  <th className="text-left px-3 py-2.5">Service</th>
+                  <th className="text-left px-3 py-2.5">Tech</th>
+                  <th className="text-right px-3 py-2.5">Price</th>
+                  <th className="text-left px-3 py-2.5">Deposit</th>
+                  <th className="text-left px-3 py-2.5">Status</th>
+                  <th className="w-28 px-3 py-2.5" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {bookings
+                  .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
+                  .map((b) => (
+                    <tr key={b.id} className="hover:bg-muted/40">
+                      <td className="px-5 py-3 font-mono text-xs">
+                        <div>{b.date}</div>
+                        <div className="text-muted-foreground">{b.time}</div>
+                      </td>
+                      <td className="px-3 py-3 font-medium">{b.customerName}</td>
+                      <td className="px-3 py-3">
+                        <div className="font-mono text-xs">{b.plate}</div>
+                        <div className="text-muted-foreground text-xs">{b.vehicleModel}</div>
+                      </td>
+                      <td className="px-3 py-3">{b.serviceName}</td>
+                      <td className="px-3 py-3 text-muted-foreground">{b.tech}</td>
+                      <td className="px-3 py-3 text-right font-mono font-semibold">
+                        LKR {b.price.toLocaleString()}
+                      </td>
+                      <td className="px-3 py-3">
+                        {b.depositStatus && b.depositStatus !== "none" && (
+                          <span
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                              b.depositStatus === "paid"
+                                ? "bg-success/10 text-success"
+                                : "bg-warning/10 text-warning",
+                            )}
+                          >
+                            <Banknote className="h-3 w-3" />
+                            {b.depositStatus === "paid" ? "Dep. Paid" : "Dep. Req."}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3">
+                        <StatusChip variant={statusVariant(b.status)}>{b.status}</StatusChip>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-1">
+                          {b.depositStatus === "required" && (
+                            <button
+                              onClick={() => handleMarkDepositPaid(b.id)}
+                              className="rounded p-1.5 text-warning hover:bg-warning/10"
+                              title="Mark deposit received"
+                            >
+                              <Banknote className="h-3.5 w-3.5" />
+                            </button>
                           )}
-                        >
-                          <Banknote className="h-3 w-3" />
-                          {b.depositStatus === "paid" ? "Dep. Paid" : "Dep. Req."}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-3">
-                      <StatusChip variant={statusVariant(b.status)}>{b.status}</StatusChip>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-1">
-                        {b.depositStatus === "required" && (
+                          {(b.status === "Confirmed" || b.status === "Pending") && (
+                            <button
+                              onClick={() => handleCheckin(b.id)}
+                              className="inline-flex items-center gap-1 rounded-md bg-success/10 border border-success/30 text-success px-2 py-1 text-xs font-semibold hover:bg-success/20"
+                              title="Check In"
+                            >
+                              <LogIn className="h-3 w-3" /> Check In
+                            </button>
+                          )}
                           <button
-                            onClick={() => handleMarkDepositPaid(b.id)}
-                            className="rounded p-1.5 text-warning hover:bg-warning/10"
-                            title="Mark deposit received"
+                            onClick={() => handleDelete(b.id)}
+                            className="rounded p-1.5 text-muted-foreground hover:text-primary hover:bg-muted"
                           >
-                            <Banknote className="h-3.5 w-3.5" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
-                        )}
-                        {(b.status === "Confirmed" || b.status === "Pending") && (
-                          <button
-                            onClick={() => handleCheckin(b.id)}
-                            className="inline-flex items-center gap-1 rounded-md bg-success/10 border border-success/30 text-success px-2 py-1 text-xs font-semibold hover:bg-success/20"
-                            title="Check In"
-                          >
-                            <LogIn className="h-3 w-3" /> Check In
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handleDelete(b.id)}
-                          className="rounded p-1.5 text-muted-foreground hover:text-primary hover:bg-muted"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                {bookings.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="text-center py-10 text-muted-foreground">
+                      No bookings yet
                     </td>
                   </tr>
-                ))}
-              {bookings.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="text-center py-10 text-muted-foreground">
-                    No bookings yet
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                )}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

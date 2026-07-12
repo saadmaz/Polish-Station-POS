@@ -20,6 +20,12 @@ import {
 type Service = BookableService;
 
 export const Route = createFileRoute("/book")({
+  head: () => ({
+    meta: [
+      { title: "Book an Appointment — Polish Station" },
+      { name: "description", content: "Book your car detailing appointment online." },
+    ],
+  }),
   component: BookPage,
 });
 
@@ -108,8 +114,8 @@ type Step = 1 | 2 | 3 | 4 | 5;
 function ProgressBar({ step }: { step: Step }) {
   const labels = ["Service", "Date", "Time", "Details"];
   return (
-    <div className="mb-8">
-      <div className="flex items-center">
+    <div className="mb-8" role="group" aria-label={`Booking progress: step ${step} of 4`}>
+      <div className="flex items-center" aria-hidden="true">
         {labels.map((label, i) => {
           const num = (i + 1) as Step;
           const done = step > num;
@@ -387,14 +393,18 @@ function DetailsStep({
 
       <div className="space-y-4">
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
+          <label htmlFor="bk-name" className="mb-1.5 block text-sm font-medium text-gray-700">
             Full Name <span className="text-red-500">*</span>
           </label>
           <input
+            id="bk-name"
             type="text"
+            autoComplete="name"
             value={form.name}
             onChange={(e) => onChange({ name: e.target.value })}
             placeholder="e.g. Roshan Fernando"
+            aria-invalid={!!errors.name}
+            aria-describedby={errors.name ? "bk-name-error" : undefined}
             className={cn(
               "w-full rounded-lg border px-3 py-2.5 text-sm outline-none transition-shadow focus:ring-2",
               errors.name
@@ -402,17 +412,25 @@ function DetailsStep({
                 : "border-gray-200 focus:border-red-400 focus:ring-red-100",
             )}
           />
-          {errors.name && <p className="mt-1 text-xs text-red-500">{errors.name}</p>}
+          {errors.name && (
+            <p id="bk-name-error" className="mt-1 text-xs text-red-500">
+              {errors.name}
+            </p>
+          )}
         </div>
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">
+          <label htmlFor="bk-phone" className="mb-1.5 block text-sm font-medium text-gray-700">
             Phone Number <span className="text-red-500">*</span>
           </label>
           <input
+            id="bk-phone"
             type="tel"
+            autoComplete="tel"
             value={form.phone}
             onChange={(e) => onChange({ phone: e.target.value })}
             placeholder="e.g. +94 77 123 4567"
+            aria-invalid={!!errors.phone}
+            aria-describedby={errors.phone ? "bk-phone-error" : undefined}
             className={cn(
               "w-full rounded-lg border px-3 py-2.5 text-sm outline-none transition-shadow focus:ring-2",
               errors.phone
@@ -420,12 +438,19 @@ function DetailsStep({
                 : "border-gray-200 focus:border-red-400 focus:ring-red-100",
             )}
           />
-          {errors.phone && <p className="mt-1 text-xs text-red-500">{errors.phone}</p>}
+          {errors.phone && (
+            <p id="bk-phone-error" className="mt-1 text-xs text-red-500">
+              {errors.phone}
+            </p>
+          )}
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">Vehicle Plate</label>
+            <label htmlFor="bk-plate" className="mb-1.5 block text-sm font-medium text-gray-700">
+              Vehicle Plate
+            </label>
             <input
+              id="bk-plate"
               type="text"
               value={form.plate}
               onChange={(e) => onChange({ plate: e.target.value.toUpperCase() })}
@@ -434,8 +459,11 @@ function DetailsStep({
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">Vehicle Model</label>
+            <label htmlFor="bk-model" className="mb-1.5 block text-sm font-medium text-gray-700">
+              Vehicle Model
+            </label>
             <input
+              id="bk-model"
               type="text"
               value={form.vehicleModel}
               onChange={(e) => onChange({ vehicleModel: e.target.value })}
@@ -445,8 +473,11 @@ function DetailsStep({
           </div>
         </div>
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">Special Requests</label>
+          <label htmlFor="bk-notes" className="mb-1.5 block text-sm font-medium text-gray-700">
+            Special Requests
+          </label>
           <textarea
+            id="bk-notes"
             value={form.notes}
             onChange={(e) => onChange({ notes: e.target.value })}
             placeholder="Any special instructions or requests?"
@@ -457,7 +488,10 @@ function DetailsStep({
       </div>
 
       {submitError && (
-        <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center text-sm text-red-600">
+        <p
+          role="alert"
+          className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-center text-sm text-red-600"
+        >
           {submitError}
         </p>
       )}

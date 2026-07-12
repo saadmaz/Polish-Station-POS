@@ -149,6 +149,40 @@ await check(
   assertFails(getDoc(doc(managerPos, "purchaseOrders/po1"))),
 );
 
+console.log("\nAudit log: append-only, attributed to the caller's own uid:");
+await check(
+  "audit create with own staffId succeeds",
+  assertSucceeds(setDoc(doc(cashierPos, "audit/a1"), { staffId: "cash2", action: "X" })),
+);
+await check(
+  "audit create attributed to ANOTHER uid is rejected",
+  assertFails(setDoc(doc(cashierPos, "audit/a2"), { staffId: "mgr", action: "X" })),
+);
+await check(
+  "audit create without staffId is rejected",
+  assertFails(setDoc(doc(cashierPos, "audit/a3"), { action: "X" })),
+);
+await check(
+  "audit entries can never be updated",
+  assertFails(setDoc(doc(admin, "audit/a1"), { staffId: "ad", action: "TAMPERED" })),
+);
+await check("audit entries can never be deleted", assertFails(deleteDoc(doc(admin, "audit/a1"))));
+
+console.log("\nSequential-ID counters:");
+await check(
+  "authed user can bump a counter",
+  assertSucceeds(setDoc(doc(cashierPos, "counters/invoices"), { next: 2091 })),
+);
+await check(
+  "anon cannot touch counters",
+  assertFails(setDoc(doc(anon, "counters/invoices"), { next: 1 })),
+);
+await check(
+  "counter value must be a positive int",
+  assertFails(setDoc(doc(cashierPos, "counters/invoices"), { next: "oops" })),
+);
+await check("counters cannot be deleted", assertFails(deleteDoc(doc(admin, "counters/invoices"))));
+
 await env.cleanup();
 
 console.log(`\n${fail === 0 ? "✅ ALL PASSED" : "❌ FAILURES"} — ${pass} passed, ${fail} failed\n`);

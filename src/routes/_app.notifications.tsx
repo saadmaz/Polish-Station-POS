@@ -123,7 +123,7 @@ function RemindersTab() {
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <div className="overflow-x-auto rounded-lg border border-border bg-card">
         <table className="w-full">
           <thead className="bg-muted/50">
             <tr>
@@ -280,7 +280,7 @@ function ReviewsTab() {
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-card">
+    <div className="overflow-x-auto rounded-lg border border-border bg-card">
       <table className="w-full">
         <thead className="bg-muted/50">
           <tr>

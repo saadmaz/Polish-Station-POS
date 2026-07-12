@@ -353,7 +353,7 @@ function Inventory() {
         </select>
       </div>
 
-      <div className="rounded-xl border border-border bg-card shadow-card overflow-hidden">
+      <div className="rounded-xl border border-border bg-card shadow-card overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-charcoal text-charcoal-foreground text-[11px] uppercase tracking-wider">
             <tr>

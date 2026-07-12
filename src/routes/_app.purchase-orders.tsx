@@ -163,7 +163,7 @@ function CreatePOForm({
 
       {/* Lines table */}
       {lines.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-border">
+        <div className="overflow-x-auto rounded-lg border border-border">
           <table className="w-full text-sm">
             <thead className="bg-muted/50">
               <tr>
@@ -300,56 +300,58 @@ function ReceivePanel({
           Set all to ordered qty
         </button>
       </div>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="bg-muted/50">
-            <th className="px-3 py-1.5 text-left text-xs font-medium text-muted-foreground">
-              Item
-            </th>
-            <th className="px-3 py-1.5 text-center text-xs font-medium text-muted-foreground">
-              Ordered
-            </th>
-            <th className="px-3 py-1.5 text-center text-xs font-medium text-muted-foreground">
-              Already Received
-            </th>
-            <th className="px-3 py-1.5 text-center text-xs font-medium text-muted-foreground">
-              Receiving Now
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {po.lines.map((l) => {
-            const remaining = l.qtyOrdered - l.qtyReceived;
-            return (
-              <tr key={l.inventoryItemId} className="border-t border-border">
-                <td className="px-3 py-2">
-                  <div className="font-medium">{l.itemName}</div>
-                  <div className="text-xs text-muted-foreground">{l.sku}</div>
-                </td>
-                <td className="px-3 py-2 text-center">
-                  {l.qtyOrdered} {l.unit}
-                </td>
-                <td className="px-3 py-2 text-center text-muted-foreground">{l.qtyReceived}</td>
-                <td className="px-3 py-2 text-center">
-                  <input
-                    type="number"
-                    min={0}
-                    max={remaining}
-                    className={inp}
-                    value={received[l.inventoryItemId] ?? 0}
-                    onChange={(e) =>
-                      setReceived((r) => ({
-                        ...r,
-                        [l.inventoryItemId]: Math.min(remaining, parseInt(e.target.value) || 0),
-                      }))
-                    }
-                  />
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-muted/50">
+              <th className="px-3 py-1.5 text-left text-xs font-medium text-muted-foreground">
+                Item
+              </th>
+              <th className="px-3 py-1.5 text-center text-xs font-medium text-muted-foreground">
+                Ordered
+              </th>
+              <th className="px-3 py-1.5 text-center text-xs font-medium text-muted-foreground">
+                Already Received
+              </th>
+              <th className="px-3 py-1.5 text-center text-xs font-medium text-muted-foreground">
+                Receiving Now
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {po.lines.map((l) => {
+              const remaining = l.qtyOrdered - l.qtyReceived;
+              return (
+                <tr key={l.inventoryItemId} className="border-t border-border">
+                  <td className="px-3 py-2">
+                    <div className="font-medium">{l.itemName}</div>
+                    <div className="text-xs text-muted-foreground">{l.sku}</div>
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    {l.qtyOrdered} {l.unit}
+                  </td>
+                  <td className="px-3 py-2 text-center text-muted-foreground">{l.qtyReceived}</td>
+                  <td className="px-3 py-2 text-center">
+                    <input
+                      type="number"
+                      min={0}
+                      max={remaining}
+                      className={inp}
+                      value={received[l.inventoryItemId] ?? 0}
+                      onChange={(e) =>
+                        setReceived((r) => ({
+                          ...r,
+                          [l.inventoryItemId]: Math.min(remaining, parseInt(e.target.value) || 0),
+                        }))
+                      }
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
       <div className="flex justify-end gap-2">
         <button
           type="button"
@@ -487,7 +489,7 @@ function PORow({ po }: { po: PurchaseOrder }) {
             </div>
 
             {/* Lines table */}
-            <div className="overflow-hidden rounded-lg border border-border mb-3">
+            <div className="overflow-x-auto rounded-lg border border-border mb-3">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50">
                   <tr>
@@ -769,7 +771,7 @@ function PurchaseOrdersPage() {
       </div>
 
       {/* Table */}
-      <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <div className="overflow-x-auto rounded-lg border border-border bg-card">
         <table className="w-full">
           <thead className="bg-muted/50">
             <tr>

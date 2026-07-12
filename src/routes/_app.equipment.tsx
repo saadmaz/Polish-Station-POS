@@ -528,7 +528,7 @@ function EquipmentRow({ eq }: { eq: Equipment }) {
                 No maintenance records yet.
               </p>
             ) : (
-              <div className="mt-2 overflow-hidden rounded-lg border border-border">
+              <div className="mt-2 overflow-x-auto rounded-lg border border-border">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-muted/50">
@@ -723,7 +723,7 @@ function EquipmentPage() {
       </div>
 
       {/* Table */}
-      <div className="overflow-hidden rounded-lg border border-border bg-card">
+      <div className="overflow-x-auto rounded-lg border border-border bg-card">
         <table className="w-full">
           <thead className="bg-muted/50">
             <tr>

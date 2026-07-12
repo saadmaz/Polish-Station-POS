@@ -221,12 +221,65 @@ export interface Invoice {
   refunds?: RefundRecord[];
 }
 
-// Single source of truth for the VAT rate charged at checkout and printed on
-// invoices/quotations. If this ever needs to change, POS totals and PDF
-// documents must move together — that's why nothing hardcodes 0.18 anymore.
-export const TAX_RATE = 0.18;
-export const TAX_LABEL = `VAT ${Math.round(TAX_RATE * 100)}%`;
-export const calcTax = (subtotal: number): number => Math.round(subtotal * TAX_RATE);
+// ─── Business info (settings/business Firestore doc) ────────────────────────
+// Single source of truth for the letterhead details and the VAT rate charged
+// at checkout and printed on invoices/quotations. Lives in Firestore so every
+// till shows the same rate; the store keeps this module-level cache in sync so
+// non-React code (the PDF builders) reads the same values the UI charges.
+
+export interface BusinessInfo {
+  name: string;
+  trading: string;
+  vat: string; // VAT registration number, printed on invoices
+  phone: string;
+  email: string;
+  address: string;
+  hours: string;
+  vatRate: number; // percent, e.g. 18
+}
+
+export const DEFAULT_BUSINESS_INFO: BusinessInfo = {
+  name: "Polish Station (Pvt) Ltd",
+  trading: "Polish Station",
+  vat: "VAT-184220985-7000",
+  phone: "+94 11 250 8821",
+  email: "hello@polishstation.lk",
+  address: "No. 142, Havelock Rd, Colombo 05",
+  hours: "Mon–Sat · 08:00–18:00",
+  vatRate: 18,
+};
+
+/** Coerce an untrusted doc/localStorage shape into a safe BusinessInfo. */
+export function sanitizeBusinessInfo(input: unknown): BusinessInfo {
+  const d = (typeof input === "object" && input !== null ? input : {}) as Record<string, unknown>;
+  const str = (k: keyof BusinessInfo) =>
+    typeof d[k] === "string" ? (d[k] as string) : DEFAULT_BUSINESS_INFO[k as "name"];
+  const rate = Number(d.vatRate);
+  return {
+    name: str("name"),
+    trading: str("trading"),
+    vat: str("vat"),
+    phone: str("phone"),
+    email: str("email"),
+    address: str("address"),
+    hours: str("hours"),
+    vatRate:
+      Number.isFinite(rate) && rate >= 0 && rate <= 100 ? rate : DEFAULT_BUSINESS_INFO.vatRate,
+  };
+}
+
+let businessInfoCache = DEFAULT_BUSINESS_INFO;
+/** Called by the store whenever the settings/business doc changes. */
+export function setBusinessInfoCache(b: BusinessInfo): void {
+  businessInfoCache = b;
+}
+export function getBusinessInfo(): BusinessInfo {
+  return businessInfoCache;
+}
+
+export const calcTax = (subtotal: number, ratePct = businessInfoCache.vatRate): number =>
+  Math.round(subtotal * (ratePct / 100));
+export const taxLabel = (ratePct = businessInfoCache.vatRate): string => `VAT ${ratePct}%`;
 
 // ─── Payment/refund derived helpers ─────────────────────────────────────────
 // Invoices written before this feature shipped have no `payments` array —

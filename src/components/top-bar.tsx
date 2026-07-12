@@ -1,4 +1,4 @@
-import { Search, Plus, MapPin, Activity, Banknote } from "lucide-react";
+import { Search, Plus, MapPin, Activity, Banknote, Menu } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SearchPalette } from "@/components/search-palette";
 import { WalkInSheet } from "@/components/walk-in-sheet";
@@ -6,6 +6,7 @@ import { BookingSheet } from "@/components/booking-sheet";
 import { NotificationsPopover } from "@/components/notifications-popover";
 import { ShiftModal } from "@/components/shift-modal";
 import { ExpenseModal } from "@/components/expense-modal";
+import { MobileNavSheet } from "@/components/app-sidebar";
 import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +17,7 @@ export function TopBar() {
   const [bookingOpen, setBookingOpen] = useState(false);
   const [shiftOpen, setShiftOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const { openShift, lowStockItems } = useStore();
 
@@ -27,14 +29,23 @@ export function TopBar() {
 
   return (
     <>
-      <header className="flex h-14 items-center gap-4 border-b border-border bg-background px-5">
+      <header className="flex h-14 items-center gap-2 sm:gap-4 border-b border-border bg-background px-3 sm:px-5">
+        {/* Phone: the sidebar is hidden, so navigation lives behind this. */}
+        <button
+          onClick={() => setMobileNavOpen(true)}
+          aria-label="Open navigation menu"
+          className="md:hidden rounded-md p-2 -ml-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+
         <div className="flex items-center gap-2 text-sm">
-          <MapPin className="h-4 w-4 text-primary" />
-          <span className="font-semibold">Polish Station</span>
-          <span className="text-muted-foreground">| Dehiwala</span>
+          <MapPin className="h-4 w-4 text-primary shrink-0" />
+          <span className="font-semibold hidden sm:inline">Polish Station</span>
+          <span className="text-muted-foreground hidden lg:inline">| Dehiwala</span>
         </div>
 
-        <div className="mx-4 flex-1 max-w-md">
+        <div className="mx-2 sm:mx-4 flex-1 max-w-md hidden sm:block">
           <button
             onClick={() => setSearchOpen(true)}
             className="flex w-full items-center gap-2 rounded-md border border-input bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted/70 transition-colors"
@@ -46,6 +57,14 @@ export function TopBar() {
             </kbd>
           </button>
         </div>
+        <div className="flex-1 sm:hidden" />
+        <button
+          onClick={() => setSearchOpen(true)}
+          aria-label="Search"
+          className="sm:hidden rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <Search className="h-5 w-5" />
+        </button>
 
         <div className="flex items-center gap-2">
           {/* Shift status pill */}
@@ -117,6 +136,7 @@ export function TopBar() {
       <BookingSheet open={bookingOpen} onOpenChange={setBookingOpen} />
       <ShiftModal open={shiftOpen} onOpenChange={setShiftOpen} />
       <ExpenseModal open={expenseOpen} onClose={() => setExpenseOpen(false)} />
+      <MobileNavSheet open={mobileNavOpen} onOpenChange={setMobileNavOpen} />
     </>
   );
 }

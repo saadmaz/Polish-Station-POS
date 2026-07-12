@@ -21,6 +21,11 @@ import {
   onSnapshot,
   writeBatch,
   addDoc,
+  runTransaction,
+  query,
+  orderBy,
+  limit,
+  type Query,
   type Unsubscribe,
 } from "firebase/firestore";
 import { db as fsDb } from "./firebase";
@@ -30,8 +35,12 @@ import {
   calcTier,
   getQCTemplate,
   DEFAULT_NOTIFICATION_SETTINGS,
+  DEFAULT_BUSINESS_INFO,
+  sanitizeBusinessInfo,
+  setBusinessInfoCache,
   getPayments,
   getAmountPaid,
+  type BusinessInfo,
 } from "./db";
 import type {
   AuditLog,
@@ -60,9 +69,39 @@ import type {
 
 // ── ID helpers ────────────────────────────────────────────────────────────────
 
-function nextSeqId(items: { id: string }[], prefix: string, startAt: number): string {
+function localNextSeq(items: { id: string }[], prefix: string, startAt: number): number {
   const nums = items.map((i) => parseInt(i.id.replace(prefix, ""), 10)).filter((n) => !isNaN(n));
-  return `${prefix}${nums.length > 0 ? Math.max(...nums) + 1 : startAt}`;
+  return nums.length > 0 ? Math.max(...nums) + 1 : startAt;
+}
+
+/**
+ * Allocate the next sequential id ("INV-2091") from a counters/{name} doc in a
+ * Firestore transaction, so two tills charging at the same moment can never
+ * mint the same id and silently overwrite each other's document. The local max
+ * is used as a floor (self-heals a missing or backwards counter) and as the
+ * fallback when the transaction can't run at all (offline) — which degrades to
+ * the previous single-till behavior instead of blocking the sale.
+ */
+async function nextSeqId(
+  counterName: string,
+  prefix: string,
+  items: { id: string }[],
+  startAt: number,
+): Promise<string> {
+  const localNext = localNextSeq(items, prefix, startAt);
+  try {
+    return await runTransaction(fsDb, async (tx) => {
+      const ref = fd("counters", counterName);
+      const snap = await tx.get(ref);
+      const stored = snap.exists() ? Number(snap.data().next) : 0;
+      const n = Math.max(Number.isFinite(stored) ? stored : 0, localNext);
+      tx.set(ref, { next: n + 1 });
+      return `${prefix}${n}`;
+    });
+  } catch (err) {
+    console.error(`[store] counter "${counterName}" unavailable — local allocation:`, err);
+    return `${prefix}${localNext}`;
+  }
 }
 
 function newId(): string {
@@ -105,7 +144,9 @@ interface Store {
   deleteMaintenanceLog: (id: string) => void;
 
   // Purchase Orders
-  addPurchaseOrder: (po: Omit<PurchaseOrder, "id" | "poNumber" | "createdAt">) => PurchaseOrder;
+  addPurchaseOrder: (
+    po: Omit<PurchaseOrder, "id" | "poNumber" | "createdAt">,
+  ) => Promise<PurchaseOrder>;
   updatePurchaseOrder: (po: PurchaseOrder) => void;
   deletePurchaseOrder: (id: string) => void;
   receivePO: (
@@ -122,7 +163,9 @@ interface Store {
   recordNotification: (n: Omit<SentNotification, "id" | "sentAt">) => SentNotification;
 
   // Jobs
-  addJob: (j: Omit<Job, "id" | "createdAt" | "startedAt" | "completedAt" | "elapsedMin">) => Job;
+  addJob: (
+    j: Omit<Job, "id" | "createdAt" | "startedAt" | "completedAt" | "elapsedMin">,
+  ) => Promise<Job>;
   updateJob: (j: Job) => void;
   deleteJob: (id: string) => void;
   moveJob: (id: string, status: JobStatus, tech?: string, bay?: string) => void;
@@ -138,10 +181,10 @@ interface Store {
   deleteCustomer: (id: string) => void;
 
   // Bookings
-  addBooking: (b: Omit<Booking, "id" | "createdAt">) => Booking;
+  addBooking: (b: Omit<Booking, "id" | "createdAt">) => Promise<Booking>;
   updateBooking: (b: Booking) => void;
   deleteBooking: (id: string) => void;
-  checkinBooking: (id: string) => void;
+  checkinBooking: (id: string) => Promise<void>;
   markDepositPaid: (bookingId: string) => void;
 
   // Services
@@ -153,12 +196,16 @@ interface Store {
   deleteInventoryItem: (id: string) => void;
   adjustStock: (id: string, delta: number) => void;
 
+  // Business info (settings/business doc — letterhead + VAT rate)
+  businessInfo: BusinessInfo;
+  saveBusinessInfo: (b: BusinessInfo) => void;
+
   // Invoices
   addInvoice: (
     inv: Omit<Invoice, "id" | "createdAt" | "method" | "status" | "payments"> & {
       payments: Omit<PaymentRecord, "id">[];
     },
-  ) => Invoice;
+  ) => Promise<Invoice>;
   updateInvoice: (inv: Invoice) => void;
   voidInvoice: (id: string) => void;
   recordInvoicePayment: (invoiceId: string, payments: Omit<PaymentRecord, "id">[]) => void;
@@ -215,9 +262,18 @@ function remove(collPath: string, id: string): void {
   );
 }
 
-function logAudit(entry: Record<string, unknown>): void {
+// Audit entries always carry the *actor's* verified identity: firestore.rules
+// rejects a create whose staffId isn't the caller's own uid, so one staff
+// member can no longer write log lines attributed to another.
+function logAudit(
+  actor: { id: string; name: string } | null,
+  entry: { action: string; entity: string; entityId: string; before: unknown; after: unknown },
+): void {
+  if (!actor) return;
   addDoc(fs("audit"), {
     ...entry,
+    staffId: actor.id,
+    staffName: actor.name,
     id: newId(),
     createdAt: new Date().toISOString(),
   }).catch(() => {});
@@ -253,6 +309,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
   const [sentNotificationsList, setSentNotificationsList] = useState<SentNotification[]>([]);
   const [auditList, setAuditList] = useState<AuditLog[]>([]);
+  const [businessInfo, setBusinessInfo] = useState<BusinessInfo>(DEFAULT_BUSINESS_INFO);
+
+  // Actor identity for audit entries, read through a ref so the mutation
+  // callbacks don't have to re-create whenever the profile doc refreshes.
+  const actorRef = useRef<{ id: string; name: string } | null>(null);
+  actorRef.current = staff ? { id: staff.id, name: staff.name } : null;
 
   // Ref always holds latest state — safe to use in async mutations without stale closures
   const S = useRef({
@@ -319,6 +381,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const subs: Sub[] = [];
     const add = (fn: Sub) => subs.push(fn);
 
+    // Unbounded collections are capped: subscribe to the newest N and reverse
+    // back to ascending order (which is what every consumer historically
+    // assumed from the un-ordered reads). Without a cap, a year of trading
+    // makes every login download the shop's entire history. Anything older
+    // than the cap still exists in Firestore — it's just not streamed to every
+    // till on every login.
+    const newestFirst = (path: string, field: string, n: number): Query =>
+      query(fs(path), orderBy(field, "desc"), limit(n));
+
     // Always available to any signed-in user: firestore.rules gates these on
     // `isAuth()` alone, and the dashboard and job cards depend on them.
     add(() =>
@@ -343,9 +414,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
     add(() =>
       onSnapshot(
-        fs("jobs"),
+        newestFirst("jobs", "createdAt", 1000),
         (s) => {
-          setJobs(s.docs.map((d) => ({ id: d.id, ...d.data() }) as Job));
+          setJobs(s.docs.map((d) => ({ id: d.id, ...d.data() }) as Job).reverse());
           done();
         },
         fail("jobs"),
@@ -353,9 +424,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
     add(() =>
       onSnapshot(
-        fs("bookings"),
+        newestFirst("bookings", "createdAt", 1000),
         (s) => {
-          setBookings(s.docs.map((d) => ({ id: d.id, ...d.data() }) as Booking));
+          setBookings(s.docs.map((d) => ({ id: d.id, ...d.data() }) as Booking).reverse());
           done();
         },
         fail("bookings"),
@@ -373,9 +444,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
     add(() =>
       onSnapshot(
-        fs("expenses"),
+        newestFirst("expenses", "createdAt", 1000),
         (s) => {
-          setExpenses(s.docs.map((d) => ({ id: d.id, ...d.data() }) as Expense));
+          setExpenses(s.docs.map((d) => ({ id: d.id, ...d.data() }) as Expense).reverse());
           done();
         },
         fail("expenses"),
@@ -383,12 +454,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
     add(() =>
       onSnapshot(
-        fs("shifts"),
+        newestFirst("shifts", "openedAt", 400),
         (s) => {
-          setShifts(s.docs.map((d) => ({ id: d.id, ...d.data() }) as Shift));
+          setShifts(s.docs.map((d) => ({ id: d.id, ...d.data() }) as Shift).reverse());
           done();
         },
         fail("shifts"),
+      ),
+    );
+    add(() =>
+      onSnapshot(
+        fd("settings", "business"),
+        (s) => {
+          const info = s.exists() ? sanitizeBusinessInfo(s.data()) : DEFAULT_BUSINESS_INFO;
+          setBusinessInfo(info);
+          setBusinessInfoCache(info); // keeps calcTax/PDF letterhead in sync
+          done();
+        },
+        fail("settings/business"),
       ),
     );
     add(() =>
@@ -430,9 +513,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (allowed("pos"))
       add(() =>
         onSnapshot(
-          fs("invoices"),
+          newestFirst("invoices", "createdAt", 1000),
           (s) => {
-            setInvoices(s.docs.map((d) => ({ id: d.id, ...d.data() }) as Invoice));
+            setInvoices(s.docs.map((d) => ({ id: d.id, ...d.data() }) as Invoice).reverse());
             done();
           },
           fail("invoices"),
@@ -452,7 +535,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (allowed("notifications") && isManagerOrAbove(staff.role))
       add(() =>
         onSnapshot(
-          fs("sentNotifications"),
+          newestFirst("sentNotifications", "sentAt", 500),
           (s) => {
             setSentNotificationsList(
               s.docs.map((d) => ({ id: d.id, ...d.data() }) as SentNotification),
@@ -469,7 +552,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (isManagerOrAbove(staff.role))
       add(() =>
         onSnapshot(
-          fs("audit"),
+          newestFirst("audit", "createdAt", 200),
           (s) => {
             setAuditList(s.docs.map((d) => ({ id: d.id, ...d.data() }) as AuditLog));
             done();
@@ -577,22 +660,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // ── Job mutations ──────────────────────────────────────────────────────────
   const addJob = useCallback(
-    (data: Omit<Job, "id" | "createdAt" | "startedAt" | "completedAt" | "elapsedMin">): Job => {
+    async (
+      data: Omit<Job, "id" | "createdAt" | "startedAt" | "completedAt" | "elapsedMin">,
+    ): Promise<Job> => {
       const j: Job = {
         ...data,
-        id: nextSeqId(S.current.jobs, "J-", 1041),
+        id: await nextSeqId("jobs", "J-", S.current.jobs, 1041),
         createdAt: new Date().toISOString(),
         startedAt: null,
         completedAt: null,
         elapsedMin: 0,
       };
       write("jobs", j);
-      logAudit({
+      logAudit(actorRef.current, {
         action: "ADD_JOB",
         entity: "Job",
         entityId: j.id,
-        staffId: data.sessionId ?? "",
-        staffName: "",
         before: null,
         after: j,
       });
@@ -673,25 +756,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const deleteCustomer = useCallback((id: string) => remove("customers", id), []);
 
   // ── Booking mutations ──────────────────────────────────────────────────────
-  const addBooking = useCallback((data: Omit<Booking, "id" | "createdAt">): Booking => {
-    const b: Booking = {
-      ...data,
-      id: nextSeqId(S.current.bookings, "B-", 200),
-      createdAt: new Date().toISOString(),
-    };
-    write("bookings", b);
-    return b;
-  }, []);
+  const addBooking = useCallback(
+    async (data: Omit<Booking, "id" | "createdAt">): Promise<Booking> => {
+      const b: Booking = {
+        ...data,
+        id: await nextSeqId("bookings", "B-", S.current.bookings, 200),
+        createdAt: new Date().toISOString(),
+      };
+      write("bookings", b);
+      return b;
+    },
+    [],
+  );
 
   const updateBooking = useCallback((b: Booking) => write("bookings", b), []);
 
   const deleteBooking = useCallback((id: string) => remove("bookings", id), []);
 
-  const checkinBooking = useCallback((id: string) => {
+  const checkinBooking = useCallback(async (id: string) => {
     const b = S.current.bookings.find((x) => x.id === id);
     if (!b) return;
     const j: Job = {
-      id: nextSeqId(S.current.jobs, "J-", 1041),
+      id: await nextSeqId("jobs", "J-", S.current.jobs, 1041),
       customerId: b.customerId,
       customerName: b.customerName,
       phone: b.phone,
@@ -745,18 +831,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // ── Invoice mutations ──────────────────────────────────────────────────────
   const addInvoice = useCallback(
-    (
+    async (
       data: Omit<Invoice, "id" | "createdAt" | "method" | "status" | "payments"> & {
         payments: Omit<PaymentRecord, "id">[];
       },
-    ): Invoice => {
+    ): Promise<Invoice> => {
       const payments: PaymentRecord[] = data.payments.map((p) => ({ ...p, id: newId() }));
       const draft: Invoice = {
         ...data,
         payments,
         method: payments[0]?.method ?? "Cash",
         status: "Issued",
-        id: nextSeqId(S.current.invoices, "INV-", 2090),
+        id: await nextSeqId("invoices", "INV-", S.current.invoices, 2090),
         createdAt: new Date().toISOString(),
       };
       // getAmountPaid folds in any deposit already collected earlier, so a
@@ -798,7 +884,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const voidInvoice = useCallback((id: string) => {
     const inv = S.current.invoices.find((x) => x.id === id);
     if (!inv) return;
-    write("invoices", { ...inv, status: "Void" });
+    const voided = { ...inv, status: "Void" as const };
+    write("invoices", voided);
+    logAudit(actorRef.current, {
+      action: "VOID_INVOICE",
+      entity: "Invoice",
+      entityId: inv.id,
+      before: inv,
+      after: voided,
+    });
   }, []);
 
   // Takes ALL tender lines of one collection in a single call/write. Calling
@@ -846,6 +940,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       }
       batch.commit().catch((err) => console.error("[store] refundInvoicePayment:", err));
+      logAudit(actorRef.current, {
+        action: "REFUND_INVOICE",
+        entity: "Invoice",
+        entityId: invoiceId,
+        before: inv,
+        after: { refund },
+      });
       if (refund.sessionId) setTimeout(() => recalcShift(refund.sessionId!), 500);
     },
     [recalcShift],
@@ -896,12 +997,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         verifiedBy: null,
       };
       write("shifts", s);
-      logAudit({
+      logAudit(actorRef.current, {
         action: "OPEN_SHIFT",
         entity: "Shift",
         entityId: s.id,
-        staffId: data.staffId,
-        staffName: data.staffName,
         before: null,
         after: s,
       });
@@ -927,12 +1026,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         closedAt: new Date().toISOString(),
       };
       write("shifts", updated);
-      logAudit({
+      // Attributed to the actor closing the shift, which may legitimately be a
+      // manager rather than the cashier who opened it.
+      logAudit(actorRef.current, {
         action: "CLOSE_SHIFT",
         entity: "Shift",
         entityId: open.id,
-        staffId: open.staffId,
-        staffName: open.staffName,
         before: open,
         after: updated,
       });
@@ -970,8 +1069,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // ── Purchase Order mutations ───────────────────────────────────────────────
   const addPurchaseOrder = useCallback(
-    (data: Omit<PurchaseOrder, "id" | "poNumber" | "createdAt">): PurchaseOrder => {
-      const id = nextSeqId(S.current.purchaseOrdersList, "PO-", 1000);
+    async (data: Omit<PurchaseOrder, "id" | "poNumber" | "createdAt">): Promise<PurchaseOrder> => {
+      const id = await nextSeqId("purchaseOrders", "PO-", S.current.purchaseOrdersList, 1000);
       const po: PurchaseOrder = { ...data, id, poNumber: id, createdAt: new Date().toISOString() };
       write("purchaseOrders", po);
       return po;
@@ -1030,6 +1129,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  // ── Business info ──────────────────────────────────────────────────────────
+  // Write is gated by firestore.rules (Manager+ holding the settings module),
+  // same as the notification settings above.
+  const saveBusinessInfo = useCallback((b: BusinessInfo) => {
+    setDoc(fd("settings", "business"), sanitizeBusinessInfo(b)).catch((err) =>
+      console.error("[store] saveBusinessInfo:", err),
+    );
+  }, []);
+
   const recordNotification = useCallback(
     (n: Omit<SentNotification, "id" | "sentAt">): SentNotification => {
       const entry: SentNotification = { ...n, id: newId(), sentAt: new Date().toISOString() };
@@ -1076,6 +1184,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     jobsNeedingReview,
     saveNotificationSettings,
     recordNotification,
+    businessInfo,
+    saveBusinessInfo,
     addJob,
     updateJob,
     deleteJob,

@@ -1,6 +1,13 @@
 import jsPDF from "jspdf";
 import type { Invoice, InvoiceLine, Job, PurchaseOrder } from "./db";
-import { getPayments, getAmountRefunded, calcTax, TAX_LABEL } from "./db";
+import { getPayments, getAmountRefunded, calcTax, taxLabel, getBusinessInfo } from "./db";
+
+// Letterhead details come from the settings/business Firestore doc (cached in
+// db.ts by the store) so documents always print what Settings → Business says.
+const contactLine = () => {
+  const b = getBusinessInfo();
+  return `${b.address}  ·  ${b.phone}  ·  ${b.email}`;
+};
 
 // ─── Brand colours (RGB) ─────────────────────────────────────────────────────
 const RED: [number, number, number] = [210, 30, 30];
@@ -98,7 +105,7 @@ function buildDoc(opts: DocOptions): jsPDF {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(20);
   doc.setTextColor(...WHITE);
-  doc.text("POLISH STATION", ML, 16);
+  doc.text(getBusinessInfo().trading.toUpperCase(), ML, 16);
 
   // Tagline
   doc.setFont("helvetica", "normal");
@@ -109,12 +116,8 @@ function buildDoc(opts: DocOptions): jsPDF {
   // Contact line
   doc.setFontSize(7);
   doc.setTextColor(255, 220, 220);
-  doc.text(
-    "No. 142, Havelock Rd, Colombo 05  ·  +94 11 250 8821  ·  hello@polishstation.lk",
-    ML,
-    28,
-  );
-  doc.text("VAT Reg: VAT-184220985-7000", ML, 33.5);
+  doc.text(contactLine(), ML, 28);
+  doc.text(`VAT Reg: ${getBusinessInfo().vat}`, ML, 33.5);
 
   // Doc type (right side)
   doc.setFont("helvetica", "bold");
@@ -276,7 +279,7 @@ function buildDoc(opts: DocOptions): jsPDF {
   }
 
   totalRow("Subtotal", fmt(opts.subtotal));
-  totalRow(TAX_LABEL, fmt(opts.tax));
+  totalRow(taxLabel(), fmt(opts.tax));
   if (opts.tip && opts.tip > 0) totalRow("Tip / Gratuity", fmt(opts.tip));
 
   y += 1;
@@ -389,15 +392,11 @@ function buildDoc(opts: DocOptions): jsPDF {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
   doc.setTextColor(...SLATE);
-  doc.text(
-    "No. 142, Havelock Rd, Colombo 05  ·  +94 11 250 8821  ·  hello@polishstation.lk",
-    ML,
-    footerY + 5,
-  );
+  doc.text(contactLine(), ML, footerY + 5);
 
   doc.setTextColor(...MUTED);
   doc.text(
-    "Thank you for choosing Polish Station — Sri Lanka's premier car care destination.",
+    `Thank you for choosing ${getBusinessInfo().trading} — Sri Lanka's premier car care destination.`,
     ML,
     footerY + 10,
   );
@@ -450,7 +449,7 @@ export function downloadPOPDF(po: PurchaseOrder) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(20);
   doc.setTextColor(...WHITE);
-  doc.text("POLISH STATION", ML, 16);
+  doc.text(getBusinessInfo().trading.toUpperCase(), ML, 16);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
@@ -458,11 +457,7 @@ export function downloadPOPDF(po: PurchaseOrder) {
   doc.text("Professional Car Detailing & Protection", ML, 22);
   doc.setFontSize(7);
   doc.setTextColor(255, 220, 220);
-  doc.text(
-    "No. 142, Havelock Rd, Colombo 05  ·  +94 11 250 8821  ·  hello@polishstation.lk",
-    ML,
-    28,
-  );
+  doc.text(contactLine(), ML, 28);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(22);
@@ -493,15 +488,15 @@ export function downloadPOPDF(po: PurchaseOrder) {
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
-  doc.text("Polish Station", MR - 60, y);
+  doc.text(getBusinessInfo().trading, MR - 60, y);
 
   y += 5;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(...SLATE);
-  doc.text("No. 142, Havelock Rd, Colombo 05", MR - 60, y);
+  doc.text(getBusinessInfo().address, MR - 60, y);
   y += 4.5;
-  doc.text("+94 11 250 8821", MR - 60, y);
+  doc.text(getBusinessInfo().phone, MR - 60, y);
 
   if (po.createdBy) {
     y += 4.5;
@@ -609,7 +604,7 @@ export function downloadPOPDF(po: PurchaseOrder) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
   doc.setTextColor(...CHARCOAL);
-  doc.text("Authorised by (Polish Station):", ML, SIG_Y + 5);
+  doc.text(`Authorised by (${getBusinessInfo().trading}):`, ML, SIG_Y + 5);
   doc.setFont("helvetica", "normal");
   doc.setDrawColor(...SLATE);
   doc.setLineWidth(0.3);
@@ -638,11 +633,7 @@ export function downloadPOPDF(po: PurchaseOrder) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
   doc.setTextColor(...SLATE);
-  doc.text(
-    "No. 142, Havelock Rd, Colombo 05  ·  +94 11 250 8821  ·  hello@polishstation.lk",
-    ML,
-    footerY + 5,
-  );
+  doc.text(contactLine(), ML, footerY + 5);
   doc.setTextColor(...MUTED);
   doc.text("Please retain a signed copy for your records.", ML, footerY + 10);
   doc.setFontSize(7);

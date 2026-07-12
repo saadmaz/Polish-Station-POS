@@ -50,11 +50,25 @@ service cloud.firestore {
     }
 
     // ── Audit log ─────────────────────────────────────────────────────────
-    // Append-only. No updates or deletes — ever.
+    // Append-only. No updates or deletes — ever. A create must be attributed
+    // to the caller's own uid, so no staff member can forge log lines in a
+    // colleague's name.
     match /audit/{logId} {
       allow read:             if isManagerOrAbove();
-      allow create:           if isAuth();
+      allow create:           if isAuth() && request.resource.data.staffId == request.auth.uid;
       allow update, delete:   if false;
+    }
+
+    // ── Sequential-ID counters ────────────────────────────────────────────
+    // counters/{name} holds { next: N } for the INV-/J-/B-/PO- sequences,
+    // allocated in a client transaction so two tills can never mint the same
+    // id. Contains nothing sensitive; any signed-in user who may create the
+    // underlying document needs to bump its counter.
+    match /counters/{counterId} {
+      allow read:           if isAuth();
+      allow create, update: if isAuth() && request.resource.data.next is int
+                            && request.resource.data.next > 0;
+      allow delete:         if false;
     }
 
     // ── Settings ──────────────────────────────────────────────────────────
