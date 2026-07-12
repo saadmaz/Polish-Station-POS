@@ -9,9 +9,16 @@ await page.goto("https://pos.polishstation.lk/", { waitUntil: "domcontentloaded"
 await page.waitForSelector("#username", { timeout: 60000 });
 mark("login screen ready", t);
 
-await page.fill("#username", "ADMIN");
+await page.fill("#username", process.env.SU_USER ?? "ADMIN");
 t = Date.now();
-for (const d of "0011") await page.click(`button:has-text("${d}")`);
+// Never hardcode a real credential in the repo — pass it at run time:
+//   SU_PIN=xxxx node scripts/_pw-login.mjs
+const pin = process.env.SU_PIN;
+if (!pin) {
+  console.error("Set SU_PIN (and optionally SU_USER) to run this login timing probe.");
+  process.exit(1);
+}
+for (const d of pin) await page.click(`button:has-text("${d}")`);
 await page.waitForURL(/dashboard/, { timeout: 90000 });
 mark("PIN entered → dashboard URL", t);
 
