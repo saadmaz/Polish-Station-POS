@@ -3,7 +3,14 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { adminAuth, adminDb } from "./firebase-admin";
-import { USERNAME_RE, PIN_RE, usernameKey, withTimeout, invalidateStaffCache } from "./auth";
+import {
+  USERNAME_RE,
+  PIN_RE,
+  usernameKey,
+  withTimeout,
+  withRetry,
+  invalidateStaffCache,
+} from "./auth";
 import {
   ALL_MODULES,
   isAdmin,
@@ -57,16 +64,14 @@ interface Caller {
 async function requireCaller(idToken: string): Promise<Caller | null> {
   let uid: string;
   try {
-    uid = (await withTimeout(adminAuth.verifyIdToken(idToken), 8_000, "token verify")).uid;
+    // Retried: the cert fetch behind verifyIdToken is an outbound call this
+    // host stalls, and a stall here spun the admin's button forever.
+    uid = (await withRetry(() => adminAuth.verifyIdToken(idToken), "token verify")).uid;
   } catch {
     return null;
   }
 
-  const snap = await withTimeout(
-    adminDb.collection("staff").doc(uid).get(),
-    10_000,
-    "caller lookup",
-  );
+  const snap = await withRetry(() => adminDb.collection("staff").doc(uid).get(), "caller lookup");
   if (!snap.exists) return null;
 
   const staff = snap.data()!;
@@ -120,9 +125,8 @@ function mayAssignRole(caller: Caller, newRole: StaffRole): boolean {
 /** Count active SuperAdmins, optionally ignoring one staffId (the one being
  *  changed). Equality-only query — no composite index required. */
 async function otherActiveSuperAdmins(excludeStaffId: string): Promise<number> {
-  const snap = await withTimeout(
-    adminDb.collection("staff").where("role", "==", "SuperAdmin").get(),
-    10_000,
+  const snap = await withRetry(
+    () => adminDb.collection("staff").where("role", "==", "SuperAdmin").get(),
     "superadmin count",
   );
   return snap.docs.filter((d) => d.id !== excludeStaffId && d.data().active !== false).length;
@@ -136,12 +140,41 @@ async function otherActiveSuperAdmins(excludeStaffId: string): Promise<number> {
  *  name could both pass. Closing that needs a `staffNames/{lower}` index doc
  *  the way usernames works — worth doing when jobs move to `techId`. */
 async function nameTaken(name: string, excludeStaffId?: string): Promise<boolean> {
-  const snap = await withTimeout(
-    adminDb.collection("staff").where("name", "==", name).get(),
-    10_000,
+  const snap = await withRetry(
+    () => adminDb.collection("staff").where("name", "==", name).get(),
     "name uniqueness check",
   );
   return snap.docs.some((d) => d.id !== excludeStaffId);
+}
+
+/** Claim the username index doc. `.create()` is single-shot (it throws if the
+ *  doc exists) — that atomicity is what guarantees uniqueness, but it also
+ *  means a naive retry after a STALLED create would see "already exists" and
+ *  wrongly report username_taken for a claim we actually won. So on a timeout,
+ *  re-read the doc: if it now holds OUR staffId the create did land (success);
+ *  if it holds someone else's it's genuinely taken; if it's absent, retry. */
+async function claimUsername(key: string, staffId: string): Promise<boolean> {
+  for (let i = 0; i < 4; i++) {
+    try {
+      await withTimeout(
+        adminDb.collection("usernames").doc(key).create({ staffId }),
+        6_000,
+        "username claim",
+      );
+      return true;
+    } catch (err) {
+      const timedOut = err instanceof Error && err.message.includes("timed out");
+      if (!timedOut) return false; // already exists → genuinely taken
+
+      const snap = await withRetry(
+        () => adminDb.collection("usernames").doc(key).get(),
+        "username re-check",
+      ).catch(() => null);
+      if (snap?.exists) return snap.data()?.staffId === staffId;
+      // Not created — the stall killed it before it landed. Try again.
+    }
+  }
+  throw new Error("username claim failed after retries");
 }
 
 /** SuperAdmins implicitly hold every module (see `hasModule`), so persist the
@@ -174,46 +207,46 @@ export const createStaffFn = createServerFn({ method: "POST" })
     const staffId = adminDb.collection("staff").doc().id;
     const key = usernameKey(data.username);
 
-    // `.create()` throws if the doc exists — this, not a read-then-write, is
-    // what makes username uniqueness atomic. A timeout must NOT be reported as
-    // username_taken, so it is re-thrown for the client's generic error path.
-    try {
-      await withTimeout(
-        adminDb.collection("usernames").doc(key).create({ staffId }),
-        10_000,
-        "username claim",
-      );
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("timed out")) throw err;
+    // Atomic uniqueness claim, retried through network stalls without ever
+    // mistaking a stalled-but-landed create for "username taken".
+    if (!(await claimUsername(key, staffId))) {
       return { success: false, error: "username_taken" };
     }
 
     const permissions = permissionsFor(data.role, data.permissions);
+    // Hashed once, outside the retry: re-hashing per attempt would burn CPU and
+    // is pointless (any of the hashes verifies the same PIN).
+    const pinHash = await bcrypt.hash(data.pin, 10);
 
     try {
-      const batch = adminDb.batch();
-      batch.set(adminDb.collection("staff").doc(staffId), {
-        username: data.username,
-        name: data.name,
-        role: data.role,
-        color: data.color,
-        permissions,
-        pinHash: await bcrypt.hash(data.pin, 10),
-        active: true,
-        // The admin-issued PIN IS the working credential — users sign in with
-        // exactly what the admin gives them and are never forced to change it.
-        mustChangePin: false,
-        failCount: 0,
-        lockedUntil: null,
-      });
-      batch.set(adminDb.collection("staff_public").doc(staffId), {
-        username: data.username,
-        name: data.name,
-        role: data.role,
-        color: data.color,
-        active: true,
-      });
-      await withTimeout(batch.commit(), 10_000, "staff create commit");
+      // The batch is rebuilt inside the retry: a Firestore WriteBatch can only
+      // be committed once, so a retry must construct a fresh one. Both writes
+      // are set() (idempotent), so re-issuing after a stall is safe.
+      await withRetry(() => {
+        const batch = adminDb.batch();
+        batch.set(adminDb.collection("staff").doc(staffId), {
+          username: data.username,
+          name: data.name,
+          role: data.role,
+          color: data.color,
+          permissions,
+          pinHash,
+          active: true,
+          // The admin-issued PIN IS the working credential — users sign in with
+          // exactly what the admin gives them and are never forced to change it.
+          mustChangePin: false,
+          failCount: 0,
+          lockedUntil: null,
+        });
+        batch.set(adminDb.collection("staff_public").doc(staffId), {
+          username: data.username,
+          name: data.name,
+          role: data.role,
+          color: data.color,
+          active: true,
+        });
+        return batch.commit();
+      }, "staff create commit");
     } catch (err) {
       // Don't strand the username on a failed create — it would be
       // unclaimable forever with no staff doc to explain why.
@@ -247,7 +280,7 @@ export const updateStaffFn = createServerFn({ method: "POST" })
     if (!caller) return { success: false, error: "unauthorized" };
 
     const targetRef = adminDb.collection("staff").doc(data.targetStaffId);
-    const snap = await withTimeout(targetRef.get(), 10_000, "target lookup");
+    const snap = await withRetry(() => targetRef.get(), "target lookup");
     if (!snap.exists) return { success: false, error: "not_found" };
 
     const target = snap.data()!;
@@ -273,14 +306,18 @@ export const updateStaffFn = createServerFn({ method: "POST" })
 
     const permissions = permissionsFor(data.role, data.permissions);
 
-    const batch = adminDb.batch();
-    batch.update(targetRef, { name: data.name, role: data.role, color: data.color, permissions });
-    batch.update(adminDb.collection("staff_public").doc(data.targetStaffId), {
-      name: data.name,
-      role: data.role,
-      color: data.color,
-    });
-    await withTimeout(batch.commit(), 10_000, "staff update commit");
+    // Rebuilt per attempt (a WriteBatch commits only once); update() is
+    // idempotent so re-issuing after a network stall is safe.
+    await withRetry(() => {
+      const batch = adminDb.batch();
+      batch.update(targetRef, { name: data.name, role: data.role, color: data.color, permissions });
+      batch.update(adminDb.collection("staff_public").doc(data.targetStaffId), {
+        name: data.name,
+        role: data.role,
+        color: data.color,
+      });
+      return batch.commit();
+    }, "staff update commit");
 
     // Role and permissions live in the token claims, which survive ID-token
     // refresh. Revoke so a demotion bites before the target logs out — but
@@ -307,7 +344,7 @@ export const setStaffActiveFn = createServerFn({ method: "POST" })
     if (caller.uid === data.targetStaffId) return { success: false, error: "self_target" };
 
     const targetRef = adminDb.collection("staff").doc(data.targetStaffId);
-    const snap = await withTimeout(targetRef.get(), 10_000, "target lookup");
+    const snap = await withRetry(() => targetRef.get(), "target lookup");
     if (!snap.exists) return { success: false, error: "not_found" };
 
     const targetRole = snap.data()!.role as StaffRole;
@@ -319,12 +356,14 @@ export const setStaffActiveFn = createServerFn({ method: "POST" })
       }
     }
 
-    const batch = adminDb.batch();
-    batch.update(targetRef, { active: data.active, failCount: 0, lockedUntil: null });
-    batch.update(adminDb.collection("staff_public").doc(data.targetStaffId), {
-      active: data.active,
-    });
-    await withTimeout(batch.commit(), 10_000, "set-active commit");
+    await withRetry(() => {
+      const batch = adminDb.batch();
+      batch.update(targetRef, { active: data.active, failCount: 0, lockedUntil: null });
+      batch.update(adminDb.collection("staff_public").doc(data.targetStaffId), {
+        active: data.active,
+      });
+      return batch.commit();
+    }, "set-active commit");
 
     // Deactivation must end any session already open on a shop tablet.
     if (!data.active) revokeBestEffort(data.targetStaffId);
@@ -348,7 +387,7 @@ export const resetPinFn = createServerFn({ method: "POST" })
     if (!caller) return { success: false, error: "unauthorized" };
 
     const targetRef = adminDb.collection("staff").doc(data.targetStaffId);
-    const snap = await withTimeout(targetRef.get(), 10_000, "target lookup");
+    const snap = await withRetry(() => targetRef.get(), "target lookup");
     if (!snap.exists) return { success: false, error: "not_found" };
 
     const targetRole = snap.data()!.role as StaffRole;
@@ -357,16 +396,18 @@ export const resetPinFn = createServerFn({ method: "POST" })
       return { success: false, error: "forbidden" };
     }
 
-    await withTimeout(
-      targetRef.update({
-        pinHash: await bcrypt.hash(data.newPin, 10),
-        // The admin sets the PIN and the user signs in with exactly that — no
-        // forced change on next login.
-        mustChangePin: false,
-        failCount: 0,
-        lockedUntil: null,
-      }),
-      10_000,
+    // Hashed once, outside the retry (re-hashing per attempt is wasted CPU).
+    const newPinHash = await bcrypt.hash(data.newPin, 10);
+    await withRetry(
+      () =>
+        targetRef.update({
+          pinHash: newPinHash,
+          // The admin sets the PIN and the user signs in with exactly that — no
+          // forced change on next login.
+          mustChangePin: false,
+          failCount: 0,
+          lockedUntil: null,
+        }),
       "pin reset write",
     );
 
@@ -395,7 +436,7 @@ export const deleteStaffFn = createServerFn({ method: "POST" })
     if (caller.uid === data.targetStaffId) return { success: false, error: "self_target" };
 
     const targetRef = adminDb.collection("staff").doc(data.targetStaffId);
-    const snap = await withTimeout(targetRef.get(), 10_000, "target lookup");
+    const snap = await withRetry(() => targetRef.get(), "target lookup");
     if (!snap.exists) return { success: false, error: "not_found" };
 
     const target = snap.data()!;
@@ -410,14 +451,17 @@ export const deleteStaffFn = createServerFn({ method: "POST" })
 
     // Remove the private doc, the public roster doc, and the username index
     // entry (freeing the username for reuse), then end any live session.
-    const batch = adminDb.batch();
-    batch.delete(targetRef);
-    batch.delete(adminDb.collection("staff_public").doc(data.targetStaffId));
+    // Rebuilt per attempt; delete() is idempotent so retrying is safe.
     const username = target.username;
-    if (typeof username === "string" && username) {
-      batch.delete(adminDb.collection("usernames").doc(usernameKey(username)));
-    }
-    await withTimeout(batch.commit(), 10_000, "staff delete commit");
+    await withRetry(() => {
+      const batch = adminDb.batch();
+      batch.delete(targetRef);
+      batch.delete(adminDb.collection("staff_public").doc(data.targetStaffId));
+      if (typeof username === "string" && username) {
+        batch.delete(adminDb.collection("usernames").doc(usernameKey(username)));
+      }
+      return batch.commit();
+    }, "staff delete commit");
 
     revokeBestEffort(data.targetStaffId);
 

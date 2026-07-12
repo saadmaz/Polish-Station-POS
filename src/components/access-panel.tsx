@@ -60,6 +60,26 @@ const ERROR_TEXT: Record<StaffActionError, string> = {
   self_target: "You can't change your own role or deactivate yourself here.",
 };
 
+// Hard ceiling on any staff mutation. The shared host's outbound route to
+// Firestore intermittently stalls, and without this the request could hang
+// forever — which is exactly what left the "Create user" button spinning with
+// no error and no way out. The server functions already retry internally, so
+// hitting this means the network was down for the whole window: surface a real
+// error instead of an endless spinner.
+const STAFF_ACTION_TIMEOUT_MS = 45_000;
+
+function withActionTimeout<T>(p: Promise<T>): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error("The server didn't respond. Check the list and try again.")),
+        STAFF_ACTION_TIMEOUT_MS,
+      ),
+    ),
+  ]);
+}
+
 const PALETTE = [
   "oklch(0.55 0.21 27)",
   "oklch(0.60 0.13 240)",
@@ -315,7 +335,9 @@ function DeleteDialog({
         toast.error("Session expired — sign in again.");
         return;
       }
-      const res = await deleteStaffFn({ data: { idToken: token, targetStaffId: row.id } });
+      const res = await withActionTimeout(
+        deleteStaffFn({ data: { idToken: token, targetStaffId: row.id } }),
+      );
       if (res.success) {
         toast.success(`${row.name} deleted`);
         onDeleted();
@@ -386,9 +408,11 @@ function ActiveToggle({
         toast.error("Session expired — sign in again.");
         return;
       }
-      const res = await setStaffActiveFn({
-        data: { idToken: token, targetStaffId: row.id, active: !row.active },
-      });
+      const res = await withActionTimeout(
+        setStaffActiveFn({
+          data: { idToken: token, targetStaffId: row.id, active: !row.active },
+        }),
+      );
       if (res.success) {
         toast.success(row.active ? `${row.name} disabled` : `${row.name} re-enabled`);
         onDone();
@@ -487,27 +511,31 @@ function StaffDialog({
 
       const res =
         mode === "create"
-          ? await createStaffFn({
-              data: {
-                idToken: token,
-                username: username.trim(),
-                name: name.trim(),
-                role,
-                color,
-                pin,
-                permissions,
-              },
-            })
-          : await updateStaffFn({
-              data: {
-                idToken: token,
-                targetStaffId: row!.id,
-                name: name.trim(),
-                role,
-                color,
-                permissions,
-              },
-            });
+          ? await withActionTimeout(
+              createStaffFn({
+                data: {
+                  idToken: token,
+                  username: username.trim(),
+                  name: name.trim(),
+                  role,
+                  color,
+                  pin,
+                  permissions,
+                },
+              }),
+            )
+          : await withActionTimeout(
+              updateStaffFn({
+                data: {
+                  idToken: token,
+                  targetStaffId: row!.id,
+                  name: name.trim(),
+                  role,
+                  color,
+                  permissions,
+                },
+              }),
+            );
 
       if (res.success) {
         toast.success(mode === "create" ? `${name.trim()} created` : `${name.trim()} updated`);
@@ -529,7 +557,7 @@ function StaffDialog({
       </h3>
       <p className="text-sm text-muted-foreground mb-4">
         {mode === "create"
-          ? "The user signs in with this username and PIN, and must change the PIN on first login."
+          ? "The user signs in with this username and PIN. This is their permanent PIN — they are not asked to change it."
           : "Change role, colour, and module access. Username can't be changed here."}
       </p>
 
@@ -669,9 +697,9 @@ function ResetPinDialog({
         toast.error("Session expired — sign in again.");
         return;
       }
-      const res = await resetPinFn({
-        data: { idToken: token, targetStaffId: row.id, newPin: pin },
-      });
+      const res = await withActionTimeout(
+        resetPinFn({ data: { idToken: token, targetStaffId: row.id, newPin: pin } }),
+      );
       if (res.success) {
         toast.success(`PIN reset for ${row.name} — they'll set their own on next login`);
         onSaved();
