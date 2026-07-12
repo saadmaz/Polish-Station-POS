@@ -200,6 +200,30 @@ export function invalidateStaffCache(): Promise<void> {
   return refreshStaffCache().catch(() => {});
 }
 
+/** Fallback for a login on a worker whose cache hasn't loaded yet: read just
+ *  this one user (username index → staff doc) instead of the whole collection.
+ *  Two small reads, each retried — plain reads are reliable from this host, so
+ *  a cold worker still serves a working login instead of rejecting it. */
+async function readStaffDirect(key: string): Promise<CachedStaff | undefined> {
+  const idx = await withRetry(
+    () => adminDb.collection("usernames").doc(key).get(),
+    "username lookup",
+    3,
+    5_000,
+  );
+  const staffId = idx.exists ? idx.data()?.staffId : undefined;
+  if (typeof staffId !== "string") return undefined;
+
+  const snap = await withRetry(
+    () => adminDb.collection("staff").doc(staffId).get(),
+    "staff lookup",
+    3,
+    5_000,
+  );
+  if (!snap.exists) return undefined;
+  return toCached(staffId, snap.data()!);
+}
+
 // ── In-memory login lockout ─────────────────────────────────────────────────
 // Brute-force guard for the 4-digit PIN, kept in memory (per worker) instead of
 // Firestore-persisted so a failed login writes nothing over the network. 5
@@ -222,25 +246,27 @@ export const loginFn = createServerFn({ method: "POST" })
 
     ensureStaffCache(); // background refresh if stale; never blocks
 
-    // Cache not warmed yet (only just after a cold worker spawn — the boot-warm
-    // loop is loading it right now). Fail as a transient error, NOT a rejected
-    // PIN, so the client's retry lands a moment later on the warmed cache
-    // instead of falsely telling a valid user their PIN is wrong. Nudge the
-    // load along too.
-    if (cacheLoadedAt === 0) {
-      warmStaffCache(); // ensure the background load loop is running
-      throw new Error("staff cache warming — retry");
-    }
+    let staff: CachedStaff | undefined;
 
-    let staffId = staffIdByUsername.get(key);
-    // A just-created user may not be in the cache yet — one forced refresh
-    // covers that (and genuinely-unknown usernames, which are rare). Everything
-    // else is served straight from memory: no Firestore on the login path.
-    if (!staffId) {
-      await refreshStaffCache().catch(() => {});
-      staffId = staffIdByUsername.get(key);
+    if (cacheLoadedAt !== 0) {
+      // Warm cache — the fast path: no network at all.
+      let staffId = staffIdByUsername.get(key);
+      // A just-created user may not be in the cache yet; one forced refresh
+      // covers that (and genuinely-unknown usernames, which are rare).
+      if (!staffId) {
+        await refreshStaffCache().catch(() => {});
+        staffId = staffIdByUsername.get(key);
+      }
+      staff = staffId ? staffById.get(staffId) : undefined;
+    } else {
+      // Cold worker (freshly spawned; its cache is still loading). Do NOT fail
+      // the login — plain Firestore READS are reliable from this host, it is
+      // only the cache's whole-collection load that can lag. Read this one
+      // user directly so a login on a cold worker still works, and nudge the
+      // background load along for the next request.
+      warmStaffCache();
+      staff = await readStaffDirect(key).catch(() => undefined);
     }
-    const staff = staffId ? staffById.get(staffId) : undefined;
 
     // An unknown username must be indistinguishable from a wrong PIN.
     if (!staff) {
