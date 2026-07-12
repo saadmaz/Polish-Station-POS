@@ -115,7 +115,7 @@ function refreshStaffCache(): Promise<void> {
   if (refreshInFlight) return refreshInFlight;
   refreshInFlight = (async () => {
     try {
-      const snap = await withTimeout(adminDb.collection("staff").get(), 8_000, "staff cache load");
+      const snap = await withTimeout(adminDb.collection("staff").get(), 6_000, "staff cache load");
       const byId = new Map<string, CachedStaff>();
       const byName = new Map<string, string>();
       for (const doc of snap.docs) {
@@ -133,26 +133,38 @@ function refreshStaffCache(): Promise<void> {
   return refreshInFlight;
 }
 
-/** Ensure the cache is usable for a login: block only on the very first load
- *  (retrying against the flaky host); otherwise refresh in the background. */
-async function ensureStaffCache(): Promise<void> {
-  if (cacheLoadedAt === 0) {
-    for (let i = 0; i < 5 && cacheLoadedAt === 0; i++) {
-      try {
-        await refreshStaffCache();
-      } catch {
-        /* flaky host — try again */
-      }
-    }
-  } else if (Date.now() - cacheLoadedAt > STAFF_CACHE_TTL_MS) {
+/** Keep the cache fresh without ever blocking a login on the flaky network:
+ *  a stale cache refreshes in the background. The first load is handled by the
+ *  boot-warm loop below, not here, so login never waits 40s on a cold worker. */
+function ensureStaffCache(): void {
+  if (cacheLoadedAt !== 0 && Date.now() - cacheLoadedAt > STAFF_CACHE_TTL_MS) {
     void refreshStaffCache().catch(() => {});
   }
 }
 
-/** Called by /healthz (on boot + the keep-warm cron) to populate/refresh the
- *  cache in the background, so real logins always hit a ready cache. */
-export function warmStaffCache(): Promise<void> {
-  return refreshStaffCache().catch(() => {});
+let warmLoopActive = false;
+
+/** Called by /healthz (boot self-warm + keep-warm cron). If the cache is cold,
+ *  kick off a background loop — once — that keeps retrying the load until it
+ *  succeeds, so a freshly-spawned worker becomes login-ready within a couple of
+ *  seconds instead of only when the first (40s-stalling) login forces the load.
+ *  Returns immediately; never blocks the caller. Deliberately NOT a top-level
+ *  side effect — this is a "use server" module, so module-load code would leak
+ *  into / break the client bundle; it runs only when invoked server-side. */
+export function warmStaffCache(): void {
+  if (cacheLoadedAt !== 0) {
+    void refreshStaffCache().catch(() => {}); // already warm — just refresh
+    return;
+  }
+  if (warmLoopActive) return; // a load loop is already running
+  warmLoopActive = true;
+  void (async () => {
+    for (let i = 0; i < 30 && cacheLoadedAt === 0; i++) {
+      await refreshStaffCache().catch(() => {});
+      if (cacheLoadedAt === 0) await new Promise((r) => setTimeout(r, 2000));
+    }
+    warmLoopActive = false;
+  })();
 }
 
 /** Called by staff mutations so a create/edit/reset/deactivate/delete is
@@ -181,14 +193,24 @@ export const loginFn = createServerFn({ method: "POST" })
     const { username, pin } = data;
     const key = usernameKey(username);
 
-    await ensureStaffCache();
+    ensureStaffCache(); // background refresh if stale; never blocks
+
+    // Cache not warmed yet (only just after a cold worker spawn — the boot-warm
+    // loop is loading it right now). Fail as a transient error, NOT a rejected
+    // PIN, so the client's retry lands a moment later on the warmed cache
+    // instead of falsely telling a valid user their PIN is wrong. Nudge the
+    // load along too.
+    if (cacheLoadedAt === 0) {
+      warmStaffCache(); // ensure the background load loop is running
+      throw new Error("staff cache warming — retry");
+    }
 
     let staffId = staffIdByUsername.get(key);
     // A just-created user may not be in the cache yet — one forced refresh
     // covers that (and genuinely-unknown usernames, which are rare). Everything
     // else is served straight from memory: no Firestore on the login path.
     if (!staffId) {
-      await warmStaffCache();
+      await refreshStaffCache().catch(() => {});
       staffId = staffIdByUsername.get(key);
     }
     const staff = staffId ? staffById.get(staffId) : undefined;

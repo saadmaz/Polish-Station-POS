@@ -12,6 +12,11 @@ PassengerStartupFile start.mjs
 # sends the app server nothing. The next server call (login, add user, change
 # PIN) then pays a ~20s cold start and times out as a LiteSpeed 408.
 PassengerMinInstances 1
+# Cap the pool at a single worker. Login is served from an in-memory staff
+# cache that each worker must warm on boot; with one worker there is exactly one
+# cache to keep warm, so a login can't get routed to a cold, still-warming
+# worker and stall. (May be capped/ignored on shared hosting, but harmless.)
+PassengerMaxPoolSize 1
 # Never shut down an idle instance (default is 300s). Together with
 # MinInstances 1 this is the strongest .htaccess-level ask for "keep the worker
 # alive forever" — so a login after days of no use lands on a warm process

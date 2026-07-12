@@ -1,6 +1,6 @@
 import jsPDF from "jspdf";
 import type { Invoice, InvoiceLine, Job, PurchaseOrder } from "./db";
-import { getPayments, getAmountRefunded } from "./db";
+import { getPayments, getAmountRefunded, calcTax, TAX_LABEL } from "./db";
 
 // ─── Brand colours (RGB) ─────────────────────────────────────────────────────
 const RED: [number, number, number] = [210, 30, 30];
@@ -276,7 +276,7 @@ function buildDoc(opts: DocOptions): jsPDF {
   }
 
   totalRow("Subtotal", fmt(opts.subtotal));
-  totalRow("VAT (18%)", fmt(opts.tax));
+  totalRow(TAX_LABEL, fmt(opts.tax));
   if (opts.tip && opts.tip > 0) totalRow("Tip / Gratuity", fmt(opts.tip));
 
   y += 1;
@@ -661,7 +661,7 @@ export function downloadQuotationPDF(opts: {
   notes?: string;
 }) {
   const subtotal = opts.lines.reduce((s, l) => s + l.unitPrice * l.qty - l.discount, 0);
-  const tax = Math.round(subtotal * 0.18);
+  const tax = calcTax(subtotal);
   const total = subtotal + tax;
 
   const validDate = new Date();

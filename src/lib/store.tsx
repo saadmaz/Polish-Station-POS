@@ -161,7 +161,7 @@ interface Store {
   ) => Invoice;
   updateInvoice: (inv: Invoice) => void;
   voidInvoice: (id: string) => void;
-  recordInvoicePayment: (invoiceId: string, payment: Omit<PaymentRecord, "id">) => void;
+  recordInvoicePayment: (invoiceId: string, payments: Omit<PaymentRecord, "id">[]) => void;
   refundInvoicePayment: (invoiceId: string, refund: Omit<RefundRecord, "id">) => void;
 
   // Expenses
@@ -801,18 +801,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     write("invoices", { ...inv, status: "Void" });
   }, []);
 
+  // Takes ALL tender lines of one collection in a single call/write. Calling
+  // this once per line would lose money: each call reads the invoice from
+  // S.current, which doesn't see the previous call's write until the snapshot
+  // round-trips, so later lines clobber earlier ones.
   const recordInvoicePayment = useCallback(
-    (invoiceId: string, payment: Omit<PaymentRecord, "id">) => {
+    (invoiceId: string, newPayments: Omit<PaymentRecord, "id">[]) => {
       const inv = S.current.invoices.find((x) => x.id === invoiceId);
-      if (!inv) return;
-      const payments = [...(inv.payments ?? []), { ...payment, id: newId() }];
+      if (!inv || newPayments.length === 0) return;
+      const payments = [
+        ...(inv.payments ?? []),
+        ...newPayments.map((p) => ({ ...p, id: newId() })),
+      ];
       const updated = { ...inv, payments };
       const amountPaid = getAmountPaid(updated);
       write("invoices", {
         ...updated,
         status: amountPaid >= inv.total ? "Paid" : "Partially Paid",
       });
-      if (payment.sessionId) setTimeout(() => recalcShift(payment.sessionId!), 500);
+      const shiftIds = new Set(newPayments.map((p) => p.sessionId).filter((x): x is string => !!x));
+      shiftIds.forEach((id) => setTimeout(() => recalcShift(id), 500));
     },
     [recalcShift],
   );

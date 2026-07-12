@@ -276,7 +276,15 @@ function Reports() {
   ];
 
   function exportCSV(headers: string[], rows: (string | number)[][], filename: string) {
-    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    // RFC-4180 quoting (a customer named "Silva, Nimal" must not shift every
+    // column right), plus a guard against spreadsheet formula injection: a
+    // leading =, +, - or @ would execute when the file opens in Excel.
+    const cell = (v: string | number): string => {
+      let s = String(v);
+      if (/^[=+\-@]/.test(s)) s = "'" + s;
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const csv = [headers.map(cell).join(","), ...rows.map((r) => r.map(cell).join(","))].join("\n");
     const a = document.createElement("a");
     a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
     a.download = `${filename}.csv`;

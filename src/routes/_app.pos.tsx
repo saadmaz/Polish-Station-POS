@@ -14,6 +14,8 @@ import {
   getAmountRefunded,
   getInvoiceBalance,
   describePaymentMethods,
+  calcTax,
+  TAX_LABEL,
 } from "@/lib/db";
 import { downloadInvoicePDF, downloadQuotationPDF } from "@/lib/pdf";
 import { newId } from "@/lib/db";
@@ -101,7 +103,21 @@ function POS() {
   }
 
   function updateLine(key: number, field: keyof InvoiceLine, value: string | number) {
-    setLines((ls) => ls.map((l) => (l.key === key ? { ...l, [field]: value } : l)));
+    setLines((ls) =>
+      ls.map((l) => {
+        if (l.key !== key) return l;
+        const next = { ...l, [field]: value };
+        // Keep the arithmetic fields sane no matter what was typed: a NaN or
+        // negative here would flow straight into the stored invoice totals.
+        if (typeof value === "number" && !Number.isFinite(value)) return l;
+        next.qty = Math.max(1, Math.floor(next.qty) || 1);
+        next.unitPrice = Math.max(0, next.unitPrice || 0);
+        // A discount larger than the line itself would make the line (and
+        // potentially the subtotal/VAT) negative.
+        next.discount = Math.min(Math.max(0, next.discount || 0), next.qty * next.unitPrice);
+        return next;
+      }),
+    );
   }
 
   function removeLine(key: number) {
@@ -111,7 +127,7 @@ function POS() {
   const depositPaid = selectedJob?.depositPaid ?? 0;
 
   const subtotal = lines.reduce((s, l) => s + l.unitPrice * l.qty - l.discount, 0);
-  const tax = Math.round(subtotal * 0.18);
+  const tax = calcTax(subtotal);
   const total = subtotal + tax + tip;
   const balanceDue = Math.max(0, total - depositPaid);
   const tendered = tenderLines.reduce((s, l) => s + l.amount, 0);
@@ -512,7 +528,7 @@ function POS() {
                   })}
                 {invoices.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="text-center py-6 text-muted-foreground text-sm">
+                    <td colSpan={7} className="text-center py-6 text-muted-foreground text-sm">
                       No invoices yet today
                     </td>
                   </tr>
@@ -541,7 +557,7 @@ function POS() {
 
         <div className="space-y-2 text-sm border-y border-border py-4">
           <Row label="Subtotal" value={`LKR ${subtotal.toLocaleString()}`} />
-          <Row label="VAT 18%" value={`LKR ${tax.toLocaleString()}`} />
+          <Row label={TAX_LABEL} value={`LKR ${tax.toLocaleString()}`} />
           <Row label="Tip" value={`LKR ${tip.toLocaleString()}`} />
           {depositPaid > 0 && (
             <div className="flex justify-between text-success font-medium pt-1 border-t border-border">

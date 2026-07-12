@@ -88,7 +88,7 @@ function withClientTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<
 async function loginWithRetry(
   username: string,
   pin: string,
-  attempts = 3,
+  attempts = 5,
   perAttemptMs = 10_000,
 ): Promise<LoginResult> {
   let lastErr: unknown;
@@ -96,7 +96,8 @@ async function loginWithRetry(
     try {
       return await withClientTimeout(loginFn({ data: { username, pin } }), perAttemptMs, "login");
     } catch (err) {
-      lastErr = err; // transient stall/network — try again
+      lastErr = err; // transient stall / cache-warming — pause, then try again
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 1500));
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error("Login failed");

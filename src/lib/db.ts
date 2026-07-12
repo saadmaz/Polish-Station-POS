@@ -221,6 +221,13 @@ export interface Invoice {
   refunds?: RefundRecord[];
 }
 
+// Single source of truth for the VAT rate charged at checkout and printed on
+// invoices/quotations. If this ever needs to change, POS totals and PDF
+// documents must move together — that's why nothing hardcodes 0.18 anymore.
+export const TAX_RATE = 0.18;
+export const TAX_LABEL = `VAT ${Math.round(TAX_RATE * 100)}%`;
+export const calcTax = (subtotal: number): number => Math.round(subtotal * TAX_RATE);
+
 // ─── Payment/refund derived helpers ─────────────────────────────────────────
 // Invoices written before this feature shipped have no `payments` array —
 // synthesize one from the legacy single-method fields so old data keeps

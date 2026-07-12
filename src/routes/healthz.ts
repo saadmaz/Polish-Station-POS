@@ -56,12 +56,12 @@ export const Route = createFileRoute("/healthz")({
           // init — which is the whole point of calling it from a warm-up.
           const { adminDb, adminAuth } = await import("@/server/firebase-admin");
           const { warmStaffCache } = await import("@/server/auth");
-          // Warm every hot path in parallel:
-          //  • staff cache      → login reads it from memory (no per-request I/O)
-          //  • Firestore read   → keeps the admin Firestore connection warm
-          //  • token verify     → the change-PIN / staff-management path
+          // Kick the staff-cache background load loop (fire-and-forget): this is
+          // what makes login read from memory with no per-request I/O.
+          warmStaffCache();
+          // Warm the other hot paths (kept-warm admin Firestore connection, and
+          // the verifyIdToken cert fetch used by change-PIN / staff mgmt).
           await Promise.all([
-            warmStaffCache(),
             adminDb.collection("staff").limit(1).get(),
             warmTokenVerify(adminAuth),
           ]);

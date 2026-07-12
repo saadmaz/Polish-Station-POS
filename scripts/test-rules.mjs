@@ -99,9 +99,16 @@ await check(
   "manager WITH pos perm can update invoice",
   assertSucceeds(setDoc(doc(managerPos, "invoices/inv1"), { total: 2 }, { merge: true })),
 );
+// Cashier/Advisor may update invoices since split-tender payments shipped:
+// collecting a follow-up balance on a Partially Paid invoice is an update.
+// See the rationale comment on the invoices match in firestore.rules.
 await check(
-  "cashier WITH pos perm CANNOT update invoice (Manager+ only)",
-  assertFails(setDoc(doc(cashierPos, "invoices/inv1"), { total: 3 }, { merge: true })),
+  "cashier WITH pos perm CAN update invoice (balance collection)",
+  assertSucceeds(setDoc(doc(cashierPos, "invoices/inv1"), { total: 3 }, { merge: true })),
+);
+await check(
+  "cashier WITHOUT pos perm cannot update invoice",
+  assertFails(setDoc(doc(cashierNoPos, "invoices/inv1"), { total: 4 }, { merge: true })),
 );
 
 console.log("\nSuperAdmin implicitly holds every module (empty perms list):");

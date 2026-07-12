@@ -85,7 +85,10 @@ export function TenderLineEditor({
                 type="number"
                 min={0}
                 value={l.amount}
-                onChange={(e) => updateLine(l.key, "amount", Number(e.target.value))}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  updateLine(l.key, "amount", Number.isFinite(n) ? Math.max(0, n) : 0);
+                }}
                 className="w-28 rounded-md border border-input bg-background px-2 py-1.5 text-right text-sm font-mono focus:outline-none"
               />
               <input
@@ -154,16 +157,18 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
       return;
     }
     setSaving(true);
-    for (const l of tendered) {
-      recordInvoicePayment(invoice.id, {
+    const at = new Date().toISOString();
+    recordInvoicePayment(
+      invoice.id,
+      tendered.map((l) => ({
         method: l.method,
         amount: l.amount,
         reference: l.reference,
         sessionId: openShift.id,
         staffName: staff?.name ?? "",
-        at: new Date().toISOString(),
-      });
-    }
+        at,
+      })),
+    );
     toast.success(`Payment recorded for ${invoice.id}`);
     setSaving(false);
     onClose();
@@ -174,7 +179,9 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
       toast.error("Open a shift first");
       return;
     }
-    if (refundAmount <= 0 || refundAmount > refundable) {
+    // NaN passes both comparisons below (NaN <= 0 and NaN > x are both false),
+    // and Firestore will store it — poisoning every derived total after that.
+    if (!Number.isFinite(refundAmount) || refundAmount <= 0 || refundAmount > refundable) {
       toast.error(`Refund amount must be between 1 and ${refundable.toLocaleString()}`);
       return;
     }
@@ -247,7 +254,10 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
                 min={1}
                 max={refundable}
                 value={refundAmount}
-                onChange={(e) => setRefundAmount(Number(e.target.value))}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  setRefundAmount(Number.isFinite(n) ? Math.max(0, n) : 0);
+                }}
                 className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
             </label>
