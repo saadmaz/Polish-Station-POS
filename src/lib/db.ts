@@ -421,6 +421,20 @@ export interface Shift {
   verifiedBy: string | null;
 }
 
+// A weekly staff-rota entry — distinct from the till `Shift` (cash-drawer
+// session) above: this is "who's scheduled to work when", not "who's logged
+// into the register".
+export interface RotaShift {
+  id: string;
+  staffId: string;
+  staffName: string;
+  date: string; // YYYY-MM-DD
+  startTime: string; // HH:MM
+  endTime: string; // HH:MM
+  notes: string;
+  createdAt: string;
+}
+
 export interface AuditLog {
   id: string;
   action: string;
