@@ -65,7 +65,7 @@ function buildDailyData(
 }
 
 function Reports() {
-  const { invoices, jobs, bookings, customers, inventory, shifts } = useStore();
+  const { invoices, jobs, bookings, customers, inventory, shifts, expenses } = useStore();
   const [period, setPeriod] = useState<Period>("30d");
 
   const since = dateFrom(period);
@@ -134,6 +134,66 @@ function Reports() {
         )
       : 0;
 
+  // Technician performance — jobs/revenue/on-time rate attributed to each tech
+  // over the period. Revenue is joined through the job a paid invoice came
+  // from, same join `_app.staff.tsx` already uses for its per-tech stats.
+  const techNames = Array.from(new Set(filteredJobs.map((j) => j.tech).filter(Boolean)));
+  const techStats = techNames
+    .map((tech) => {
+      const techJobs = filteredJobs.filter((j) => j.tech === tech);
+      const techDone = techJobs.filter((j) => j.status === "Done Today" || j.completedAt);
+      const techRevenue = filteredInvoices
+        .filter((i) => jobs.find((j) => j.id === i.jobId)?.tech === tech)
+        .reduce((s, i) => s + i.total, 0);
+      const onTime =
+        techDone.length > 0
+          ? Math.round(
+              (techDone.filter((j) => j.elapsedMin <= j.estimateMin).length / techDone.length) *
+                100,
+            )
+          : 0;
+      const avgDur =
+        techDone.length > 0
+          ? Math.round(techDone.reduce((s, j) => s + j.elapsedMin, 0) / techDone.length)
+          : 0;
+      return {
+        tech,
+        jobsCompleted: techDone.length,
+        revenue: techRevenue,
+        onTime,
+        avgDuration: avgDur,
+      };
+    })
+    .sort((a, b) => b.revenue - a.revenue);
+  const topTech = techStats[0];
+
+  // Customer lifetime value — ranked by total spend, with average order
+  // value (spend / visits) so a customer with one big-ticket visit reads
+  // differently from a customer with many small repeat visits.
+  const rankedCustomers = [...customers]
+    .filter((c) => c.visits > 0)
+    .map((c) => ({ ...c, avgOrderValue: Math.round(c.spend / c.visits) }))
+    .sort((a, b) => b.spend - a.spend);
+  const topCustomer = rankedCustomers[0];
+  const avgCLV =
+    rankedCustomers.length > 0
+      ? Math.round(rankedCustomers.reduce((s, c) => s + c.spend, 0) / rankedCustomers.length)
+      : 0;
+
+  // Profit & loss — real revenue (invoices) minus real cash-out (expenses),
+  // not a fabricated per-service margin: there's no cost-of-goods link from
+  // a job/service to the inventory it consumed, so a per-service "profit"
+  // number would just be invented. This is the honest number available.
+  const filteredExpenses = expenses.filter((e) => e.createdAt >= since && e.type === "EXPENSE");
+  const totalExpenseAmt = filteredExpenses.reduce((s, e) => s + e.amount, 0);
+  const netProfit = totalRevenue - totalExpenseAmt;
+  const expenseByCategory = Object.entries(
+    filteredExpenses.reduce<Record<string, number>>((acc, e) => {
+      acc[e.category] = (acc[e.category] ?? 0) + e.amount;
+      return acc;
+    }, {}),
+  ).sort((a, b) => b[1] - a[1]);
+
   // Chart data — last 14 days for "today"/"7d", last 30 for "30d", last 60 for "all"
   const chartDays = period === "today" ? 14 : period === "7d" ? 14 : period === "30d" ? 30 : 60;
   const dailyData = buildDailyData(filteredInvoices, completedJobs, chartDays);
@@ -160,6 +220,19 @@ function Reports() {
         ),
     },
     {
+      name: "Profit & Loss",
+      desc: `Revenue LKR ${totalRevenue.toLocaleString()} − Expenses LKR ${totalExpenseAmt.toLocaleString()}`,
+      metric: `LKR ${netProfit.toLocaleString()}`,
+      delta: netProfit >= 0 ? "Net profit" : "Net loss",
+      color: netProfit >= 0 ? "text-success" : "text-destructive",
+      exportFn: () =>
+        exportCSV(
+          ["Category", "Amount"],
+          [...expenseByCategory, ["Total Expenses", totalExpenseAmt], ["Net Profit", netProfit]],
+          "profit-and-loss",
+        ),
+    },
+    {
       name: "Job Performance",
       desc: `${completedJobs.length} completed · ${avgDuration}m avg duration`,
       metric: `${filteredJobs.length} jobs`,
@@ -178,6 +251,21 @@ function Reports() {
             j.estimateMin,
           ]),
           "job-performance",
+        ),
+    },
+    {
+      name: "Technician Performance",
+      desc: topTech
+        ? `Top: ${topTech.tech} · LKR ${topTech.revenue.toLocaleString()}`
+        : "No jobs in this period",
+      metric: `${techStats.length} techs`,
+      delta: topTech ? `${topTech.onTime}% on-time` : "—",
+      color: "text-info",
+      exportFn: () =>
+        exportCSV(
+          ["Technician", "Jobs Completed", "Revenue", "On-Time %", "Avg Duration (min)"],
+          techStats.map((t) => [t.tech, t.jobsCompleted, t.revenue, t.onTime, t.avgDuration]),
+          "technician-performance",
         ),
     },
     {
@@ -218,6 +306,21 @@ function Reports() {
             c.lastVisit?.slice(0, 10) ?? "",
           ]),
           "customers-report",
+        ),
+    },
+    {
+      name: "Customer Lifetime Value",
+      desc: topCustomer
+        ? `Top: ${topCustomer.name} · LKR ${topCustomer.spend.toLocaleString()}`
+        : "No repeat customers yet",
+      metric: `LKR ${avgCLV.toLocaleString()}`,
+      delta: "Average lifetime spend",
+      color: "text-primary",
+      exportFn: () =>
+        exportCSV(
+          ["Name", "Phone", "Visits", "Lifetime Spend", "Avg Order Value", "Tier"],
+          rankedCustomers.map((c) => [c.name, c.phone, c.visits, c.spend, c.avgOrderValue, c.tier]),
+          "customer-lifetime-value",
         ),
     },
     {
@@ -418,6 +521,88 @@ function Reports() {
             <Bar dataKey="jobs" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
+      </div>
+
+      {/* Technician performance breakdown */}
+      <div className="mt-4 rounded-xl border border-border bg-card shadow-card">
+        <div className="px-5 py-3 border-b border-border">
+          <h2 className="font-display font-bold">Technician Performance</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-charcoal text-charcoal-foreground text-[11px] uppercase tracking-wider">
+              <tr>
+                <th className="text-left px-5 py-2.5">Technician</th>
+                <th className="text-right px-3 py-2.5">Jobs Completed</th>
+                <th className="text-right px-3 py-2.5">Revenue</th>
+                <th className="text-right px-3 py-2.5">On-Time</th>
+                <th className="text-right px-3 py-2.5">Avg Duration</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {techStats.map((t) => (
+                <tr key={t.tech}>
+                  <td className="px-5 py-2.5 font-medium">{t.tech}</td>
+                  <td className="px-3 py-2.5 text-right font-mono">{t.jobsCompleted}</td>
+                  <td className="px-3 py-2.5 text-right font-mono font-semibold">
+                    LKR {t.revenue.toLocaleString()}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono">{t.onTime}%</td>
+                  <td className="px-3 py-2.5 text-right font-mono">{t.avgDuration}m</td>
+                </tr>
+              ))}
+              {techStats.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-5 py-6 text-center text-muted-foreground">
+                    No jobs in this period
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Top customers by lifetime value */}
+      <div className="mt-4 rounded-xl border border-border bg-card shadow-card">
+        <div className="px-5 py-3 border-b border-border">
+          <h2 className="font-display font-bold">Top Customers by Lifetime Value</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-charcoal text-charcoal-foreground text-[11px] uppercase tracking-wider">
+              <tr>
+                <th className="text-left px-5 py-2.5">Customer</th>
+                <th className="text-right px-3 py-2.5">Visits</th>
+                <th className="text-right px-3 py-2.5">Lifetime Spend</th>
+                <th className="text-right px-3 py-2.5">Avg Order Value</th>
+                <th className="text-left px-3 py-2.5">Tier</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rankedCustomers.slice(0, 10).map((c) => (
+                <tr key={c.id}>
+                  <td className="px-5 py-2.5 font-medium">{c.name}</td>
+                  <td className="px-3 py-2.5 text-right font-mono">{c.visits}</td>
+                  <td className="px-3 py-2.5 text-right font-mono font-semibold">
+                    LKR {c.spend.toLocaleString()}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono">
+                    LKR {c.avgOrderValue.toLocaleString()}
+                  </td>
+                  <td className="px-3 py-2.5">{c.tier}</td>
+                </tr>
+              ))}
+              {rankedCustomers.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-5 py-6 text-center text-muted-foreground">
+                    No customers with a completed visit yet
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
