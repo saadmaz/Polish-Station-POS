@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { useStaffList } from "@/lib/use-staff-list";
 import { PageHeader } from "@/components/page-header";
@@ -42,7 +43,10 @@ function StaffPage() {
         title="Staff"
         subtitle={`${staffList.length} team members · ${activeTechs.size} currently active`}
         actions={
-          <button className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent">
+          <button
+            onClick={() => toast.info("Shift scheduling isn't available yet.")}
+            className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent"
+          >
             <Calendar className="h-4 w-4" /> Schedule
           </button>
         }

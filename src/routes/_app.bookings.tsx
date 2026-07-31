@@ -180,10 +180,13 @@ function Bookings() {
   const embedCode = `<iframe src="${widgetUrl}?embed=true" width="100%" height="720" frameborder="0" style="border-radius:12px;border:1px solid #e5e7eb;"></iframe>`;
 
   function copyEmbed() {
-    navigator.clipboard.writeText(embedCode).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+    navigator.clipboard
+      .writeText(embedCode)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => toast.error("Couldn't copy — copy the code manually"));
   }
 
   const todayBookings = bookings
@@ -207,9 +210,13 @@ function Bookings() {
     setActiveCard(null);
   }
 
-  function handleCheckin(id: string) {
-    checkinBooking(id);
-    toast.success("Checked in — job added to queue");
+  async function handleCheckin(id: string) {
+    try {
+      await checkinBooking(id);
+      toast.success("Checked in — job added to queue");
+    } catch {
+      toast.error("Check-in failed — please try again");
+    }
     setActiveCard(null);
   }
 

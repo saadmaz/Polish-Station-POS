@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
 import { AccessPanel } from "@/components/access-panel";
@@ -585,7 +586,10 @@ function IntegrationsPanel() {
                 <Check className="h-3 w-3" /> Connected
               </span>
             ) : (
-              <button className="inline-flex items-center gap-1 rounded-md border border-input px-3 py-1.5 text-xs hover:bg-accent">
+              <button
+                onClick={() => toast.info(`${a.name} integration isn't available yet.`)}
+                className="inline-flex items-center gap-1 rounded-md border border-input px-3 py-1.5 text-xs hover:bg-accent"
+              >
                 <X className="h-3 w-3" /> Connect
               </button>
             )}

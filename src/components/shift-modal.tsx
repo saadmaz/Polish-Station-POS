@@ -79,24 +79,29 @@ function OpenShiftPanel({ onClose }: { onClose: () => void }) {
     setDenoms((d) => ({ ...d, [k]: v }));
   }
 
-  function handleOpen() {
+  async function handleOpen() {
     if (!staffId) {
       toast.error("Select the opening staff member");
       return;
     }
     setBusy(true);
-    openShiftFn({
-      staffId,
-      staffName: selectedStaff?.name ?? staffId,
-      openingBalance: balance,
-      openingDenominations: { ...denoms },
-      notes,
-    });
-    toast.success("Shift opened", {
-      description: `Opening balance: LKR ${balance.toLocaleString()}`,
-    });
-    setBusy(false);
-    onClose();
+    try {
+      await openShiftFn({
+        staffId,
+        staffName: selectedStaff?.name ?? staffId,
+        openingBalance: balance,
+        openingDenominations: { ...denoms },
+        notes,
+      });
+      toast.success("Shift opened", {
+        description: `Opening balance: LKR ${balance.toLocaleString()}`,
+      });
+      onClose();
+    } catch {
+      toast.error("Couldn't open shift — please try again");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -205,7 +210,7 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
     setDenoms((d) => ({ ...d, [k]: v }));
   }
 
-  function handleClose() {
+  async function handleClose() {
     if (!verifiedBy) {
       toast.error("Select verifying manager");
       return;
@@ -215,18 +220,23 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
       return;
     }
     setBusy(true);
-    closeShiftFn({
-      closingBalance,
-      closingDenominations: { ...denoms },
-      notes,
-      verifiedBy,
-      variance,
-    });
-    toast.success("Shift closed", {
-      description: `Variance: LKR ${variance >= 0 ? "+" : ""}${variance.toLocaleString()}`,
-    });
-    setBusy(false);
-    onClose();
+    try {
+      await closeShiftFn({
+        closingBalance,
+        closingDenominations: { ...denoms },
+        notes,
+        verifiedBy,
+        variance,
+      });
+      toast.success("Shift closed", {
+        description: `Variance: LKR ${variance >= 0 ? "+" : ""}${variance.toLocaleString()}`,
+      });
+      onClose();
+    } catch {
+      toast.error("Couldn't close shift — please try again");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

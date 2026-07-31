@@ -222,14 +222,14 @@ interface Store {
     openingBalance: number;
     openingDenominations: Record<string, number>;
     notes: string;
-  }) => Shift;
+  }) => Promise<Shift>;
   closeShiftFn: (data: {
     closingBalance: number;
     closingDenominations: Record<string, number>;
     notes: string;
     verifiedBy: string;
     variance: number;
-  }) => void;
+  }) => Promise<void>;
   addSaleToShift: (invoiceId: string, method: PaymentMethod, amount: number) => void;
 }
 
@@ -803,7 +803,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const batch = writeBatch(fsDb);
     batch.set(fd("bookings", b.id), { ...b, status: "Checked-In" });
     batch.set(fd("jobs", j.id), j);
-    batch.commit().catch((err) => console.error("[store] checkinBooking:", err));
+    await batch.commit();
   }, []);
 
   const markDepositPaid = useCallback((bookingId: string) => {
@@ -974,13 +974,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // ── Shift mutations ────────────────────────────────────────────────────────
   const openShiftFn = useCallback(
-    (data: {
+    // Awaits the write directly (bypassing the fire-and-forget `write()` helper)
+    // so the caller can tell whether the shift actually opened before showing
+    // a success toast — this gates cash reconciliation, so a silent failure
+    // here is a real operational risk.
+    async (data: {
       staffId: string;
       staffName: string;
       openingBalance: number;
       openingDenominations: Record<string, number>;
       notes: string;
-    }): Shift => {
+    }): Promise<Shift> => {
       const s: Shift = {
         id: newId(),
         ...data,
@@ -996,7 +1000,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         variance: null,
         verifiedBy: null,
       };
-      write("shifts", s);
+      await setDoc(fd("shifts", s.id), s);
       logAudit(actorRef.current, {
         action: "OPEN_SHIFT",
         entity: "Shift",
@@ -1010,7 +1014,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const closeShiftFn = useCallback(
-    (data: {
+    // Same reasoning as openShiftFn: awaits the write directly so a failure
+    // doesn't get reported to the till operator as a successful close.
+    async (data: {
       closingBalance: number;
       closingDenominations: Record<string, number>;
       notes: string;
@@ -1025,7 +1031,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         status: "CLOSED" as const,
         closedAt: new Date().toISOString(),
       };
-      write("shifts", updated);
+      await setDoc(fd("shifts", updated.id), updated);
       // Attributed to the actor closing the shift, which may legitimately be a
       // manager rather than the cashier who opened it.
       logAudit(actorRef.current, {
@@ -1103,8 +1109,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         status,
         receivedAt: allReceived ? new Date().toISOString() : po.receivedAt,
       });
-      // Adjust inventory stock for newly received quantities
-      for (const l of updatedLines) {
+      // Adjust inventory stock for newly received quantities. Compare against
+      // the *original* po.lines (pre-update) — updatedLines already carries
+      // the new cumulative qtyReceived, so comparing against it would always
+      // read as "nothing new received."
+      for (const l of po.lines) {
         const recv = receivedLines.find((r) => r.inventoryItemId === l.inventoryItemId);
         if (recv && recv.qtyReceived > l.qtyReceived) {
           const item = S.current.inventory.find((i) => i.id === l.inventoryItemId);
