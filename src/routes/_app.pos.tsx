@@ -6,9 +6,19 @@ import { useAuth } from "@/lib/auth";
 import { isManagerOrAbove } from "@/lib/permissions";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip, statusVariant } from "@/components/status-chip";
-import { Plus, Trash2, Search, FileDown, FileText, MessageCircle, Star } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Search,
+  FileDown,
+  FileText,
+  MessageCircle,
+  Star,
+  Ticket,
+  Gift,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { InvoiceLine, Invoice } from "@/lib/db";
+import type { InvoiceLine, Invoice, Coupon } from "@/lib/db";
 import {
   getAmountPaid,
   getAmountRefunded,
@@ -16,6 +26,9 @@ import {
   describePaymentMethods,
   calcTax,
   taxLabel,
+  isCouponValid,
+  calcCouponDiscount,
+  calcPointsValue,
 } from "@/lib/db";
 import { downloadInvoicePDF, downloadQuotationPDF } from "@/lib/pdf";
 import { newId } from "@/lib/db";
@@ -42,6 +55,7 @@ function POS() {
   const {
     services,
     customers,
+    coupons,
     jobs,
     invoices,
     openShift,
@@ -62,6 +76,11 @@ function POS() {
   // Line items
   const [lines, setLines] = useState<(InvoiceLine & { key: number })[]>([]);
   const [lineCounter, setLineCounter] = useState(0);
+
+  // Loyalty & coupons
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
+  const [pointsToRedeem, setPointsToRedeem] = useState(0);
 
   // Payment
   const [tip, setTip] = useState(0);
@@ -91,6 +110,8 @@ function POS() {
     setLines([{ key, name: j.serviceName, qty: 1, unitPrice: j.price, discount: 0 }]);
     setCustomerSearch("");
     setTenderLines([]);
+    setAppliedCoupon(null);
+    setPointsToRedeem(0);
   }
 
   function addLine(serviceId?: string) {
@@ -128,10 +149,39 @@ function POS() {
   const depositPaid = selectedJob?.depositPaid ?? 0;
 
   const subtotal = lines.reduce((s, l) => s + l.unitPrice * l.qty - l.discount, 0);
-  const tax = calcTax(subtotal, businessInfo.vatRate);
-  const total = subtotal + tax + tip;
+  const couponDiscount = appliedCoupon ? calcCouponDiscount(appliedCoupon, subtotal) : 0;
+  const discountedSubtotal = Math.max(0, subtotal - couponDiscount);
+  const tax = calcTax(discountedSubtotal, businessInfo.vatRate);
+  const grossTotal = discountedSubtotal + tax + tip;
+  const pointsBalance = customerRecord?.loyaltyPoints ?? 0;
+  // Clamp live so a stale value from a previously-selected customer never
+  // over-redeems once the balance it was checked against has changed.
+  const pointsRedeemed = Math.min(pointsToRedeem, pointsBalance);
+  const pointsValue = calcPointsValue(pointsRedeemed, grossTotal);
+  const total = Math.max(0, grossTotal - pointsValue);
   const balanceDue = Math.max(0, total - depositPaid);
   const tendered = tenderLines.reduce((s, l) => s + l.amount, 0);
+
+  function applyCoupon() {
+    const code = couponInput.trim().toUpperCase();
+    if (!code) return;
+    const coupon = coupons.find((c) => c.code.toUpperCase() === code);
+    if (!coupon) {
+      toast.error("No coupon with that code");
+      return;
+    }
+    if (!isCouponValid(coupon)) {
+      toast.error("That coupon is expired, inactive, or fully redeemed");
+      return;
+    }
+    setAppliedCoupon(coupon);
+    setCouponInput("");
+    toast.success(`Coupon ${coupon.code} applied`);
+  }
+
+  function removeCoupon() {
+    setAppliedCoupon(null);
+  }
 
   function handleSaveQuote() {
     if (lines.length === 0) {
@@ -155,12 +205,10 @@ function POS() {
       toast.error("Add at least one line item");
       return;
     }
-    if (total <= 0) {
-      toast.error("Total must be greater than 0");
-      return;
-    }
     const validTenders = tenderLines.filter((l) => l.amount > 0);
-    if (validTenders.length === 0) {
+    // total can legitimately be 0 when points redemption covers the whole
+    // bill — only demand a cash/card/transfer tender for what's still owed.
+    if (total > 0 && validTenders.length === 0) {
       toast.error("Add at least one payment (Cash/Card/Transfer)");
       return;
     }
@@ -181,6 +229,8 @@ function POS() {
       // Firestore's client SDK batch.set() throws on an explicit undefined
       // field value (this previously broke every checkout with no deposit).
       ...(depositPaid > 0 ? { depositApplied: depositPaid } : {}),
+      ...(appliedCoupon ? { couponCode: appliedCoupon.code, couponDiscount } : {}),
+      ...(pointsRedeemed > 0 ? { pointsRedeemed, pointsRedeemedValue: pointsValue } : {}),
       payments: validTenders.map((l) => ({
         method: l.method,
         amount: l.amount,
@@ -221,6 +271,8 @@ function POS() {
     setCustomerSearch("");
     setTip(0);
     setTenderLines([]);
+    setAppliedCoupon(null);
+    setPointsToRedeem(0);
     setCharging(false);
   }
 
@@ -552,16 +604,88 @@ function POS() {
               {customerRecord.tier} · {customerRecord.visits} visits · LKR{" "}
               {customerRecord.spend.toLocaleString()} lifetime
             </div>
+            <div className="text-xs text-muted-foreground mt-0.5">
+              <Gift className="mr-1 inline h-3 w-3" />
+              {pointsBalance.toLocaleString()} loyalty points (≈ LKR{" "}
+              {pointsBalance.toLocaleString()})
+            </div>
           </div>
         )}
         {!customerRecord && customerName && (
           <div className="mb-3 text-sm font-semibold">{customerName}</div>
         )}
 
+        {/* Coupon */}
+        <div className="mb-3">
+          {appliedCoupon ? (
+            <div className="flex items-center justify-between rounded-md bg-success/10 px-3 py-2 text-sm">
+              <span className="flex items-center gap-1.5 font-medium text-success">
+                <Ticket className="h-3.5 w-3.5" /> {appliedCoupon.code}
+              </span>
+              <button
+                onClick={removeCoupon}
+                className="text-muted-foreground hover:text-foreground"
+                title="Remove coupon"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <input
+                className="flex-1 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm uppercase placeholder:text-muted-foreground placeholder:normal-case focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="Coupon code"
+                value={couponInput}
+                onChange={(e) => setCouponInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
+              />
+              <button
+                onClick={applyCoupon}
+                className="rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent"
+              >
+                Apply
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Loyalty points redemption */}
+        {pointsBalance > 0 && (
+          <div className="mb-3 flex items-center justify-between gap-2 text-sm">
+            <label className="flex items-center gap-1.5 text-muted-foreground">
+              <Gift className="h-3.5 w-3.5" /> Redeem points
+            </label>
+            <input
+              type="number"
+              min={0}
+              max={pointsBalance}
+              className="w-24 rounded-md border border-input bg-background px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              value={pointsRedeemed}
+              onChange={(e) =>
+                setPointsToRedeem(Math.max(0, Math.min(pointsBalance, Number(e.target.value) || 0)))
+              }
+            />
+          </div>
+        )}
+
         <div className="space-y-2 text-sm border-y border-border py-4">
           <Row label="Subtotal" value={`LKR ${subtotal.toLocaleString()}`} />
+          {couponDiscount > 0 && (
+            <Row
+              label={`Coupon (${appliedCoupon?.code})`}
+              value={`− LKR ${couponDiscount.toLocaleString()}`}
+              tone="success"
+            />
+          )}
           <Row label={taxLabel(businessInfo.vatRate)} value={`LKR ${tax.toLocaleString()}`} />
           <Row label="Tip" value={`LKR ${tip.toLocaleString()}`} />
+          {pointsValue > 0 && (
+            <Row
+              label="Points redeemed"
+              value={`− LKR ${pointsValue.toLocaleString()}`}
+              tone="success"
+            />
+          )}
           {depositPaid > 0 && (
             <div className="flex justify-between text-success font-medium pt-1 border-t border-border">
               <span className="flex items-center gap-1.5">
@@ -670,16 +794,18 @@ function POS() {
 
         <button
           onClick={handleCharge}
-          disabled={charging || lines.length === 0 || tendered <= 0}
+          disabled={charging || lines.length === 0 || (tendered <= 0 && total > 0)}
           className="w-full rounded-md gradient-brand py-3 text-sm font-bold uppercase tracking-wider text-primary-foreground shadow-red hover:opacity-95 disabled:opacity-50"
         >
           {charging
             ? "Processing…"
-            : tendered > 0 && tendered < (depositPaid > 0 ? balanceDue : total)
-              ? `Collect LKR ${tendered.toLocaleString()} of LKR ${(depositPaid > 0 ? balanceDue : total).toLocaleString()}`
-              : depositPaid > 0
-                ? `Collect LKR ${balanceDue.toLocaleString()} Balance`
-                : `Charge LKR ${total.toLocaleString()}`}
+            : total <= 0
+              ? "Complete — Covered by Points"
+              : tendered > 0 && tendered < (depositPaid > 0 ? balanceDue : total)
+                ? `Collect LKR ${tendered.toLocaleString()} of LKR ${(depositPaid > 0 ? balanceDue : total).toLocaleString()}`
+                : depositPaid > 0
+                  ? `Collect LKR ${balanceDue.toLocaleString()} Balance`
+                  : `Charge LKR ${total.toLocaleString()}`}
         </button>
 
         <button
@@ -708,11 +834,13 @@ function POS() {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value, tone }: { label: string; value: string; tone?: "success" }) {
   return (
     <div className="flex justify-between">
       <span className="text-muted-foreground">{label}</span>
-      <span className="font-mono font-medium">{value}</span>
+      <span className={cn("font-mono font-medium", tone === "success" && "text-success")}>
+        {value}
+      </span>
     </div>
   );
 }

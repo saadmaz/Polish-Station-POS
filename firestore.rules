@@ -135,6 +135,19 @@ service cloud.firestore {
       allow delete: if isManagerOrAbove();
     }
 
+    // ── Coupons ───────────────────────────────────────────────────────────
+    // Read is open to any signed-in user so POS checkout (Cashier/Advisor)
+    // can validate a code. Creating/deleting coupon terms is a Manager+
+    // action; `update` is left to any customers-module holder because
+    // redeeming a coupon at checkout only bumps redeemedCount — same
+    // looseness as inventory's "any module holder may adjust quantities".
+    match /coupons/{couponId} {
+      allow read:   if isAuth();
+      allow create: if hasModule("customers") && isManagerOrAbove();
+      allow update: if hasModule("customers");
+      allow delete: if hasModule("customers") && isManagerOrAbove();
+    }
+
     // ── Services ──────────────────────────────────────────────────────────
     match /services/{serviceId} {
       allow read:  if isAuth();

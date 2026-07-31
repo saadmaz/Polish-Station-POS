@@ -118,6 +118,7 @@ export interface Customer {
   spend: number;
   lastVisit: string | null;
   tier: CustomerTier;
+  loyaltyPoints: number;
   createdAt: string;
 }
 
@@ -219,6 +220,27 @@ export interface Invoice {
   depositApplied?: number;
   payments?: PaymentRecord[];
   refunds?: RefundRecord[];
+  couponCode?: string;
+  couponDiscount?: number;
+  pointsRedeemed?: number;
+  pointsRedeemedValue?: number;
+  pointsEarned?: number;
+}
+
+// ─── Loyalty & coupons ───────────────────────────────────────────────────────
+
+export type CouponType = "percent" | "fixed";
+
+export interface Coupon {
+  id: string;
+  code: string; // normalized uppercase, unique
+  type: CouponType;
+  value: number; // percent (1-100) or a fixed currency amount
+  active: boolean;
+  expiresAt: string | null; // ISO date, inclusive; null = no expiry
+  maxRedemptions: number | null; // null = unlimited
+  redeemedCount: number;
+  createdAt: string;
 }
 
 // ─── Business info (settings/business Firestore doc) ────────────────────────
@@ -326,6 +348,33 @@ export function getInvoiceBalance(inv: Invoice): number {
 export function describePaymentMethods(inv: Invoice): string {
   const methods = Array.from(new Set(getPayments(inv).map((p) => p.method)));
   return methods.length > 0 ? methods.join(" + ") : inv.method;
+}
+
+// ─── Loyalty & coupon math ───────────────────────────────────────────────────
+// 1 point per 100 (currency units) of invoice total, redeemable 1 point = 1
+// unit off a later sale. Kept as named constants/functions rather than
+// scattered literals so the rate is easy to retune from one place.
+
+export function calcLoyaltyPointsEarned(invoiceTotal: number): number {
+  return Math.floor(Math.max(0, invoiceTotal) / 100);
+}
+
+/** Currency value of redeeming `points`, capped at what's actually owed. */
+export function calcPointsValue(points: number, cap: number): number {
+  return Math.min(Math.max(0, Math.floor(points)), Math.max(0, cap));
+}
+
+export function isCouponValid(c: Coupon, now: Date = new Date()): boolean {
+  if (!c.active) return false;
+  if (c.expiresAt && new Date(c.expiresAt) < now) return false;
+  if (c.maxRedemptions != null && c.redeemedCount >= c.maxRedemptions) return false;
+  return true;
+}
+
+/** Coupon discount off a subtotal — never more than the subtotal itself. */
+export function calcCouponDiscount(c: Coupon, subtotal: number): number {
+  const raw = c.type === "percent" ? subtotal * (c.value / 100) : c.value;
+  return Math.min(Math.max(0, raw), Math.max(0, subtotal));
 }
 
 export interface InventoryItem {
@@ -538,6 +587,7 @@ const SEED_CUSTOMERS: Customer[] = [
     spend: 184200,
     lastVisit: new Date().toISOString(),
     tier: "Platinum",
+    loyaltyPoints: 1842,
     createdAt: "2023-01-15T08:00:00.000Z",
   },
   {
@@ -550,6 +600,7 @@ const SEED_CUSTOMERS: Customer[] = [
     spend: 96500,
     lastVisit: new Date().toISOString(),
     tier: "Gold",
+    loyaltyPoints: 965,
     createdAt: "2023-03-10T08:00:00.000Z",
   },
   {
@@ -562,6 +613,7 @@ const SEED_CUSTOMERS: Customer[] = [
     spend: 41200,
     lastVisit: new Date().toISOString(),
     tier: "Silver",
+    loyaltyPoints: 412,
     createdAt: "2023-06-01T08:00:00.000Z",
   },
   {
@@ -574,6 +626,7 @@ const SEED_CUSTOMERS: Customer[] = [
     spend: 8400,
     lastVisit: new Date(Date.now() - 2 * 86400000).toISOString(),
     tier: "Bronze",
+    loyaltyPoints: 84,
     createdAt: "2024-01-20T08:00:00.000Z",
   },
   {
@@ -590,6 +643,7 @@ const SEED_CUSTOMERS: Customer[] = [
     spend: 122900,
     lastVisit: new Date().toISOString(),
     tier: "Gold",
+    loyaltyPoints: 1229,
     createdAt: "2022-11-05T08:00:00.000Z",
   },
   {
@@ -602,6 +656,7 @@ const SEED_CUSTOMERS: Customer[] = [
     spend: 14500,
     lastVisit: new Date().toISOString(),
     tier: "Silver",
+    loyaltyPoints: 145,
     createdAt: "2023-09-12T08:00:00.000Z",
   },
   {
@@ -617,6 +672,7 @@ const SEED_CUSTOMERS: Customer[] = [
     spend: 312400,
     lastVisit: new Date().toISOString(),
     tier: "Platinum",
+    loyaltyPoints: 3124,
     createdAt: "2022-05-01T08:00:00.000Z",
   },
 ];

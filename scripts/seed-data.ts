@@ -68,6 +68,7 @@ const CUSTOMERS = [
     spend: 184200,
     lastVisit: now,
     tier: "Platinum",
+    loyaltyPoints: 1842,
     createdAt: "2023-01-15T08:00:00.000Z",
   },
   {
@@ -80,6 +81,7 @@ const CUSTOMERS = [
     spend: 96500,
     lastVisit: now,
     tier: "Gold",
+    loyaltyPoints: 965,
     createdAt: "2023-03-10T08:00:00.000Z",
   },
   {
@@ -92,6 +94,7 @@ const CUSTOMERS = [
     spend: 41200,
     lastVisit: now,
     tier: "Silver",
+    loyaltyPoints: 412,
     createdAt: "2023-06-01T08:00:00.000Z",
   },
   {
@@ -104,6 +107,7 @@ const CUSTOMERS = [
     spend: 8400,
     lastVisit: daysAgo(2),
     tier: "Bronze",
+    loyaltyPoints: 84,
     createdAt: "2024-01-20T08:00:00.000Z",
   },
   {
@@ -120,6 +124,7 @@ const CUSTOMERS = [
     spend: 122900,
     lastVisit: now,
     tier: "Gold",
+    loyaltyPoints: 1229,
     createdAt: "2022-11-05T08:00:00.000Z",
   },
   {
@@ -132,6 +137,7 @@ const CUSTOMERS = [
     spend: 14500,
     lastVisit: now,
     tier: "Silver",
+    loyaltyPoints: 145,
     createdAt: "2023-09-12T08:00:00.000Z",
   },
   {
@@ -147,6 +153,7 @@ const CUSTOMERS = [
     spend: 312400,
     lastVisit: now,
     tier: "Platinum",
+    loyaltyPoints: 3124,
     createdAt: "2022-05-01T08:00:00.000Z",
   },
 ];

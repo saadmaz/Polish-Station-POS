@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useStore } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
+import { isManagerOrAbove } from "@/lib/permissions";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
 import {
@@ -14,9 +16,13 @@ import {
   Car,
   ChevronDown,
   ChevronUp,
+  Gift,
+  Ticket,
+  Power,
 } from "lucide-react";
-import type { Customer, Vehicle } from "@/lib/db";
-import { calcTier } from "@/lib/db";
+import type { Customer, Vehicle, Coupon, CouponType } from "@/lib/db";
+import { calcTier, isCouponValid } from "@/lib/db";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/customers")({
   head: () => ({ meta: [{ title: "Customers — Polish Station OS" }] }),
@@ -32,7 +38,10 @@ const TIER_TONE = {
 
 // ─── Customer form (add / edit) ───────────────────────────────────────────────
 
-const BLANK: Omit<Customer, "id" | "createdAt" | "visits" | "spend" | "tier" | "lastVisit"> = {
+const BLANK: Omit<
+  Customer,
+  "id" | "createdAt" | "visits" | "spend" | "tier" | "lastVisit" | "loyaltyPoints"
+> = {
   name: "",
   phone: "",
   email: "",
@@ -46,7 +55,12 @@ function CustomerForm({
 }: {
   initial: Customer | null;
   onSave: (
-    data: Omit<Customer, "id" | "createdAt" | "visits" | "spend" | "tier" | "lastVisit"> | Customer,
+    data:
+      | Omit<
+          Customer,
+          "id" | "createdAt" | "visits" | "spend" | "tier" | "lastVisit" | "loyaltyPoints"
+        >
+      | Customer,
   ) => void;
   onCancel: () => void;
 }) {
@@ -279,7 +293,22 @@ function CustomerRow({
       {expanded && (
         <tr className="bg-muted/20">
           <td colSpan={8} className="px-5 py-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Loyalty */}
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
+                  Loyalty
+                </h4>
+                <div className="flex items-center gap-1.5 text-sm">
+                  <Gift className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="font-mono font-semibold">
+                    {customer.loyaltyPoints.toLocaleString()} pts
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    (≈ LKR {customer.loyaltyPoints.toLocaleString()} redeemable)
+                  </span>
+                </div>
+              </div>
               {/* Vehicles */}
               <div>
                 <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
@@ -328,6 +357,289 @@ function CustomerRow({
         </tr>
       )}
     </>
+  );
+}
+
+// ─── Coupon form (add / edit) ─────────────────────────────────────────────────
+
+const BLANK_COUPON: Omit<Coupon, "id" | "createdAt" | "redeemedCount"> = {
+  code: "",
+  type: "percent",
+  value: 10,
+  active: true,
+  expiresAt: null,
+  maxRedemptions: null,
+};
+
+function CouponForm({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial: Coupon | null;
+  onSave: (data: Omit<Coupon, "id" | "createdAt" | "redeemedCount"> | Coupon) => void;
+  onCancel: () => void;
+}) {
+  const [form, setForm] = useState<typeof BLANK_COUPON>(
+    initial
+      ? {
+          code: initial.code,
+          type: initial.type,
+          value: initial.value,
+          active: initial.active,
+          expiresAt: initial.expiresAt,
+          maxRedemptions: initial.maxRedemptions,
+        }
+      : BLANK_COUPON,
+  );
+
+  function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    const code = form.code.trim().toUpperCase();
+    if (!code || form.value <= 0) return;
+    const data = { ...form, code };
+    if (initial) onSave({ ...initial, ...data });
+    else onSave(data);
+  }
+
+  return (
+    <form onSubmit={handleSave} className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <label className="text-sm font-medium">Code *</label>
+          <input
+            required
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm uppercase focus:outline-none focus:ring-2 focus:ring-ring"
+            value={form.code}
+            onChange={(e) => setForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))}
+          />
+        </div>
+        <div>
+          <label className="text-sm font-medium">Type</label>
+          <select
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            value={form.type}
+            onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as CouponType }))}
+          >
+            <option value="percent">Percent off</option>
+            <option value="fixed">Fixed amount off</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-sm font-medium">
+            Value {form.type === "percent" ? "(%)" : "(LKR)"} *
+          </label>
+          <input
+            required
+            type="number"
+            min={0}
+            max={form.type === "percent" ? 100 : undefined}
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            value={form.value}
+            onChange={(e) => setForm((f) => ({ ...f, value: Number(e.target.value) || 0 }))}
+          />
+        </div>
+        <div>
+          <label className="text-sm font-medium">Expires</label>
+          <input
+            type="date"
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            value={form.expiresAt ?? ""}
+            onChange={(e) => setForm((f) => ({ ...f, expiresAt: e.target.value || null }))}
+          />
+        </div>
+        <div>
+          <label className="text-sm font-medium">Max redemptions</label>
+          <input
+            type="number"
+            min={0}
+            placeholder="Unlimited"
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            value={form.maxRedemptions ?? ""}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                maxRedemptions: e.target.value === "" ? null : Math.max(0, Number(e.target.value)),
+              }))
+            }
+          />
+        </div>
+        <div className="flex items-end">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              checked={form.active}
+              onChange={(e) => setForm((f) => ({ ...f, active: e.target.checked }))}
+            />
+            Active
+          </label>
+        </div>
+      </div>
+
+      <div className="flex gap-2 pt-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex-1 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="flex-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90"
+        >
+          {initial ? "Save Changes" : "Add Coupon"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// ─── Coupons panel ─────────────────────────────────────────────────────────────
+// Reads are open to anyone on this page (matches firestore.rules); creating,
+// editing and deleting coupon terms is a Manager+ action, the same gating
+// convention used for refunds and other business-sensitive POS actions.
+
+function CouponsPanel() {
+  const { coupons, addCoupon, updateCoupon, deleteCoupon } = useStore();
+  const { staff } = useAuth();
+  const canManage = isManagerOrAbove(staff?.role);
+  const [formMode, setFormMode] = useState<null | "add" | Coupon>(null);
+
+  function handleSave(data: Omit<Coupon, "id" | "createdAt" | "redeemedCount"> | Coupon) {
+    if ("id" in data) {
+      updateCoupon(data);
+      toast.success("Coupon updated");
+    } else {
+      addCoupon(data);
+      toast.success("Coupon added");
+    }
+    setFormMode(null);
+  }
+
+  function handleDelete(id: string) {
+    if (!confirm("Delete this coupon? This cannot be undone.")) return;
+    deleteCoupon(id);
+    toast.error("Coupon deleted");
+  }
+
+  return (
+    <div className="mt-6 rounded-xl border border-border bg-card shadow-card">
+      <div className="flex items-center justify-between p-4 border-b border-border">
+        <div>
+          <h2 className="font-display font-bold flex items-center gap-2">
+            <Ticket className="h-4 w-4" /> Coupons
+          </h2>
+          <p className="text-xs text-muted-foreground">Codes customers can redeem at checkout</p>
+        </div>
+        {canManage && (
+          <button
+            onClick={() => setFormMode("add")}
+            className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90"
+          >
+            <Plus className="h-4 w-4" /> New Coupon
+          </button>
+        )}
+      </div>
+
+      {formMode && canManage && (
+        <div className="p-5 border-b border-border">
+          <h3 className="font-display font-bold mb-4">
+            {formMode === "add" ? "Add New Coupon" : `Edit — ${(formMode as Coupon).code}`}
+          </h3>
+          <CouponForm
+            initial={formMode === "add" ? null : (formMode as Coupon)}
+            onSave={handleSave}
+            onCancel={() => setFormMode(null)}
+          />
+        </div>
+      )}
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-charcoal text-charcoal-foreground text-[11px] uppercase tracking-wider">
+            <tr>
+              <th className="text-left px-5 py-2.5">Code</th>
+              <th className="text-left px-3 py-2.5">Discount</th>
+              <th className="text-left px-3 py-2.5">Expires</th>
+              <th className="text-right px-3 py-2.5">Redemptions</th>
+              <th className="text-left px-3 py-2.5">Status</th>
+              {canManage && <th className="w-24 px-3 py-2.5" />}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {coupons.map((c) => {
+              const valid = isCouponValid(c);
+              return (
+                <tr key={c.id} className="hover:bg-muted/40">
+                  <td className="px-5 py-2.5 font-mono font-semibold">{c.code}</td>
+                  <td className="px-3 py-2.5">
+                    {c.type === "percent" ? `${c.value}%` : `LKR ${c.value.toLocaleString()}`} off
+                  </td>
+                  <td className="px-3 py-2.5 text-muted-foreground text-xs">
+                    {c.expiresAt
+                      ? new Date(c.expiresAt).toLocaleDateString([], {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })
+                      : "Never"}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono">
+                    {c.redeemedCount}
+                    {c.maxRedemptions != null ? ` / ${c.maxRedemptions}` : ""}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <StatusChip variant={valid ? "success" : "neutral"}>
+                      {c.active ? (valid ? "Active" : "Expired/Full") : "Disabled"}
+                    </StatusChip>
+                  </td>
+                  {canManage && (
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => updateCoupon({ ...c, active: !c.active })}
+                          className={cn(
+                            "rounded p-1.5 hover:bg-muted",
+                            c.active
+                              ? "text-muted-foreground hover:text-foreground"
+                              : "text-success",
+                          )}
+                          title={c.active ? "Disable" : "Enable"}
+                        >
+                          <Power className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setFormMode(c)}
+                          className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          title="Edit"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(c.id)}
+                          className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-primary"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+            {coupons.length === 0 && (
+              <tr>
+                <td colSpan={canManage ? 6 : 5} className="text-center py-8 text-muted-foreground">
+                  No coupons yet
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -486,6 +798,8 @@ function Customers() {
           </table>
         </div>
       </div>
+
+      <CouponsPanel />
     </div>
   );
 }

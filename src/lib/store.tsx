@@ -33,6 +33,7 @@ import { useAuth } from "./auth";
 import { hasModule, isManagerOrAbove, type ModuleKey } from "./permissions";
 import {
   calcTier,
+  calcLoyaltyPointsEarned,
   getQCTemplate,
   DEFAULT_NOTIFICATION_SETTINGS,
   DEFAULT_BUSINESS_INFO,
@@ -45,6 +46,7 @@ import {
 import type {
   AuditLog,
   Booking,
+  Coupon,
   Customer,
   Equipment,
   Expense,
@@ -116,6 +118,7 @@ interface Store {
   // data
   services: Service[];
   customers: Customer[];
+  coupons: Coupon[];
   jobs: Job[];
   bookings: Booking[];
   invoices: Invoice[];
@@ -175,10 +178,18 @@ interface Store {
 
   // Customers
   addCustomer: (
-    c: Omit<Customer, "id" | "createdAt" | "visits" | "spend" | "tier" | "lastVisit">,
+    c: Omit<
+      Customer,
+      "id" | "createdAt" | "visits" | "spend" | "tier" | "lastVisit" | "loyaltyPoints"
+    >,
   ) => Customer;
   updateCustomer: (c: Customer) => void;
   deleteCustomer: (id: string) => void;
+
+  // Coupons
+  addCoupon: (c: Omit<Coupon, "id" | "createdAt" | "redeemedCount">) => Coupon;
+  updateCoupon: (c: Coupon) => void;
+  deleteCoupon: (id: string) => void;
 
   // Bookings
   addBooking: (b: Omit<Booking, "id" | "createdAt">) => Promise<Booking>;
@@ -295,6 +306,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [storeLoading, setStoreLoading] = useState(true);
   const [services, setServices] = useState<Service[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -320,6 +332,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const S = useRef({
     jobs,
     customers,
+    coupons,
     bookings,
     invoices,
     shifts,
@@ -335,6 +348,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     S.current = {
       jobs,
       customers,
+      coupons,
       bookings,
       invoices,
       shifts,
@@ -349,6 +363,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [
     jobs,
     customers,
+    coupons,
     bookings,
     invoices,
     shifts,
@@ -410,6 +425,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           done();
         },
         fail("customers"),
+      ),
+    );
+    add(() =>
+      onSnapshot(
+        fs("coupons"),
+        (s) => {
+          setCoupons(s.docs.map((d) => ({ id: d.id, ...d.data() }) as Coupon));
+          done();
+        },
+        fail("coupons"),
       ),
     );
     add(() =>
@@ -734,7 +759,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // ── Customer mutations ─────────────────────────────────────────────────────
   const addCustomer = useCallback(
     (
-      data: Omit<Customer, "id" | "createdAt" | "visits" | "spend" | "tier" | "lastVisit">,
+      data: Omit<
+        Customer,
+        "id" | "createdAt" | "visits" | "spend" | "tier" | "lastVisit" | "loyaltyPoints"
+      >,
     ): Customer => {
       const c: Customer = {
         ...data,
@@ -744,6 +772,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         spend: 0,
         tier: "Bronze",
         lastVisit: null,
+        loyaltyPoints: 0,
       };
       write("customers", c);
       return c;
@@ -754,6 +783,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const updateCustomer = useCallback((c: Customer) => write("customers", c), []);
 
   const deleteCustomer = useCallback((id: string) => remove("customers", id), []);
+
+  // ── Coupon mutations ───────────────────────────────────────────────────────
+  const addCoupon = useCallback(
+    (data: Omit<Coupon, "id" | "createdAt" | "redeemedCount">): Coupon => {
+      const c: Coupon = {
+        ...data,
+        id: newId(),
+        createdAt: new Date().toISOString(),
+        redeemedCount: 0,
+      };
+      write("coupons", c);
+      return c;
+    },
+    [],
+  );
+
+  const updateCoupon = useCallback((c: Coupon) => write("coupons", c), []);
+
+  const deleteCoupon = useCallback((id: string) => remove("coupons", id), []);
 
   // ── Booking mutations ──────────────────────────────────────────────────────
   const addBooking = useCallback(
@@ -855,17 +903,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       };
       const batch = writeBatch(fsDb);
       batch.set(fd("invoices", inv.id), inv);
-      // Update customer visit + spend
+      // Update customer visit + spend + loyalty points
       if (data.customerId) {
         const c = S.current.customers.find((x) => x.id === data.customerId);
         if (c) {
           const spend = c.spend + data.total;
+          const pointsRedeemed = data.pointsRedeemed ?? 0;
+          const pointsEarned = calcLoyaltyPointsEarned(data.total);
           batch.set(fd("customers", c.id), {
             ...c,
             visits: c.visits + 1,
             spend,
             tier: calcTier(spend),
             lastVisit: new Date().toISOString(),
+            loyaltyPoints: Math.max(0, c.loyaltyPoints - pointsRedeemed) + pointsEarned,
+          });
+        }
+      }
+      // Bump the coupon's redemption count so maxRedemptions is enforced.
+      if (data.couponCode) {
+        const coupon = S.current.coupons.find((x) => x.code === data.couponCode);
+        if (coupon) {
+          batch.set(fd("coupons", coupon.id), {
+            ...coupon,
+            redeemedCount: coupon.redeemedCount + 1,
           });
         }
       }
@@ -1163,6 +1224,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     storeLoading,
     services,
     customers,
+    coupons,
     jobs,
     bookings,
     invoices,
@@ -1205,6 +1267,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addCustomer,
     updateCustomer,
     deleteCustomer,
+    addCoupon,
+    updateCoupon,
+    deleteCoupon,
     addBooking,
     updateBooking,
     deleteBooking,

@@ -79,6 +79,9 @@ interface DocOptions {
   vehicleModel?: string;
   lines: InvoiceLine[];
   subtotal: number;
+  couponCode?: string;
+  couponDiscount?: number;
+  pointsDiscount?: number;
   tax: number;
   tip?: number;
   total: number;
@@ -279,6 +282,17 @@ function buildDoc(opts: DocOptions): jsPDF {
   }
 
   totalRow("Subtotal", fmt(opts.subtotal));
+  if (opts.couponDiscount && opts.couponDiscount > 0) {
+    totalRow(
+      opts.couponCode ? `Coupon (${opts.couponCode})` : "Coupon Discount",
+      `− ${fmt(opts.couponDiscount)}`,
+      false,
+      SUCCESS,
+    );
+  }
+  if (opts.pointsDiscount && opts.pointsDiscount > 0) {
+    totalRow("Loyalty Points Redeemed", `− ${fmt(opts.pointsDiscount)}`, false, SUCCESS);
+  }
   totalRow(taxLabel(), fmt(opts.tax));
   if (opts.tip && opts.tip > 0) totalRow("Tip / Gratuity", fmt(opts.tip));
 
@@ -421,6 +435,9 @@ export function downloadInvoicePDF(invoice: Invoice, job?: Job) {
     vehicleModel: job?.vehicleModel,
     lines: invoice.lines,
     subtotal: invoice.subtotal,
+    couponCode: invoice.couponCode,
+    couponDiscount: invoice.couponDiscount,
+    pointsDiscount: invoice.pointsRedeemedValue,
     tax: invoice.tax,
     tip: invoice.tip,
     total: invoice.total,
