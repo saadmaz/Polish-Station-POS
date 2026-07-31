@@ -78,7 +78,7 @@ type SectionId = (typeof SECTIONS)[number]["id"];
 function Settings() {
   const [active, setActive] = useState<SectionId>("business");
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader title="Settings" subtitle="Admin-only · all changes audited" />
       <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-5">
         <nav className="rounded-xl border border-border bg-card shadow-card p-2 h-fit">
@@ -99,7 +99,7 @@ function Settings() {
           ))}
         </nav>
 
-        <div className="rounded-xl border border-border bg-card shadow-card p-6 min-h-105">
+        <div className="rounded-xl border border-border bg-card shadow-card p-4 sm:p-6 min-h-105">
           {active === "business" && <BusinessPanel />}
           {active === "catalog" && <CatalogPanel />}
           {active === "bays" && <BaysPanel />}
@@ -268,8 +268,8 @@ function CatalogPanel() {
       <SectionTitle title="Services Catalog" desc="Add, edit and price the services on offer." />
 
       {(adding || editing) && (
-        <div className="mb-5 rounded-lg border border-border bg-muted/30 p-4 grid grid-cols-2 gap-3">
-          <label className="block col-span-2">
+        <div className="mb-5 rounded-lg border border-border bg-muted/30 p-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="block sm:col-span-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Service Name
             </span>
@@ -308,7 +308,7 @@ function CatalogPanel() {
               onChange={(e) => setForm((f) => ({ ...f, durationMin: Number(e.target.value) }))}
             />
           </label>
-          <label className="block col-span-2">
+          <label className="block sm:col-span-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Price (LKR)
             </span>
@@ -321,7 +321,7 @@ function CatalogPanel() {
               onChange={(e) => setForm((f) => ({ ...f, price: Number(e.target.value) }))}
             />
           </label>
-          <div className="col-span-2 flex gap-2 justify-end">
+          <div className="sm:col-span-2 flex gap-2 justify-end">
             <button
               onClick={closeForm}
               className="rounded-md border border-input px-4 py-2 text-sm"
@@ -338,7 +338,41 @@ function CatalogPanel() {
         </div>
       )}
 
-      <div className="overflow-x-auto">
+      {/* Mobile: stacked cards */}
+      <div className="divide-y divide-border md:hidden">
+        {services.map((s) => (
+          <div key={s.id} className="flex items-center justify-between gap-3 py-3">
+            <div className="min-w-0">
+              <div className="font-medium truncate">{s.name}</div>
+              <div className="text-xs text-muted-foreground">
+                {s.category} · {s.durationMin}m
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-3">
+              <span className="font-mono font-semibold">LKR {s.price.toLocaleString()}</span>
+              <button
+                onClick={() => openEdit(s)}
+                className="rounded-md p-2 text-xs text-primary hover:bg-accent"
+                aria-label={`Edit ${s.name}`}
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => {
+                  if (confirm(`Delete "${s.name}"?`)) deleteService(s.id);
+                }}
+                className="rounded-md p-2 text-xs text-destructive hover:bg-accent"
+                aria-label={`Delete ${s.name}`}
+              >
+                Del
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tablet/desktop: table */}
+      <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-sm">
           <thead className="text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
             <tr>
@@ -646,40 +680,67 @@ function AuditPanel() {
           No audit events recorded yet.
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
-              <tr>
-                <th className="text-left py-2">Time</th>
-                <th className="text-left py-2">User</th>
-                <th className="text-left py-2">Entity</th>
-                <th className="text-left py-2">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {events.slice(0, 50).map((e) => (
-                <tr key={e.id}>
-                  <td className="py-2.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
-                    {new Date(e.createdAt).toLocaleString([], {
-                      day: "numeric",
-                      month: "short",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </td>
-                  <td className="py-2.5 font-medium">{e.staffName || e.staffId || "—"}</td>
-                  <td className="py-2.5">
-                    <StatusChip variant="neutral">{e.entity}</StatusChip>
-                  </td>
-                  <td className="py-2.5 text-muted-foreground">
-                    {e.action.replace(/_/g, " ")}
-                    {e.entityId ? ` · ${e.entityId}` : ""}
-                  </td>
+        <>
+          {/* Mobile: stacked cards */}
+          <div className="divide-y divide-border md:hidden">
+            {events.slice(0, 50).map((e) => (
+              <div key={e.id} className="py-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">{e.staffName || e.staffId || "—"}</span>
+                  <StatusChip variant="neutral">{e.entity}</StatusChip>
+                </div>
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  {e.action.replace(/_/g, " ")}
+                  {e.entityId ? ` · ${e.entityId}` : ""}
+                </div>
+                <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                  {new Date(e.createdAt).toLocaleString([], {
+                    day: "numeric",
+                    month: "short",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Tablet/desktop: table */}
+          <div className="hidden overflow-x-auto md:block">
+            <table className="w-full text-sm">
+              <thead className="text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
+                <tr>
+                  <th className="text-left py-2">Time</th>
+                  <th className="text-left py-2">User</th>
+                  <th className="text-left py-2">Entity</th>
+                  <th className="text-left py-2">Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {events.slice(0, 50).map((e) => (
+                  <tr key={e.id}>
+                    <td className="py-2.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
+                      {new Date(e.createdAt).toLocaleString([], {
+                        day: "numeric",
+                        month: "short",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </td>
+                    <td className="py-2.5 font-medium">{e.staffName || e.staffId || "—"}</td>
+                    <td className="py-2.5">
+                      <StatusChip variant="neutral">{e.entity}</StatusChip>
+                    </td>
+                    <td className="py-2.5 text-muted-foreground">
+                      {e.action.replace(/_/g, " ")}
+                      {e.entityId ? ` · ${e.entityId}` : ""}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </>
   );

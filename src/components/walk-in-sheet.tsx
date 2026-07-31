@@ -191,14 +191,14 @@ export function WalkInSheet({ open, onOpenChange }: WalkInSheetProps) {
             <button
               type="button"
               onClick={() => onOpenChange(false)}
-              className="flex-1 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+              className="min-h-11 flex-1 rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="flex-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90 disabled:opacity-60"
+              className="min-h-11 flex-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90 disabled:opacity-60"
             >
               {submitting ? "Adding…" : "Add to Queue"}
             </button>

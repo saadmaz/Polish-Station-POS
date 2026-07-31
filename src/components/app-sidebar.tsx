@@ -147,7 +147,7 @@ function UserRow({
             navigate({ to: "/" });
             onAfterLock?.();
           }}
-          className="rounded-md p-1.5 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          className="rounded-md p-2.5 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
         >
           <Lock className="h-4 w-4" />
         </button>

@@ -109,7 +109,7 @@ export function NotificationsPopover() {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button aria-label="Notifications" className="relative rounded-md p-2 hover:bg-accent">
+        <button aria-label="Notifications" className="relative rounded-md p-2.5 hover:bg-accent">
           <Bell className="h-5 w-5" />
           {unread > 0 && (
             <span className="absolute right-1.5 top-1.5 grid h-4 w-4 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
@@ -119,7 +119,7 @@ export function NotificationsPopover() {
         </button>
       </PopoverTrigger>
 
-      <PopoverContent align="end" className="w-80 p-0">
+      <PopoverContent align="end" className="w-[calc(100vw-2rem)] sm:w-80 p-0">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <span className="text-sm font-semibold">Notifications</span>
           {unread > 0 && (

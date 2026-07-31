@@ -106,7 +106,7 @@ function CreatePOForm({
   return (
     <form onSubmit={submit} className="rounded-lg border border-border bg-muted/30 p-5 space-y-4">
       <p className="font-semibold">Create Purchase Order</p>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div>
           <label className={lbl}>Supplier *</label>
           <input
@@ -126,7 +126,7 @@ function CreatePOForm({
             placeholder="Your name"
           />
         </div>
-        <div className="col-span-2 sm:col-span-1">
+        <div className="sm:col-span-1">
           <label className={lbl}>Notes</label>
           <input
             className={inp}
@@ -197,7 +197,7 @@ function CreatePOForm({
                     <input
                       type="number"
                       min={1}
-                      className="w-20 rounded border border-input bg-background px-2 py-1 text-center text-sm"
+                      className="min-h-9 w-20 rounded border border-input bg-background px-2 py-1.5 text-center text-sm"
                       value={l.qtyOrdered}
                       onChange={(e) => updateLine(idx, "qtyOrdered", parseInt(e.target.value) || 1)}
                     />
@@ -206,7 +206,7 @@ function CreatePOForm({
                     <input
                       type="number"
                       min={0}
-                      className="w-28 rounded border border-input bg-background px-2 py-1 text-right text-sm"
+                      className="min-h-9 w-28 rounded border border-input bg-background px-2 py-1.5 text-right text-sm"
                       value={l.unitCost}
                       onChange={(e) => updateLine(idx, "unitCost", parseFloat(e.target.value) || 0)}
                     />
@@ -218,7 +218,8 @@ function CreatePOForm({
                     <button
                       type="button"
                       onClick={() => removeLine(idx)}
-                      className="rounded p-1 text-muted-foreground hover:text-destructive"
+                      aria-label="Remove line"
+                      className="rounded p-2 text-muted-foreground hover:text-destructive"
                     >
                       <X className="h-4 w-4" />
                     </button>
@@ -288,7 +289,8 @@ function ReceivePanel({
     onConfirm(lines);
   }
 
-  const inp = "w-20 rounded border border-input bg-background px-2 py-1 text-center text-sm";
+  const inp =
+    "min-h-9 w-20 rounded border border-input bg-background px-2 py-1.5 text-center text-sm";
 
   return (
     <div className="mt-3 rounded-lg border border-border bg-background p-4 space-y-3">
@@ -372,11 +374,10 @@ function ReceivePanel({
   );
 }
 
-// ─── PO Row ───────────────────────────────────────────────────────────────────
+// ─── PO expanded detail (shared by the desktop row and the mobile card) ──────
 
-function PORow({ po }: { po: PurchaseOrder }) {
-  const { updatePurchaseOrder, deletePurchaseOrder, receivePO } = useStore();
-  const [open, setOpen] = useState(false);
+function POExpandedContent({ po }: { po: PurchaseOrder }) {
+  const { updatePurchaseOrder, receivePO } = useStore();
   const [receiving, setReceiving] = useState(false);
 
   const total = poTotal(po);
@@ -393,6 +394,158 @@ function PORow({ po }: { po: PurchaseOrder }) {
       updatePurchaseOrder({ ...po, status: "Cancelled" });
     }
   }
+
+  return (
+    <>
+      {/* PO meta */}
+      <div className="mb-3 grid grid-cols-1 gap-x-8 gap-y-1 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        {po.createdBy && (
+          <div>
+            <span className="text-muted-foreground">Raised by: </span>
+            {po.createdBy}
+          </div>
+        )}
+        {po.sentAt && (
+          <div>
+            <span className="text-muted-foreground">Sent: </span>
+            {fmtDate(po.sentAt)}
+          </div>
+        )}
+        {po.receivedAt && (
+          <div>
+            <span className="text-muted-foreground">Received: </span>
+            {fmtDate(po.receivedAt)}
+          </div>
+        )}
+        {po.notes && (
+          <div className="sm:col-span-2 lg:col-span-4 text-muted-foreground">{po.notes}</div>
+        )}
+      </div>
+
+      {/* Lines table — dense editing/review data, kept as a horizontally
+          scrollable table at every width rather than a card list. */}
+      <div className="overflow-x-auto rounded-lg border border-border mb-3">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50">
+            <tr>
+              <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">
+                Item / SKU
+              </th>
+              <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground">
+                Unit
+              </th>
+              <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground">
+                Ordered
+              </th>
+              <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground">
+                Received
+              </th>
+              <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                Unit Cost
+              </th>
+              <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                Line Total
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {po.lines.map((l) => (
+              <tr key={l.inventoryItemId} className="border-t border-border">
+                <td className="px-3 py-2">
+                  <div className="font-medium">{l.itemName}</div>
+                  <div className="text-xs text-muted-foreground">{l.sku}</div>
+                </td>
+                <td className="px-3 py-2 text-center text-muted-foreground">{l.unit}</td>
+                <td className="px-3 py-2 text-center">{l.qtyOrdered}</td>
+                <td className="px-3 py-2 text-center">
+                  <span
+                    className={cn(
+                      "font-medium",
+                      l.qtyReceived >= l.qtyOrdered
+                        ? "text-green-600"
+                        : l.qtyReceived > 0
+                          ? "text-amber-600"
+                          : "text-muted-foreground",
+                    )}
+                  >
+                    {l.qtyReceived}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-right text-muted-foreground">{fmtLKR(l.unitCost)}</td>
+                <td className="px-3 py-2 text-right font-medium">
+                  {fmtLKR(l.unitCost * l.qtyOrdered)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-border bg-muted/30">
+              <td colSpan={5} className="px-3 py-2 text-right text-sm font-semibold">
+                Order Total
+              </td>
+              <td className="px-3 py-2 text-right text-sm font-bold">{fmtLKR(total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      {/* Receive panel */}
+      {receiving && (
+        <ReceivePanel
+          po={po}
+          onConfirm={(lines) => {
+            receivePO(po.id, lines);
+            setReceiving(false);
+          }}
+          onCancel={() => setReceiving(false)}
+        />
+      )}
+
+      {/* Actions */}
+      {!receiving && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => downloadPOPDF(po)}
+            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted"
+          >
+            <FileDown className="h-4 w-4" /> Download PDF
+          </button>
+          {canSend && (
+            <button
+              onClick={markSent}
+              className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+            >
+              <Send className="h-4 w-4" /> Mark as Sent
+            </button>
+          )}
+          {canReceive && (
+            <button
+              onClick={() => setReceiving(true)}
+              className="flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700"
+            >
+              <PackageCheck className="h-4 w-4" /> Receive Stock
+            </button>
+          )}
+          {canCancel && (
+            <button
+              onClick={cancel}
+              className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10"
+            >
+              <X className="h-4 w-4" /> Cancel PO
+            </button>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── PO Row (desktop table) ───────────────────────────────────────────────────
+
+function PORow({ po }: { po: PurchaseOrder }) {
+  const { deletePurchaseOrder } = useStore();
+  const [open, setOpen] = useState(false);
+  const total = poTotal(po);
 
   return (
     <>
@@ -463,150 +616,80 @@ function PORow({ po }: { po: PurchaseOrder }) {
       {open && (
         <tr className="border-t border-border">
           <td colSpan={7} className="bg-muted/10 px-6 py-4">
-            {/* PO meta */}
-            <div className="mb-3 grid grid-cols-2 gap-x-8 text-sm sm:grid-cols-4">
-              {po.createdBy && (
-                <div>
-                  <span className="text-muted-foreground">Raised by: </span>
-                  {po.createdBy}
-                </div>
-              )}
-              {po.sentAt && (
-                <div>
-                  <span className="text-muted-foreground">Sent: </span>
-                  {fmtDate(po.sentAt)}
-                </div>
-              )}
-              {po.receivedAt && (
-                <div>
-                  <span className="text-muted-foreground">Received: </span>
-                  {fmtDate(po.receivedAt)}
-                </div>
-              )}
-              {po.notes && (
-                <div className="col-span-2 sm:col-span-4 text-muted-foreground">{po.notes}</div>
-              )}
-            </div>
-
-            {/* Lines table */}
-            <div className="overflow-x-auto rounded-lg border border-border mb-3">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">
-                      Item / SKU
-                    </th>
-                    <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground">
-                      Unit
-                    </th>
-                    <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground">
-                      Ordered
-                    </th>
-                    <th className="px-3 py-2 text-center text-xs font-medium text-muted-foreground">
-                      Received
-                    </th>
-                    <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
-                      Unit Cost
-                    </th>
-                    <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
-                      Line Total
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {po.lines.map((l) => (
-                    <tr key={l.inventoryItemId} className="border-t border-border">
-                      <td className="px-3 py-2">
-                        <div className="font-medium">{l.itemName}</div>
-                        <div className="text-xs text-muted-foreground">{l.sku}</div>
-                      </td>
-                      <td className="px-3 py-2 text-center text-muted-foreground">{l.unit}</td>
-                      <td className="px-3 py-2 text-center">{l.qtyOrdered}</td>
-                      <td className="px-3 py-2 text-center">
-                        <span
-                          className={cn(
-                            "font-medium",
-                            l.qtyReceived >= l.qtyOrdered
-                              ? "text-green-600"
-                              : l.qtyReceived > 0
-                                ? "text-amber-600"
-                                : "text-muted-foreground",
-                          )}
-                        >
-                          {l.qtyReceived}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-right text-muted-foreground">
-                        {fmtLKR(l.unitCost)}
-                      </td>
-                      <td className="px-3 py-2 text-right font-medium">
-                        {fmtLKR(l.unitCost * l.qtyOrdered)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t-2 border-border bg-muted/30">
-                    <td colSpan={5} className="px-3 py-2 text-right text-sm font-semibold">
-                      Order Total
-                    </td>
-                    <td className="px-3 py-2 text-right text-sm font-bold">{fmtLKR(total)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-
-            {/* Receive panel */}
-            {receiving && (
-              <ReceivePanel
-                po={po}
-                onConfirm={(lines) => {
-                  receivePO(po.id, lines);
-                  setReceiving(false);
-                }}
-                onCancel={() => setReceiving(false)}
-              />
-            )}
-
-            {/* Actions */}
-            {!receiving && (
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => downloadPOPDF(po)}
-                  className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted"
-                >
-                  <FileDown className="h-4 w-4" /> Download PDF
-                </button>
-                {canSend && (
-                  <button
-                    onClick={markSent}
-                    className="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-                  >
-                    <Send className="h-4 w-4" /> Mark as Sent
-                  </button>
-                )}
-                {canReceive && (
-                  <button
-                    onClick={() => setReceiving(true)}
-                    className="flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700"
-                  >
-                    <PackageCheck className="h-4 w-4" /> Receive Stock
-                  </button>
-                )}
-                {canCancel && (
-                  <button
-                    onClick={cancel}
-                    className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10"
-                  >
-                    <X className="h-4 w-4" /> Cancel PO
-                  </button>
-                )}
-              </div>
-            )}
+            <POExpandedContent po={po} />
           </td>
         </tr>
       )}
     </>
+  );
+}
+
+// ─── PO Card (mobile) ──────────────────────────────────────────────────────────
+
+function POCard({ po }: { po: PurchaseOrder }) {
+  const { deletePurchaseOrder } = useStore();
+  const [open, setOpen] = useState(false);
+  const total = poTotal(po);
+
+  return (
+    <div className="p-4">
+      <button
+        className="flex w-full items-start justify-between gap-3 text-left"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <div className="min-w-0">
+          <div className="font-mono text-sm font-semibold">{po.poNumber}</div>
+          <div className="truncate text-sm font-medium">{po.supplier}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <span>{fmtDate(po.createdAt)}</span>
+            <span>
+              {po.lines.length} item{po.lines.length !== 1 ? "s" : ""}
+            </span>
+            <span className="font-semibold text-foreground">{fmtLKR(total)}</span>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <span
+            className={cn(
+              "rounded-full px-2.5 py-0.5 text-xs font-medium",
+              STATUS_BADGE[po.status],
+            )}
+          >
+            {po.status}
+          </span>
+          {open ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          )}
+        </div>
+      </button>
+
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <button
+          onClick={() => downloadPOPDF(po)}
+          className="inline-flex items-center gap-1 rounded-md border border-input px-2.5 py-1.5 text-[11px] font-medium hover:bg-accent"
+        >
+          <FileDown className="h-3.5 w-3.5" /> PDF
+        </button>
+        {po.status === "Draft" && (
+          <button
+            onClick={() => {
+              if (confirm("Delete this draft PO?")) deletePurchaseOrder(po.id);
+            }}
+            className="inline-flex items-center gap-1 rounded-md border border-input px-2.5 py-1.5 text-[11px] font-medium text-destructive hover:bg-destructive/10"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Delete
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <div className="mt-3 border-t border-border pt-3">
+          <POExpandedContent po={po} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -665,6 +748,7 @@ function PurchaseOrdersPage() {
   const filtered = purchaseOrdersList.filter(
     (po) => filterStatus === "All" || po.status === filterStatus,
   );
+  const sorted = filtered.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   const draft = purchaseOrdersList.filter((p) => p.status === "Draft").length;
   const sent = purchaseOrdersList.filter(
@@ -676,7 +760,7 @@ function PurchaseOrdersPage() {
     .reduce((s, p) => s + poTotal(p), 0);
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-6 p-4 sm:p-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -687,7 +771,7 @@ function PurchaseOrdersPage() {
             Manage supplier purchase orders and receive stock directly to inventory
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {lowStockItems.length > 0 && (
             <button
               onClick={createAutoPOs}
@@ -770,8 +854,25 @@ function PurchaseOrdersPage() {
         )}
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto rounded-lg border border-border bg-card">
+      {/* Mobile: stacked cards */}
+      <div className="divide-y divide-border rounded-lg border border-border bg-card md:hidden">
+        {sorted.length === 0 ? (
+          <div className="py-16 text-center text-muted-foreground">
+            <ShoppingCart className="mx-auto mb-2 h-8 w-8 opacity-30" />
+            <p className="text-sm">No purchase orders</p>
+            {lowStockItems.length > 0 && (
+              <p className="mt-1 text-xs">
+                Use <strong>Auto PO</strong> to generate orders from low-stock items
+              </p>
+            )}
+          </div>
+        ) : (
+          sorted.map((po) => <POCard key={po.id} po={po} />)
+        )}
+      </div>
+
+      {/* Tablet/desktop: table */}
+      <div className="hidden overflow-x-auto rounded-lg border border-border bg-card md:block">
         <table className="w-full">
           <thead className="bg-muted/50">
             <tr>
@@ -797,7 +898,7 @@ function PurchaseOrdersPage() {
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {sorted.length === 0 ? (
               <tr>
                 <td colSpan={7} className="py-16 text-center text-muted-foreground">
                   <ShoppingCart className="mx-auto mb-2 h-8 w-8 opacity-30" />
@@ -810,10 +911,7 @@ function PurchaseOrdersPage() {
                 </td>
               </tr>
             ) : (
-              filtered
-                .slice()
-                .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-                .map((po) => <PORow key={po.id} po={po} />)
+              sorted.map((po) => <PORow key={po.id} po={po} />)
             )}
           </tbody>
         </table>

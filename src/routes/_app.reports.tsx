@@ -402,7 +402,7 @@ function Reports() {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader
         title="Reports"
         subtitle={`Period · ${periodLabel[period]}`}
@@ -466,7 +466,13 @@ function Reports() {
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-            <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} />
+            <XAxis
+              dataKey="date"
+              tick={{ fontSize: 11 }}
+              tickLine={false}
+              interval="preserveStartEnd"
+              minTickGap={24}
+            />
             <YAxis
               tick={{ fontSize: 11 }}
               tickLine={false}
@@ -507,7 +513,13 @@ function Reports() {
         <ResponsiveContainer width="100%" height={160}>
           <BarChart data={dailyData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-            <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} />
+            <XAxis
+              dataKey="date"
+              tick={{ fontSize: 11 }}
+              tickLine={false}
+              interval="preserveStartEnd"
+              minTickGap={24}
+            />
             <YAxis
               allowDecimals={false}
               tick={{ fontSize: 11 }}
@@ -528,7 +540,31 @@ function Reports() {
         <div className="px-5 py-3 border-b border-border">
           <h2 className="font-display font-bold">Technician Performance</h2>
         </div>
-        <div className="overflow-x-auto">
+
+        {/* Mobile: stacked cards */}
+        <div className="divide-y divide-border md:hidden">
+          {techStats.map((t) => (
+            <div key={t.tech} className="flex items-center justify-between gap-3 px-5 py-3">
+              <div className="min-w-0">
+                <div className="font-medium truncate">{t.tech}</div>
+                <div className="text-xs text-muted-foreground">
+                  {t.jobsCompleted} jobs · {t.onTime}% on-time · {t.avgDuration}m avg
+                </div>
+              </div>
+              <span className="shrink-0 font-mono font-semibold">
+                LKR {t.revenue.toLocaleString()}
+              </span>
+            </div>
+          ))}
+          {techStats.length === 0 && (
+            <div className="px-5 py-6 text-center text-sm text-muted-foreground">
+              No jobs in this period
+            </div>
+          )}
+        </div>
+
+        {/* Tablet/desktop: table */}
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead className="bg-charcoal text-charcoal-foreground text-[11px] uppercase tracking-wider">
               <tr>
@@ -568,7 +604,31 @@ function Reports() {
         <div className="px-5 py-3 border-b border-border">
           <h2 className="font-display font-bold">Top Customers by Lifetime Value</h2>
         </div>
-        <div className="overflow-x-auto">
+
+        {/* Mobile: stacked cards */}
+        <div className="divide-y divide-border md:hidden">
+          {rankedCustomers.slice(0, 10).map((c) => (
+            <div key={c.id} className="flex items-center justify-between gap-3 px-5 py-3">
+              <div className="min-w-0">
+                <div className="font-medium truncate">{c.name}</div>
+                <div className="text-xs text-muted-foreground">
+                  {c.visits} visits · {c.tier} · avg LKR {c.avgOrderValue.toLocaleString()}
+                </div>
+              </div>
+              <span className="shrink-0 font-mono font-semibold">
+                LKR {c.spend.toLocaleString()}
+              </span>
+            </div>
+          ))}
+          {rankedCustomers.length === 0 && (
+            <div className="px-5 py-6 text-center text-sm text-muted-foreground">
+              No customers with a completed visit yet
+            </div>
+          )}
+        </div>
+
+        {/* Tablet/desktop: table */}
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead className="bg-charcoal text-charcoal-foreground text-[11px] uppercase tracking-wider">
               <tr>

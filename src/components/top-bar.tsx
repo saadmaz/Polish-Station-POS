@@ -66,7 +66,7 @@ export function TopBar() {
           <Search className="h-5 w-5" />
         </button>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {/* Shift status pill */}
           <button
             onClick={() => setShiftOpen(true)}
@@ -100,6 +100,15 @@ export function TopBar() {
             </span>
           )}
 
+          {/* Small tablets get an icon-only affordance instead of losing the action entirely */}
+          <button
+            onClick={() => setWalkInOpen(true)}
+            aria-label="New walk-in"
+            title="New walk-in"
+            className="hidden sm:inline-flex md:hidden items-center justify-center rounded-md border border-input bg-background p-2 hover:bg-accent"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
           <button
             onClick={() => setWalkInOpen(true)}
             className="hidden md:inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent"

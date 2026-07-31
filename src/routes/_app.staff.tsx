@@ -42,7 +42,7 @@ function StaffPage() {
   const activeTechs = new Set(activeJobs.map((j) => j.tech).filter(Boolean));
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       <PageHeader
         title="Staff"
         subtitle={`${staffList.length} team members · ${activeTechs.size} currently active`}
@@ -104,21 +104,27 @@ function StaffPage() {
           </div>
           <div className="divide-y divide-border">
             {activeJobs.map((j) => (
-              <div key={j.id} className="flex items-center gap-4 px-5 py-3 text-sm">
-                <span className="font-mono text-[11px] text-muted-foreground w-16">{j.id}</span>
+              <div
+                key={j.id}
+                className="flex items-center gap-2 px-4 py-3 text-sm sm:gap-4 sm:px-5"
+              >
+                <span className="hidden font-mono text-[11px] text-muted-foreground w-16 sm:inline">
+                  {j.id}
+                </span>
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold truncate">{j.customerName}</div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-xs text-muted-foreground truncate">
                     {j.serviceName} · {j.bay}
                   </div>
                 </div>
-                <span className="text-muted-foreground">{j.tech}</span>
+                <span className="hidden shrink-0 text-muted-foreground sm:inline">{j.tech}</span>
                 <span
-                  className={
+                  className={cn(
+                    "shrink-0 font-mono text-xs sm:text-sm",
                     j.elapsedMin > j.estimateMin
-                      ? "font-mono font-bold text-primary"
-                      : "font-mono text-muted-foreground"
-                  }
+                      ? "font-bold text-primary"
+                      : "text-muted-foreground",
+                  )}
                 >
                   {j.elapsedMin}m / {j.estimateMin}m
                 </span>
@@ -235,7 +241,66 @@ function RotaPanel() {
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      {/* Mobile: one card per staff member, days scroll horizontally within
+          the card so the staff name never competes with the table for
+          width the way a full 8-column table would. */}
+      <div className="divide-y divide-border md:hidden">
+        {staffList.map((s) => (
+          <div key={s.id} className="p-4">
+            <div className="mb-2 text-sm font-medium">{s.name}</div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {days.map((d, i) => {
+                const ymd = toYMD(d);
+                const shift = shiftFor(s.id, ymd);
+                return (
+                  <div
+                    key={ymd}
+                    className={cn(
+                      "w-20 shrink-0 rounded-md border p-1.5 text-center",
+                      ymd === todayYMD ? "border-primary/30 bg-primary/5" : "border-border",
+                    )}
+                  >
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                      {DAY_LABELS[i]} {d.getDate()}
+                    </div>
+                    {shift ? (
+                      <button
+                        onClick={() =>
+                          canManage &&
+                          setEditing({ staffId: s.id, staffName: s.name, date: ymd, shift })
+                        }
+                        disabled={!canManage}
+                        className="mt-1 min-h-9 w-full rounded-md bg-primary/10 px-1 py-1.5 font-mono text-[11px] text-primary hover:bg-primary/20 disabled:cursor-default"
+                      >
+                        {shift.startTime}–{shift.endTime}
+                      </button>
+                    ) : canManage ? (
+                      <button
+                        onClick={() =>
+                          setEditing({ staffId: s.id, staffName: s.name, date: ymd, shift: null })
+                        }
+                        className="mt-1 min-h-9 w-full rounded-md border border-dashed border-input py-1.5 text-xs text-muted-foreground hover:bg-accent"
+                      >
+                        +
+                      </button>
+                    ) : (
+                      <span className="mt-1 block py-1.5 text-xs text-muted-foreground">—</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        {staffList.length === 0 && (
+          <div className="px-5 py-6 text-center text-sm text-muted-foreground">
+            No staff on file
+          </div>
+        )}
+      </div>
+
+      {/* Tablet/desktop: full grid table */}
+      <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-sm">
           <thead className="bg-charcoal text-charcoal-foreground text-[11px] uppercase tracking-wider">
             <tr>

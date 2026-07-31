@@ -181,95 +181,170 @@ export function AccessPanel() {
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
-              <tr>
-                <th className="text-left py-2">User</th>
-                <th className="text-left py-2">Username</th>
-                <th className="text-left py-2">Role</th>
-                <th className="text-left py-2">Modules</th>
-                <th className="text-left py-2">Status</th>
-                <th className="text-right py-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {rows.map((row) => {
-                const actionable = canActOn(row);
-                return (
-                  <tr key={row.id} className={cn(!row.active && "opacity-50")}>
-                    <td className="py-2.5">
-                      <div className="flex items-center gap-2.5">
-                        <span
-                          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-bold text-primary-foreground"
-                          style={{ background: row.color }}
-                        >
-                          {row.name
-                            .split(" ")
-                            .map((p) => p[0])
-                            .join("")
-                            .slice(0, 2)}
-                        </span>
-                        <span className="font-medium">{row.name}</span>
+        <>
+          {/* Mobile: stacked cards */}
+          <div className="divide-y divide-border md:hidden">
+            {rows.map((row) => {
+              const actionable = canActOn(row);
+              return (
+                <div key={row.id} className={cn("py-3", !row.active && "opacity-50")}>
+                  <div className="flex items-center gap-2.5">
+                    <span
+                      className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-bold text-primary-foreground"
+                      style={{ background: row.color }}
+                    >
+                      {row.name
+                        .split(" ")
+                        .map((p) => p[0])
+                        .join("")
+                        .slice(0, 2)}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-medium truncate">{row.name}</span>
                         {row.id === me?.id && (
                           <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
                             (you)
                           </span>
                         )}
                       </div>
-                    </td>
-                    <td className="py-2.5 font-mono text-muted-foreground">{row.username}</td>
-                    <td className="py-2.5">
-                      <span className="inline-flex items-center gap-1">
-                        {isSuperAdmin(row.role) && (
-                          <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-                        )}
-                        {row.role}
-                      </span>
-                    </td>
-                    <td className="py-2.5 text-muted-foreground">
+                      <div className="text-xs text-muted-foreground font-mono">{row.username}</div>
+                    </div>
+                    <StatusChip variant={row.active ? "success" : "neutral"}>
+                      {row.active ? "Active" : "Disabled"}
+                    </StatusChip>
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-1 text-xs text-muted-foreground">
+                    {isSuperAdmin(row.role) && <ShieldCheck className="h-3.5 w-3.5 text-primary" />}
+                    <span>{row.role}</span>
+                    <span>·</span>
+                    <span>
                       {isSuperAdmin(row.role)
-                        ? "All"
-                        : `${row.permissions.length} / ${MODULES.length}`}
-                    </td>
-                    <td className="py-2.5">
-                      <StatusChip variant={row.active ? "success" : "neutral"}>
-                        {row.active ? "Active" : "Disabled"}
-                      </StatusChip>
-                    </td>
-                    <td className="py-2.5">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <IconBtn
-                          title="Edit"
-                          onClick={() => setEditing(row)}
-                          disabled={!actionable && row.id !== me?.id}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </IconBtn>
-                        <IconBtn
-                          title="Reset PIN"
-                          onClick={() => setResetTarget(row)}
-                          disabled={!actionable}
-                        >
-                          <KeyRound className="h-3.5 w-3.5" />
-                        </IconBtn>
-                        <ActiveToggle row={row} disabled={!actionable} onDone={load} />
-                        <IconBtn
-                          title="Delete user"
-                          onClick={() => setDeleteTarget(row)}
-                          disabled={!actionable}
-                          danger
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </IconBtn>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                        ? "All modules"
+                        : `${row.permissions.length} / ${MODULES.length} modules`}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <IconBtn
+                      title="Edit"
+                      onClick={() => setEditing(row)}
+                      disabled={!actionable && row.id !== me?.id}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </IconBtn>
+                    <IconBtn
+                      title="Reset PIN"
+                      onClick={() => setResetTarget(row)}
+                      disabled={!actionable}
+                    >
+                      <KeyRound className="h-3.5 w-3.5" />
+                    </IconBtn>
+                    <ActiveToggle row={row} disabled={!actionable} onDone={load} />
+                    <IconBtn
+                      title="Delete user"
+                      onClick={() => setDeleteTarget(row)}
+                      disabled={!actionable}
+                      danger
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </IconBtn>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Tablet/desktop: table */}
+          <div className="hidden overflow-x-auto md:block">
+            <table className="w-full text-sm">
+              <thead className="text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
+                <tr>
+                  <th className="text-left py-2">User</th>
+                  <th className="text-left py-2">Username</th>
+                  <th className="text-left py-2">Role</th>
+                  <th className="text-left py-2">Modules</th>
+                  <th className="text-left py-2">Status</th>
+                  <th className="text-right py-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {rows.map((row) => {
+                  const actionable = canActOn(row);
+                  return (
+                    <tr key={row.id} className={cn(!row.active && "opacity-50")}>
+                      <td className="py-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <span
+                            className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-bold text-primary-foreground"
+                            style={{ background: row.color }}
+                          >
+                            {row.name
+                              .split(" ")
+                              .map((p) => p[0])
+                              .join("")
+                              .slice(0, 2)}
+                          </span>
+                          <span className="font-medium">{row.name}</span>
+                          {row.id === me?.id && (
+                            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                              (you)
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-2.5 font-mono text-muted-foreground">{row.username}</td>
+                      <td className="py-2.5">
+                        <span className="inline-flex items-center gap-1">
+                          {isSuperAdmin(row.role) && (
+                            <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+                          )}
+                          {row.role}
+                        </span>
+                      </td>
+                      <td className="py-2.5 text-muted-foreground">
+                        {isSuperAdmin(row.role)
+                          ? "All"
+                          : `${row.permissions.length} / ${MODULES.length}`}
+                      </td>
+                      <td className="py-2.5">
+                        <StatusChip variant={row.active ? "success" : "neutral"}>
+                          {row.active ? "Active" : "Disabled"}
+                        </StatusChip>
+                      </td>
+                      <td className="py-2.5">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <IconBtn
+                            title="Edit"
+                            onClick={() => setEditing(row)}
+                            disabled={!actionable && row.id !== me?.id}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </IconBtn>
+                          <IconBtn
+                            title="Reset PIN"
+                            onClick={() => setResetTarget(row)}
+                            disabled={!actionable}
+                          >
+                            <KeyRound className="h-3.5 w-3.5" />
+                          </IconBtn>
+                          <ActiveToggle row={row} disabled={!actionable} onDone={load} />
+                          <IconBtn
+                            title="Delete user"
+                            onClick={() => setDeleteTarget(row)}
+                            disabled={!actionable}
+                            danger
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </IconBtn>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {creating && (
@@ -562,7 +637,7 @@ function StaffDialog({
       </p>
 
       <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Display name">
             <input
               value={name}
@@ -792,7 +867,7 @@ function IconBtn({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "grid h-7 w-7 place-items-center rounded-md border border-border transition-colors disabled:opacity-30",
+        "grid h-9 w-9 place-items-center rounded-md border border-border transition-colors disabled:opacity-30",
         danger
           ? "hover:bg-primary/10 hover:text-primary hover:border-primary/40"
           : "hover:bg-muted",
@@ -810,7 +885,7 @@ function Modal({ children, onClose }: { children: React.ReactNode; onClose: () =
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-xl border border-border bg-background p-6 shadow-xl"
+        className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-background p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         {children}

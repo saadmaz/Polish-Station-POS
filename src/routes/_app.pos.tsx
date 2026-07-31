@@ -34,6 +34,7 @@ import { downloadInvoicePDF, downloadQuotationPDF } from "@/lib/pdf";
 import { newId } from "@/lib/db";
 import { buildWALink, fillTemplate } from "@/lib/notifications";
 import { TenderLineEditor, PaymentModal, type TenderLine } from "@/components/payment-modal";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 export const Route = createFileRoute("/_app/pos")({
   head: () => ({ meta: [{ title: "POS / Checkout — Polish Station OS" }] }),
@@ -91,6 +92,7 @@ function POS() {
     invoice: Invoice;
     mode: "collect" | "refund";
   } | null>(null);
+  const [mobilePaymentOpen, setMobilePaymentOpen] = useState(false);
 
   const selectedJob = jobs.find((j) => j.id === selectedJobId);
   const customerName = selectedJob?.customerName ?? manualCustomer;
@@ -287,315 +289,80 @@ function POS() {
       )
     : readyJobs.slice(0, 8);
 
-  return (
-    <div className="p-6 grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6 h-full">
-      <div className="space-y-6">
-        <PageHeader
-          title="POS / Checkout"
-          subtitle={openShift ? `Shift active · ${openShift.staffName}` : "No active shift"}
-        />
+  // Derived once and shared by both the desktop table and the mobile card
+  // list so the Collect/Refund/Void eligibility logic isn't duplicated.
+  const recentInvoiceRows = [...invoices]
+    .reverse()
+    .slice(0, 10)
+    .map((i) => {
+      const paid = getAmountPaid(i);
+      const refunded = getAmountRefunded(i);
+      const balance = getInvoiceBalance(i);
+      return {
+        invoice: i,
+        paid,
+        refunded,
+        canCollect: balance > 0 && i.status !== "Void" && i.status !== "Refunded",
+        canRefund: paid > refunded && i.status !== "Void" && isManagerOrAbove(staff?.role),
+        canVoid: paid === 0 && i.status !== "Void",
+      };
+    });
 
-        {/* Job selector */}
-        <div className="rounded-xl border border-border bg-card shadow-card p-4">
-          <h2 className="font-display font-bold mb-3">Select Job / Customer</h2>
-          <div className="relative mb-3">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <input
-              className="w-full rounded-md border border-input bg-background pl-9 pr-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              placeholder="Search by name or plate…"
-              value={customerSearch}
-              onChange={(e) => setCustomerSearch(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5 max-h-48 overflow-y-auto">
-            {filteredJobs.map((j) => (
-              <button
-                key={j.id}
-                onClick={() => selectJob(j.id)}
-                className={cn(
-                  "w-full flex items-center gap-3 rounded-lg border px-3 py-2 text-sm text-left transition-colors",
-                  selectedJobId === j.id
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:bg-muted/40",
-                )}
-              >
-                <span className="font-mono text-[11px] text-muted-foreground w-16">{j.id}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold truncate">{j.customerName}</div>
-                  <div className="text-[11px] text-muted-foreground truncate">
-                    {j.plate} · {j.serviceName}
-                  </div>
-                </div>
-                <span className="font-mono text-xs">LKR {j.price.toLocaleString()}</span>
-                <StatusChip variant={statusVariant(j.status)}>{j.status}</StatusChip>
-              </button>
-            ))}
-            {filteredJobs.length === 0 && (
-              <div className="text-sm text-muted-foreground text-center py-4">
-                No jobs found — enter customer name below for manual billing
-              </div>
-            )}
-          </div>
-          {!selectedJobId && (
-            <div className="mt-3">
-              <input
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                placeholder="Or type customer name for manual billing…"
-                value={manualCustomer}
-                onChange={(e) => setManualCustomer(e.target.value)}
-              />
-            </div>
-          )}
-          {selectedJob && (
-            <div className="mt-3 flex items-center justify-between text-sm rounded-md bg-primary/5 border border-primary/20 px-3 py-2">
-              <span>
-                <strong>{selectedJob.customerName}</strong> · {selectedJob.plate}
-              </span>
-              <button
-                onClick={() => {
-                  setSelectedJobId(null);
-                  setLines([]);
-                  setTenderLines([]);
-                }}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Line items */}
-        <div className="rounded-xl border border-border bg-card shadow-card">
-          <div className="flex items-center justify-between p-4 border-b border-border">
-            <h2 className="font-display font-bold">Line Items</h2>
-            <div className="flex gap-2">
-              <select
-                className="rounded-md border border-input bg-background px-2 py-1.5 text-xs focus:outline-none"
-                value=""
-                onChange={(e) => {
-                  if (e.target.value) addLine(e.target.value);
-                }}
-              >
-                <option value="">+ Add service…</option>
-                {services.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} — LKR {s.price.toLocaleString()}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={() => addLine()}
-                className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1.5 text-xs hover:bg-accent"
-              >
-                <Plus className="h-3.5 w-3.5" /> Custom
-              </button>
-            </div>
-          </div>
-          {lines.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                  <tr className="border-b border-border">
-                    <th className="text-left px-4 py-2">Item</th>
-                    <th className="text-right px-3 py-2 w-16">Qty</th>
-                    <th className="text-right px-3 py-2 w-28">Unit</th>
-                    <th className="text-right px-3 py-2 w-28">Disc.</th>
-                    <th className="text-right px-3 py-2 w-32">Total</th>
-                    <th className="w-10" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {lines.map((l) => (
-                    <tr key={l.key}>
-                      <td className="px-4 py-2">
-                        <input
-                          className="w-full bg-transparent text-sm font-medium focus:outline-none"
-                          value={l.name}
-                          onChange={(e) => updateLine(l.key, "name", e.target.value)}
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input
-                          type="number"
-                          min={1}
-                          className="w-14 rounded bg-muted px-2 py-1 text-right text-sm font-mono focus:outline-none"
-                          value={l.qty}
-                          onChange={(e) => updateLine(l.key, "qty", Number(e.target.value))}
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input
-                          type="number"
-                          min={0}
-                          className="w-24 rounded bg-muted px-2 py-1 text-right text-sm font-mono focus:outline-none"
-                          value={l.unitPrice}
-                          onChange={(e) => updateLine(l.key, "unitPrice", Number(e.target.value))}
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input
-                          type="number"
-                          min={0}
-                          className="w-24 rounded bg-muted px-2 py-1 text-right text-sm font-mono text-primary focus:outline-none"
-                          value={l.discount}
-                          onChange={(e) => updateLine(l.key, "discount", Number(e.target.value))}
-                        />
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono font-semibold">
-                        {(l.unitPrice * l.qty - l.discount).toLocaleString()}
-                      </td>
-                      <td className="px-2 py-2 text-right">
-                        <button
-                          onClick={() => removeLine(l.key)}
-                          className="text-muted-foreground hover:text-primary"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="text-center text-sm text-muted-foreground py-10">
-              Select a job above or add line items manually
-            </div>
-          )}
-        </div>
-
-        {/* Recent invoices */}
-        <div>
-          <h3 className="font-display text-sm font-bold mb-3 uppercase tracking-wider text-muted-foreground">
-            Recent Invoices
-          </h3>
-          <div className="rounded-xl border border-border bg-card shadow-card overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-charcoal text-charcoal-foreground text-[11px] uppercase tracking-wider">
-                <tr>
-                  <th className="text-left px-4 py-2.5">Invoice</th>
-                  <th className="text-left px-3 py-2.5">Customer</th>
-                  <th className="text-left px-3 py-2.5">Date</th>
-                  <th className="text-right px-3 py-2.5">Total</th>
-                  <th className="text-left px-3 py-2.5">Method</th>
-                  <th className="text-left px-3 py-2.5">Status</th>
-                  <th className="w-10" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {[...invoices]
-                  .reverse()
-                  .slice(0, 10)
-                  .map((i) => {
-                    const paid = getAmountPaid(i);
-                    const refunded = getAmountRefunded(i);
-                    const balance = getInvoiceBalance(i);
-                    const canCollect =
-                      balance > 0 && i.status !== "Void" && i.status !== "Refunded";
-                    const canRefund =
-                      paid > refunded && i.status !== "Void" && isManagerOrAbove(staff?.role);
-                    const canVoid = paid === 0 && i.status !== "Void";
-                    return (
-                      <tr key={i.id} className="hover:bg-muted/40">
-                        <td className="px-4 py-2.5 font-mono text-xs">{i.id}</td>
-                        <td className="px-3 py-2.5 font-medium">{i.customerName}</td>
-                        <td className="px-3 py-2.5 text-muted-foreground text-xs">
-                          {new Date(i.createdAt).toLocaleString([], {
-                            day: "numeric",
-                            month: "short",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </td>
-                        <td className="px-3 py-2.5 text-right font-mono font-semibold">
-                          LKR {i.total.toLocaleString()}
-                          {i.status === "Partially Paid" && (
-                            <div className="text-[10px] font-normal text-muted-foreground">
-                              LKR {paid.toLocaleString()} paid
-                            </div>
-                          )}
-                          {refunded > 0 && (
-                            <div className="text-[10px] font-normal text-primary">
-                              LKR {refunded.toLocaleString()} refunded
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-3 py-2.5 text-muted-foreground">
-                          {describePaymentMethods(i)}
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <StatusChip variant={statusVariant(i.status)}>{i.status}</StatusChip>
-                        </td>
-                        <td className="px-2 py-2.5">
-                          <div className="flex items-center gap-2 justify-end whitespace-nowrap">
-                            <button
-                              onClick={() => {
-                                const job = i.jobId
-                                  ? jobs.find((j) => j.id === i.jobId)
-                                  : undefined;
-                                downloadInvoicePDF(i, job);
-                              }}
-                              title="Download PDF"
-                              className="text-muted-foreground hover:text-primary"
-                            >
-                              <FileDown className="h-3.5 w-3.5" />
-                            </button>
-                            {canCollect && (
-                              <button
-                                onClick={() => setPaymentModal({ invoice: i, mode: "collect" })}
-                                className="text-[11px] text-muted-foreground hover:text-primary underline underline-offset-2"
-                              >
-                                Collect
-                              </button>
-                            )}
-                            {canRefund && (
-                              <button
-                                onClick={() => setPaymentModal({ invoice: i, mode: "refund" })}
-                                className="text-[11px] text-muted-foreground hover:text-primary underline underline-offset-2"
-                              >
-                                Refund
-                              </button>
-                            )}
-                            {i.status !== "Void" && (
-                              <button
-                                disabled={!canVoid}
-                                title={
-                                  canVoid
-                                    ? undefined
-                                    : "Money already collected — use Refund instead"
-                                }
-                                onClick={() => {
-                                  if (confirm(`Void ${i.id}?`)) {
-                                    voidInvoice(i.id);
-                                    toast.success(`${i.id} voided`);
-                                  }
-                                }}
-                                className="text-[11px] text-muted-foreground hover:text-primary underline underline-offset-2 disabled:opacity-40 disabled:no-underline disabled:cursor-not-allowed"
-                              >
-                                Void
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                {invoices.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="text-center py-6 text-muted-foreground text-sm">
-                      No invoices yet today
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+  function renderInvoiceActions(row: (typeof recentInvoiceRows)[number]) {
+    const i = row.invoice;
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button
+          onClick={() => {
+            const job = i.jobId ? jobs.find((j) => j.id === i.jobId) : undefined;
+            downloadInvoicePDF(i, job);
+          }}
+          title="Download PDF"
+          aria-label="Download PDF"
+          className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-primary"
+        >
+          <FileDown className="h-3.5 w-3.5" />
+        </button>
+        {row.canCollect && (
+          <button
+            onClick={() => setPaymentModal({ invoice: i, mode: "collect" })}
+            className="rounded-md border border-input px-2.5 py-1.5 text-[11px] font-medium hover:bg-accent"
+          >
+            Collect
+          </button>
+        )}
+        {row.canRefund && (
+          <button
+            onClick={() => setPaymentModal({ invoice: i, mode: "refund" })}
+            className="rounded-md border border-input px-2.5 py-1.5 text-[11px] font-medium hover:bg-accent"
+          >
+            Refund
+          </button>
+        )}
+        {i.status !== "Void" && (
+          <button
+            disabled={!row.canVoid}
+            title={row.canVoid ? undefined : "Money already collected — use Refund instead"}
+            onClick={() => {
+              if (confirm(`Void ${i.id}?`)) {
+                voidInvoice(i.id);
+                toast.success(`${i.id} voided`);
+              }
+            }}
+            className="rounded-md border border-input px-2.5 py-1.5 text-[11px] font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Void
+          </button>
+        )}
       </div>
+    );
+  }
 
-      {/* Payment panel */}
-      <aside className="rounded-xl border border-border bg-card shadow-card p-5 h-fit sticky top-4">
+  // Shared between the desktop sticky sidebar and the mobile payment sheet so
+  // the checkout/payment UI isn't maintained in two places.
+  function renderPaymentPanel() {
+    return (
+      <>
         {customerRecord && (
           <div className="mb-3 rounded-md bg-muted/40 px-3 py-2">
             <div className="text-xs text-muted-foreground">Customer</div>
@@ -624,7 +391,8 @@ function POS() {
               </span>
               <button
                 onClick={removeCoupon}
-                className="text-muted-foreground hover:text-foreground"
+                aria-label="Remove coupon"
+                className="rounded-md p-1.5 text-muted-foreground hover:text-foreground"
                 title="Remove coupon"
               >
                 <X className="h-3.5 w-3.5" />
@@ -633,7 +401,7 @@ function POS() {
           ) : (
             <div className="flex gap-2">
               <input
-                className="flex-1 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm uppercase placeholder:text-muted-foreground placeholder:normal-case focus:outline-none focus:ring-2 focus:ring-ring"
+                className="min-h-11 flex-1 rounded-md border border-input bg-background px-2.5 py-2 text-sm uppercase placeholder:text-muted-foreground placeholder:normal-case focus:outline-none focus:ring-2 focus:ring-ring"
                 placeholder="Coupon code"
                 value={couponInput}
                 onChange={(e) => setCouponInput(e.target.value)}
@@ -641,7 +409,7 @@ function POS() {
               />
               <button
                 onClick={applyCoupon}
-                className="rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent"
+                className="min-h-11 rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent"
               >
                 Apply
               </button>
@@ -659,7 +427,7 @@ function POS() {
               type="number"
               min={0}
               max={pointsBalance}
-              className="w-24 rounded-md border border-input bg-background px-2 py-1 text-right text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-24 min-h-9 rounded-md border border-input bg-background px-2 py-1.5 text-right text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               value={pointsRedeemed}
               onChange={(e) =>
                 setPointsToRedeem(Math.max(0, Math.min(pointsBalance, Number(e.target.value) || 0)))
@@ -717,7 +485,7 @@ function POS() {
               key={amt}
               onClick={() => setTip(tip === amt ? 0 : amt)}
               className={cn(
-                "rounded-md border py-2 text-xs font-medium transition-colors",
+                "min-h-11 rounded-md border py-2 text-xs font-medium transition-colors",
                 tip === amt
                   ? "border-primary bg-primary/10 text-primary"
                   : "border-input hover:bg-accent",
@@ -747,7 +515,8 @@ function POS() {
               </p>
               <button
                 onClick={() => setChargedInfo(null)}
-                className="text-green-600 hover:text-green-800 dark:text-green-400"
+                aria-label="Dismiss"
+                className="rounded-md p-1.5 text-green-600 hover:text-green-800 dark:text-green-400"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -780,7 +549,7 @@ function POS() {
                   });
                   setChargedInfo(null);
                 }}
-                className="flex w-full items-center justify-center gap-2 rounded-md bg-green-600 py-2 text-sm font-medium text-white hover:bg-green-700"
+                className="flex w-full items-center justify-center gap-2 rounded-md bg-green-600 py-2.5 text-sm font-medium text-white hover:bg-green-700"
               >
                 <MessageCircle className="h-4 w-4" /> Send Review Request via WhatsApp
               </a>
@@ -821,7 +590,407 @@ function POS() {
             No active shift — open a shift first
           </p>
         )}
+      </>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-6 p-4 pb-28 sm:p-6 lg:h-full lg:grid-cols-[1fr_400px] lg:pb-6">
+      <div className="space-y-6">
+        <PageHeader
+          title="POS / Checkout"
+          subtitle={openShift ? `Shift active · ${openShift.staffName}` : "No active shift"}
+        />
+
+        {/* Job selector */}
+        <div className="rounded-xl border border-border bg-card shadow-card p-4">
+          <h2 className="font-display font-bold mb-3">Select Job / Customer</h2>
+          <div className="relative mb-3">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              className="w-full rounded-md border border-input bg-background pl-9 pr-3 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              placeholder="Search by name or plate…"
+              value={customerSearch}
+              onChange={(e) => setCustomerSearch(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5 max-h-64 overflow-y-auto sm:max-h-48">
+            {filteredJobs.map((j) => (
+              <button
+                key={j.id}
+                onClick={() => selectJob(j.id)}
+                className={cn(
+                  "flex min-h-11 w-full items-center gap-3 rounded-lg border px-3 py-2 text-sm text-left transition-colors",
+                  selectedJobId === j.id
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:bg-muted/40",
+                )}
+              >
+                <span className="hidden font-mono text-[11px] text-muted-foreground w-16 sm:inline">
+                  {j.id}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold truncate">{j.customerName}</div>
+                  <div className="text-[11px] text-muted-foreground truncate">
+                    {j.plate} · {j.serviceName}
+                  </div>
+                </div>
+                <span className="font-mono text-xs shrink-0">LKR {j.price.toLocaleString()}</span>
+                <StatusChip variant={statusVariant(j.status)}>{j.status}</StatusChip>
+              </button>
+            ))}
+            {filteredJobs.length === 0 && (
+              <div className="text-sm text-muted-foreground text-center py-4">
+                No jobs found — enter customer name below for manual billing
+              </div>
+            )}
+          </div>
+          {!selectedJobId && (
+            <div className="mt-3">
+              <input
+                className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="Or type customer name for manual billing…"
+                value={manualCustomer}
+                onChange={(e) => setManualCustomer(e.target.value)}
+              />
+            </div>
+          )}
+          {selectedJob && (
+            <div className="mt-3 flex items-center justify-between gap-2 text-sm rounded-md bg-primary/5 border border-primary/20 px-3 py-2">
+              <span className="min-w-0 truncate">
+                <strong>{selectedJob.customerName}</strong> · {selectedJob.plate}
+              </span>
+              <button
+                onClick={() => {
+                  setSelectedJobId(null);
+                  setLines([]);
+                  setTenderLines([]);
+                }}
+                aria-label="Clear selected job"
+                className="shrink-0 rounded-md p-2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Line items */}
+        <div className="rounded-xl border border-border bg-card shadow-card">
+          <div className="flex flex-col gap-2 p-4 border-b border-border sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="font-display font-bold">Line Items</h2>
+            <div className="flex flex-wrap gap-2">
+              <select
+                className="min-h-9 flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs focus:outline-none sm:flex-none"
+                value=""
+                onChange={(e) => {
+                  if (e.target.value) addLine(e.target.value);
+                }}
+              >
+                <option value="">+ Add service…</option>
+                {services.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} — LKR {s.price.toLocaleString()}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => addLine()}
+                className="inline-flex min-h-9 items-center gap-1 rounded-md border border-input bg-background px-3 py-1.5 text-xs hover:bg-accent"
+              >
+                <Plus className="h-3.5 w-3.5" /> Custom
+              </button>
+            </div>
+          </div>
+          {lines.length > 0 ? (
+            <>
+              {/* Mobile: stacked cards */}
+              <div className="divide-y divide-border md:hidden">
+                {lines.map((l) => (
+                  <div key={l.key} className="space-y-2 p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <input
+                        className="min-h-9 flex-1 bg-transparent text-sm font-medium focus:outline-none"
+                        value={l.name}
+                        onChange={(e) => updateLine(l.key, "name", e.target.value)}
+                      />
+                      <button
+                        onClick={() => removeLine(l.key)}
+                        aria-label="Remove line"
+                        className="shrink-0 rounded-md p-2 text-muted-foreground hover:text-primary"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <label className="space-y-1">
+                        <span className="text-[11px] text-muted-foreground">Qty</span>
+                        <input
+                          type="number"
+                          min={1}
+                          className="w-full min-h-9 rounded bg-muted px-2 py-1.5 text-right text-sm font-mono focus:outline-none"
+                          value={l.qty}
+                          onChange={(e) => updateLine(l.key, "qty", Number(e.target.value))}
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-[11px] text-muted-foreground">Unit</span>
+                        <input
+                          type="number"
+                          min={0}
+                          className="w-full min-h-9 rounded bg-muted px-2 py-1.5 text-right text-sm font-mono focus:outline-none"
+                          value={l.unitPrice}
+                          onChange={(e) => updateLine(l.key, "unitPrice", Number(e.target.value))}
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-[11px] text-muted-foreground">Disc.</span>
+                        <input
+                          type="number"
+                          min={0}
+                          className="w-full min-h-9 rounded bg-muted px-2 py-1.5 text-right text-sm font-mono text-primary focus:outline-none"
+                          value={l.discount}
+                          onChange={(e) => updateLine(l.key, "discount", Number(e.target.value))}
+                        />
+                      </label>
+                    </div>
+                    <div className="flex items-baseline justify-between text-sm">
+                      <span className="text-muted-foreground">Line total</span>
+                      <span className="font-mono font-semibold">
+                        {(l.unitPrice * l.qty - l.discount).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Tablet/desktop: table */}
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full text-sm">
+                  <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                    <tr className="border-b border-border">
+                      <th className="text-left px-4 py-2">Item</th>
+                      <th className="text-right px-3 py-2 w-16">Qty</th>
+                      <th className="text-right px-3 py-2 w-28">Unit</th>
+                      <th className="text-right px-3 py-2 w-28">Disc.</th>
+                      <th className="text-right px-3 py-2 w-32">Total</th>
+                      <th className="w-10" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {lines.map((l) => (
+                      <tr key={l.key}>
+                        <td className="px-4 py-2">
+                          <input
+                            className="w-full bg-transparent text-sm font-medium focus:outline-none"
+                            value={l.name}
+                            onChange={(e) => updateLine(l.key, "name", e.target.value)}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="number"
+                            min={1}
+                            className="w-14 rounded bg-muted px-2 py-1 text-right text-sm font-mono focus:outline-none"
+                            value={l.qty}
+                            onChange={(e) => updateLine(l.key, "qty", Number(e.target.value))}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="number"
+                            min={0}
+                            className="w-24 rounded bg-muted px-2 py-1 text-right text-sm font-mono focus:outline-none"
+                            value={l.unitPrice}
+                            onChange={(e) => updateLine(l.key, "unitPrice", Number(e.target.value))}
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input
+                            type="number"
+                            min={0}
+                            className="w-24 rounded bg-muted px-2 py-1 text-right text-sm font-mono text-primary focus:outline-none"
+                            value={l.discount}
+                            onChange={(e) => updateLine(l.key, "discount", Number(e.target.value))}
+                          />
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono font-semibold">
+                          {(l.unitPrice * l.qty - l.discount).toLocaleString()}
+                        </td>
+                        <td className="px-2 py-2 text-right">
+                          <button
+                            onClick={() => removeLine(l.key)}
+                            aria-label="Remove line"
+                            className="rounded-md p-2 text-muted-foreground hover:text-primary"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (
+            <div className="text-center text-sm text-muted-foreground py-10">
+              Select a job above or add line items manually
+            </div>
+          )}
+        </div>
+
+        {/* Recent invoices */}
+        <div>
+          <h3 className="font-display text-sm font-bold mb-3 uppercase tracking-wider text-muted-foreground">
+            Recent Invoices
+          </h3>
+
+          {recentInvoiceRows.length === 0 ? (
+            <div className="rounded-xl border border-border bg-card shadow-card py-6 text-center text-sm text-muted-foreground">
+              No invoices yet today
+            </div>
+          ) : (
+            <>
+              {/* Mobile: stacked cards */}
+              <div className="divide-y divide-border rounded-xl border border-border bg-card shadow-card md:hidden">
+                {recentInvoiceRows.map((row) => {
+                  const i = row.invoice;
+                  return (
+                    <div key={i.id} className="space-y-2 p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="font-mono text-xs text-muted-foreground">{i.id}</div>
+                          <div className="font-medium truncate">{i.customerName}</div>
+                        </div>
+                        <StatusChip variant={statusVariant(i.status)}>{i.status}</StatusChip>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>
+                          {new Date(i.createdAt).toLocaleString([], {
+                            day: "numeric",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                        <span>{describePaymentMethods(i)}</span>
+                      </div>
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-sm text-muted-foreground">Total</span>
+                        <div className="text-right">
+                          <span className="font-mono font-semibold">
+                            LKR {i.total.toLocaleString()}
+                          </span>
+                          {i.status === "Partially Paid" && (
+                            <div className="text-[10px] font-normal text-muted-foreground">
+                              LKR {row.paid.toLocaleString()} paid
+                            </div>
+                          )}
+                          {row.refunded > 0 && (
+                            <div className="text-[10px] font-normal text-primary">
+                              LKR {row.refunded.toLocaleString()} refunded
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {renderInvoiceActions(row)}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Tablet/desktop: table */}
+              <div className="hidden overflow-x-auto rounded-xl border border-border bg-card shadow-card md:block">
+                <table className="w-full text-sm">
+                  <thead className="bg-charcoal text-charcoal-foreground text-[11px] uppercase tracking-wider">
+                    <tr>
+                      <th className="text-left px-4 py-2.5">Invoice</th>
+                      <th className="text-left px-3 py-2.5">Customer</th>
+                      <th className="text-left px-3 py-2.5">Date</th>
+                      <th className="text-right px-3 py-2.5">Total</th>
+                      <th className="text-left px-3 py-2.5">Method</th>
+                      <th className="text-left px-3 py-2.5">Status</th>
+                      <th className="px-2 py-2.5">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {recentInvoiceRows.map((row) => {
+                      const i = row.invoice;
+                      return (
+                        <tr key={i.id} className="hover:bg-muted/40">
+                          <td className="px-4 py-2.5 font-mono text-xs">{i.id}</td>
+                          <td className="px-3 py-2.5 font-medium">{i.customerName}</td>
+                          <td className="px-3 py-2.5 text-muted-foreground text-xs">
+                            {new Date(i.createdAt).toLocaleString([], {
+                              day: "numeric",
+                              month: "short",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono font-semibold">
+                            LKR {i.total.toLocaleString()}
+                            {i.status === "Partially Paid" && (
+                              <div className="text-[10px] font-normal text-muted-foreground">
+                                LKR {row.paid.toLocaleString()} paid
+                              </div>
+                            )}
+                            {row.refunded > 0 && (
+                              <div className="text-[10px] font-normal text-primary">
+                                LKR {row.refunded.toLocaleString()} refunded
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-muted-foreground">
+                            {describePaymentMethods(i)}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <StatusChip variant={statusVariant(i.status)}>{i.status}</StatusChip>
+                          </td>
+                          <td className="px-2 py-2.5">{renderInvoiceActions(row)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Payment panel — desktop/tablet sticky sidebar */}
+      <aside className="hidden rounded-xl border border-border bg-card shadow-card p-5 h-fit sticky top-4 lg:block">
+        {renderPaymentPanel()}
       </aside>
+
+      {/* Payment panel — mobile: totals bar pinned above the viewport bottom, full panel in a sheet */}
+      <div className="fixed inset-x-0 bottom-0 z-40 flex items-center gap-3 border-t border-border bg-card p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-elevated lg:hidden">
+        <div className="min-w-0 flex-1">
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            {depositPaid > 0 ? "Balance Due" : "Total"}
+          </div>
+          <div className="font-display text-lg font-extrabold text-primary truncate">
+            LKR {(depositPaid > 0 ? balanceDue : total).toLocaleString()}
+          </div>
+        </div>
+        <button
+          onClick={() => setMobilePaymentOpen(true)}
+          disabled={lines.length === 0}
+          className="min-h-11 shrink-0 rounded-md gradient-brand px-5 text-sm font-bold uppercase tracking-wider text-primary-foreground shadow-red hover:opacity-95 disabled:opacity-50"
+        >
+          Checkout
+        </button>
+      </div>
+
+      <Sheet open={mobilePaymentOpen} onOpenChange={setMobilePaymentOpen}>
+        <SheetContent side="bottom" className="max-h-[90vh] overflow-y-auto rounded-t-xl lg:hidden">
+          <SheetHeader>
+            <SheetTitle>Payment</SheetTitle>
+          </SheetHeader>
+          <div className="mt-2">{renderPaymentPanel()}</div>
+        </SheetContent>
+      </Sheet>
 
       {paymentModal && (
         <PaymentModal

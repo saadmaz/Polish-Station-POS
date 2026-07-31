@@ -60,7 +60,7 @@ export function TenderLineEditor({
               key={m}
               type="button"
               onClick={() => addLine(m)}
-              className="flex flex-col items-center gap-1 rounded-md border border-input py-2.5 text-xs font-medium hover:bg-accent transition-colors"
+              className="flex min-h-11 flex-col items-center gap-1 rounded-md border border-input py-2.5 text-xs font-medium hover:bg-accent transition-colors"
             >
               <Icon className="h-4 w-4" />+ {m}
             </button>
@@ -71,11 +71,14 @@ export function TenderLineEditor({
       {lines.length > 0 && (
         <div className="space-y-2 mb-3">
           {lines.map((l) => (
-            <div key={l.key} className="flex items-center gap-2">
+            <div
+              key={l.key}
+              className="flex flex-wrap items-center gap-2 rounded-md border border-border p-2 sm:flex-nowrap sm:border-0 sm:p-0"
+            >
               <select
                 value={l.method}
                 onChange={(e) => updateLine(l.key, "method", e.target.value)}
-                className="rounded-md border border-input bg-background px-2 py-1.5 text-xs focus:outline-none"
+                className="min-h-9 rounded-md border border-input bg-background px-2 py-1.5 text-xs focus:outline-none"
               >
                 <option value="Cash">Cash</option>
                 <option value="Card">Card</option>
@@ -89,19 +92,20 @@ export function TenderLineEditor({
                   const n = Number(e.target.value);
                   updateLine(l.key, "amount", Number.isFinite(n) ? Math.max(0, n) : 0);
                 }}
-                className="w-28 rounded-md border border-input bg-background px-2 py-1.5 text-right text-sm font-mono focus:outline-none"
+                className="min-h-9 w-24 flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-right text-sm font-mono focus:outline-none sm:w-28 sm:flex-none"
               />
               <input
                 type="text"
                 placeholder="Ref (optional)"
                 value={l.reference}
                 onChange={(e) => updateLine(l.key, "reference", e.target.value)}
-                className="flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs focus:outline-none"
+                className="min-h-9 min-w-24 flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs focus:outline-none"
               />
               <button
                 type="button"
                 onClick={() => removeLine(l.key)}
-                className="text-muted-foreground hover:text-primary"
+                aria-label="Remove payment line"
+                className="shrink-0 rounded-md p-2 text-muted-foreground hover:text-primary"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
@@ -206,14 +210,15 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md rounded-2xl bg-card border border-border shadow-elevated p-6 mx-4">
+      <div className="relative z-10 w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-card border border-border shadow-elevated p-6 mx-4">
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-display text-lg font-bold">
             {mode === "collect" ? "Collect Payment" : "Refund"} — {invoice.id}
           </h2>
           <button
             onClick={onClose}
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+            aria-label="Close"
+            className="rounded-md p-2 text-muted-foreground hover:bg-muted"
           >
             <X className="h-4 w-4" />
           </button>
@@ -235,7 +240,7 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
             <button
               onClick={handleCollect}
               disabled={saving || !openShift || lines.length === 0}
-              className="mt-4 w-full rounded-md gradient-brand py-2.5 text-sm font-bold uppercase tracking-wider text-primary-foreground shadow-red hover:opacity-95 disabled:opacity-50"
+              className="mt-4 min-h-11 w-full rounded-md gradient-brand py-2.5 text-sm font-bold uppercase tracking-wider text-primary-foreground shadow-red hover:opacity-95 disabled:opacity-50"
             >
               Record Payment
             </button>
@@ -258,7 +263,7 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
                   const n = Number(e.target.value);
                   setRefundAmount(Number.isFinite(n) ? Math.max(0, n) : 0);
                 }}
-                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="mt-1 min-h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
             </label>
             <label className="block">
@@ -268,7 +273,7 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
               <select
                 value={refundMethod}
                 onChange={(e) => setRefundMethod(e.target.value as PaymentMethod)}
-                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className="mt-1 min-h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               >
                 <option value="Cash">Cash</option>
                 <option value="Card">Card</option>
@@ -285,13 +290,13 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
                 value={refundReason}
                 onChange={(e) => setRefundReason(e.target.value)}
                 placeholder="e.g. customer unhappy with paint correction"
-                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="mt-1 min-h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
             </label>
             <button
               onClick={handleRefund}
               disabled={saving || !openShift}
-              className="w-full rounded-md bg-primary py-2.5 text-sm font-bold uppercase tracking-wider text-primary-foreground hover:opacity-95 disabled:opacity-50"
+              className="min-h-11 w-full rounded-md bg-primary py-2.5 text-sm font-bold uppercase tracking-wider text-primary-foreground hover:opacity-95 disabled:opacity-50"
             >
               Refund LKR {refundAmount.toLocaleString()}
             </button>
