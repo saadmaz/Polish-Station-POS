@@ -19,6 +19,7 @@ import {
   Gift,
   Ticket,
   Power,
+  FileDown,
 } from "lucide-react";
 import type { Customer, Vehicle, Coupon, CouponType } from "@/lib/db";
 import { calcTier, isCouponValid } from "@/lib/db";
@@ -213,11 +214,27 @@ function CustomerRow({
   onDelete: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const { invoices } = useStore();
-  const history = invoices
-    .filter((i) => i.customerId === customer.id)
-    .reverse()
-    .slice(0, 5);
+  const { invoices, jobs } = useStore();
+  const customerInvoices = invoices.filter((i) => i.customerId === customer.id).reverse();
+  const customerJobs = jobs.filter((j) => j.customerId === customer.id).reverse();
+  const history = customerInvoices.slice(0, 5);
+
+  // A data-subject export: everything this business holds on one customer —
+  // profile, vehicles, loyalty balance, and full job/invoice history — not
+  // just the 5-row preview shown in the expanded panel.
+  function exportCustomerData() {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      customer,
+      jobs: customerJobs,
+      invoices: customerInvoices,
+    };
+    const json = JSON.stringify(payload, null, 2);
+    const a = document.createElement("a");
+    a.href = "data:application/json;charset=utf-8," + encodeURIComponent(json);
+    a.download = `customer-${customer.id}-data.json`;
+    a.click();
+  }
 
   return (
     <>
@@ -262,6 +279,16 @@ function CustomerRow({
         </td>
         <td className="px-3 py-3">
           <div className="flex items-center gap-1">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                exportCustomerData();
+              }}
+              className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              title="Export this customer's data (profile, vehicles, jobs, invoices)"
+            >
+              <FileDown className="h-3.5 w-3.5" />
+            </button>
             <button
               onClick={(e) => {
                 e.stopPropagation();
