@@ -123,9 +123,11 @@ function Login() {
         <div className="w-full max-w-[440px] rounded-2xl bg-card text-card-foreground p-7 shadow-elevated border border-border">
           {/* Logo */}
           <div className="flex items-center justify-center gap-2.5 mb-1">
-            <div className="grid h-11 w-11 place-items-center rounded-lg gradient-brand shadow-red">
-              <span className="font-display text-lg font-black text-primary-foreground">PS</span>
-            </div>
+            <img
+              src="/Logo/PS Logo Main.png"
+              alt="Polish Station"
+              className="h-11 w-11 shrink-0 object-contain"
+            />
             <div className="leading-tight">
               <div className="text-[10px] font-bold tracking-[0.28em] text-muted-foreground">
                 POLISH STATION

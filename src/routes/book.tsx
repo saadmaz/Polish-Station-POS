@@ -684,9 +684,11 @@ function BookPage() {
       {!isEmbed && (
         <header className="border-b border-gray-200 bg-white px-4 py-4">
           <div className="mx-auto flex max-w-xl items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-500">
-              <span className="text-sm font-black text-white">PS</span>
-            </div>
+            <img
+              src="/Logo/PS Logo Main.png"
+              alt="Polish Station"
+              className="h-9 w-9 shrink-0 object-contain"
+            />
             <div className="leading-tight">
               <div className="text-[10px] font-bold tracking-[0.18em] text-gray-400">POLISH</div>
               <div className="-mt-0.5 text-sm font-bold text-gray-900">STATION</div>

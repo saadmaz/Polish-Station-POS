@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import type { Invoice, InvoiceLine, Job, PurchaseOrder } from "./db";
 import { getPayments, getAmountRefunded, calcTax, taxLabel, getBusinessInfo } from "./db";
+import { LOGO_PNG_BASE64 } from "./logo-asset";
 
 // Letterhead details come from the settings/business Firestore doc (cached in
 // db.ts by the store) so documents always print what Settings → Business says.
@@ -45,6 +46,20 @@ function rule(doc: jsPDF, y: number, color = RULE) {
   doc.setDrawColor(...color);
   doc.setLineWidth(0.25);
   doc.line(ML, y, MR, y);
+}
+
+// Source PNG is 594×420 — not square — so fit-by-width inside a square badge
+// rather than stretching it into a circle-in-oval distortion.
+const LOGO_ASPECT = 594 / 420;
+
+function drawLogo(doc: jsPDF, x: number, y: number, box: number) {
+  doc.setFillColor(...WHITE);
+  doc.roundedRect(x, y, box, box, 1.5, 1.5, "F");
+  const pad = box * 0.12;
+  const innerW = box - pad * 2;
+  const innerH = innerW / LOGO_ASPECT;
+  const offsetY = (box - innerH) / 2;
+  doc.addImage(LOGO_PNG_BASE64, "PNG", x + pad, y + offsetY, innerW, innerH);
 }
 
 function badge(
@@ -104,23 +119,28 @@ function buildDoc(opts: DocOptions): jsPDF {
   doc.setFillColor(...RED_DARK);
   doc.rect(PW / 2, 0, PW / 2, 42, "F");
 
+  // Logo mark
+  const LOGO_BOX = 15;
+  drawLogo(doc, ML, 5, LOGO_BOX);
+  const TX = ML + LOGO_BOX + 4;
+
   // Company name
   doc.setFont("helvetica", "bold");
   doc.setFontSize(20);
   doc.setTextColor(...WHITE);
-  doc.text(getBusinessInfo().trading.toUpperCase(), ML, 16);
+  doc.text(getBusinessInfo().trading.toUpperCase(), TX, 16);
 
   // Tagline
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
   doc.setTextColor(255, 200, 200);
-  doc.text("Professional Car Detailing & Protection", ML, 22);
+  doc.text("Professional Car Detailing & Protection", TX, 22);
 
   // Contact line
   doc.setFontSize(7);
   doc.setTextColor(255, 220, 220);
-  doc.text(contactLine(), ML, 28);
-  doc.text(`VAT Reg: ${getBusinessInfo().vat}`, ML, 33.5);
+  doc.text(contactLine(), TX, 28);
+  doc.text(`VAT Reg: ${getBusinessInfo().vat}`, TX, 33.5);
 
   // Doc type (right side)
   doc.setFont("helvetica", "bold");
@@ -463,18 +483,22 @@ export function downloadPOPDF(po: PurchaseOrder) {
   doc.setFillColor(...RED_DARK);
   doc.rect(PW / 2, 0, PW / 2, 42, "F");
 
+  const LOGO_BOX = 15;
+  drawLogo(doc, ML, 5, LOGO_BOX);
+  const TX = ML + LOGO_BOX + 4;
+
   doc.setFont("helvetica", "bold");
   doc.setFontSize(20);
   doc.setTextColor(...WHITE);
-  doc.text(getBusinessInfo().trading.toUpperCase(), ML, 16);
+  doc.text(getBusinessInfo().trading.toUpperCase(), TX, 16);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
   doc.setTextColor(255, 200, 200);
-  doc.text("Professional Car Detailing & Protection", ML, 22);
+  doc.text("Professional Car Detailing & Protection", TX, 22);
   doc.setFontSize(7);
   doc.setTextColor(255, 220, 220);
-  doc.text(contactLine(), ML, 28);
+  doc.text(contactLine(), TX, 28);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(22);

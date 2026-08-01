@@ -113,7 +113,9 @@ async function main() {
     console.log(`   ✅ ${name}: deleted ${deleted}`);
   }
 
-  console.log(`\n✅ Done — ${deletedTotal} document(s) deleted across ${COLLECTIONS.length} collections.`);
+  console.log(
+    `\n✅ Done — ${deletedTotal} document(s) deleted across ${COLLECTIONS.length} collections.`,
+  );
   console.log("   No staff accounts remain — run `npm run seed:admin` before logging in again.");
   process.exit(0);
 }
