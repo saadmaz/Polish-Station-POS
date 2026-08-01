@@ -593,7 +593,8 @@ function PORow({ po }: { po: PurchaseOrder }) {
           <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             <button
               onClick={() => downloadPOPDF(po)}
-              className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Download PDF"
+              className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
               title="Download PDF"
             >
               <FileDown className="h-4 w-4" />
@@ -603,7 +604,8 @@ function PORow({ po }: { po: PurchaseOrder }) {
                 onClick={() => {
                   if (confirm("Delete this draft PO?")) deletePurchaseOrder(po.id);
                 }}
-                className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                aria-label="Delete"
+                className="rounded p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                 title="Delete"
               >
                 <Trash2 className="h-4 w-4" />

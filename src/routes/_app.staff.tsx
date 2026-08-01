@@ -222,7 +222,7 @@ function RotaPanel() {
         <div className="flex items-center gap-2 text-sm">
           <button
             onClick={() => setWeekStart((w) => addDays(w, -7))}
-            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
             aria-label="Previous week"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -233,7 +233,7 @@ function RotaPanel() {
           </span>
           <button
             onClick={() => setWeekStart((w) => addDays(w, 7))}
-            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
             aria-label="Next week"
           >
             <ChevronRight className="h-4 w-4" />
@@ -408,7 +408,8 @@ function RotaShiftModal({
           <h2 className="font-display text-lg font-bold">{staffName}</h2>
           <button
             onClick={onClose}
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+            aria-label="Close"
+            className="rounded-md p-2 text-muted-foreground hover:bg-muted"
           >
             <X className="h-4 w-4" />
           </button>
@@ -457,6 +458,7 @@ function RotaShiftModal({
           {onDelete && (
             <button
               onClick={onDelete}
+              aria-label="Remove shift"
               className="rounded-md border border-input px-3 py-2 text-sm text-destructive hover:bg-destructive/10"
               title="Remove shift"
             >

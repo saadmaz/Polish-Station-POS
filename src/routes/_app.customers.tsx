@@ -362,7 +362,8 @@ function CustomerRow({
                 e.stopPropagation();
                 exportCustomerData();
               }}
-              className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Export customer data"
+              className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
               title="Export this customer's data (profile, vehicles, jobs, invoices)"
             >
               <FileDown className="h-3.5 w-3.5" />
@@ -372,7 +373,8 @@ function CustomerRow({
                 e.stopPropagation();
                 onEdit();
               }}
-              className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Edit customer"
+              className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
               title="Edit"
             >
               <Pencil className="h-3.5 w-3.5" />
@@ -382,7 +384,8 @@ function CustomerRow({
                 e.stopPropagation();
                 onDelete();
               }}
-              className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-primary"
+              aria-label="Delete customer"
+              className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-primary"
               title="Delete"
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -792,8 +795,9 @@ function CouponsPanel() {
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => updateCoupon({ ...c, active: !c.active })}
+                          aria-label={c.active ? "Disable coupon" : "Enable coupon"}
                           className={cn(
-                            "rounded p-1.5 hover:bg-muted",
+                            "rounded p-2 hover:bg-muted",
                             c.active
                               ? "text-muted-foreground hover:text-foreground"
                               : "text-success",
@@ -804,14 +808,16 @@ function CouponsPanel() {
                         </button>
                         <button
                           onClick={() => setFormMode(c)}
-                          className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          aria-label="Edit coupon"
+                          className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
                           title="Edit"
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
                         <button
                           onClick={() => handleDelete(c.id)}
-                          className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-primary"
+                          aria-label="Delete coupon"
+                          className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-primary"
                           title="Delete"
                         >
                           <Trash2 className="h-3.5 w-3.5" />

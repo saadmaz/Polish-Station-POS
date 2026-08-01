@@ -116,7 +116,11 @@ function PhotosTab({ job }: { job: Job }) {
           className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
           onClick={() => setLightbox(null)}
         >
-          <button className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20">
+          <button
+            onClick={() => setLightbox(null)}
+            aria-label="Close photo"
+            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20"
+          >
             <X className="h-5 w-5 text-white" />
           </button>
           <img
@@ -182,20 +186,24 @@ function PhotosTab({ job }: { job: Job }) {
                       className="w-full aspect-square object-cover rounded-md border border-border cursor-pointer"
                       onClick={() => setLightbox(photo.url)}
                     />
-                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity gap-1">
+                    {/* Always visible on touch devices — opacity-0 + group-hover
+                        would make these controls unreachable without a mouse. */}
+                    <div className="absolute inset-0 flex items-center justify-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
                       <button
                         onClick={() => setLightbox(photo.url)}
-                        className="p-1.5 rounded-full bg-black/60 text-white"
+                        aria-label="View photo"
+                        className="rounded-full bg-black/60 p-2 text-white"
                       >
-                        <ZoomIn className="h-3 w-3" />
+                        <ZoomIn className="h-3.5 w-3.5" />
                       </button>
                       <button
                         onClick={() => {
                           if (confirm("Remove this photo?")) removeJobPhoto(job.id, photo.id);
                         }}
-                        className="p-1.5 rounded-full bg-black/60 text-white"
+                        aria-label="Remove photo"
+                        className="rounded-full bg-black/60 p-2 text-white"
                       >
-                        <Trash2 className="h-3 w-3" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
                     <div className="text-[10px] text-muted-foreground mt-0.5 text-center">
@@ -508,7 +516,11 @@ function JobDetail({ job, onClose }: { job: Job; onClose: () => void }) {
             {job.vehicleModel} · {job.plate}
           </div>
         </div>
-        <button onClick={onClose} className="rounded-md p-1.5 hover:bg-muted">
+        <button
+          onClick={onClose}
+          aria-label="Close job details"
+          className="rounded-md p-2 hover:bg-muted"
+        >
           <X className="h-5 w-5" />
         </button>
       </div>
@@ -678,13 +690,16 @@ function ActiveJobs() {
   }, {});
 
   return (
-    <div className="p-6 h-full flex flex-col">
+    <div className="p-4 sm:p-6 h-full flex flex-col">
       <PageHeader
         title="Active Jobs"
-        subtitle="Kanban board · drag cards between columns or click to manage"
+        subtitle="Kanban board · drag cards between columns, or swipe/click to manage"
       />
 
-      <div className="flex-1 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 min-h-0">
+      {/* Below lg: horizontally-scrolling, snap-to-column board (6 columns
+          compressed into a 2-col grid was unusable on phones/small tablets).
+          At lg+: the full multi-column grid. */}
+      <div className="flex-1 flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2 min-h-0 lg:grid lg:grid-cols-3 xl:grid-cols-6 lg:overflow-visible lg:snap-none lg:pb-0">
         {COLUMNS.map((col) => {
           const items = jobs.filter((j) => j.status === col.status);
           const isTarget = dropTarget === col.status;
@@ -695,7 +710,7 @@ function ActiveJobs() {
               onDrop={(e) => onDrop(e, col.status)}
               onDragLeave={() => setDropTarget(null)}
               className={cn(
-                "flex flex-col rounded-xl border-t-[3px] bg-card border-border transition-colors",
+                "flex w-[82vw] shrink-0 snap-start flex-col rounded-xl border-t-[3px] bg-card border-border transition-colors sm:w-72 lg:w-auto lg:shrink",
                 col.tone,
                 isTarget && "bg-primary/5 border-primary/30",
               )}

@@ -42,19 +42,21 @@ function DenomCounter({
   return (
     <div className="space-y-2">
       {DENOMS.map((d) => (
-        <div key={d.key} className="flex items-center gap-3">
-          <span className="w-36 text-sm text-muted-foreground shrink-0">{d.label}</span>
-          <input
-            type="number"
-            min={0}
-            className="w-24 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm text-right font-mono focus:outline-none focus:ring-2 focus:ring-ring"
-            value={denoms[d.key] ?? ""}
-            placeholder="0"
-            onChange={(e) => onChange(d.key, Number(e.target.value) || 0)}
-          />
-          <span className="text-xs text-muted-foreground font-mono w-28 text-right">
-            = LKR {((denoms[d.key] ?? 0) * d.value).toLocaleString()}
-          </span>
+        <div key={d.key} className="flex items-center justify-between gap-2">
+          <span className="w-24 text-sm text-muted-foreground shrink-0 sm:w-36">{d.label}</span>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              className="min-h-9 w-20 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm text-right font-mono focus:outline-none focus:ring-2 focus:ring-ring sm:w-24"
+              value={denoms[d.key] ?? ""}
+              placeholder="0"
+              onChange={(e) => onChange(d.key, Number(e.target.value) || 0)}
+            />
+            <span className="hidden text-xs text-muted-foreground font-mono w-28 text-right sm:inline">
+              = LKR {((denoms[d.key] ?? 0) * d.value).toLocaleString()}
+            </span>
+          </div>
         </div>
       ))}
     </div>
@@ -269,7 +271,7 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
       </div>
 
       {/* Expected vs physical */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="rounded-lg bg-muted/40 border border-border p-3">
           <div className="text-[11px] text-muted-foreground uppercase tracking-wider">
             Expected Cash
