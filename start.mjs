@@ -1,6 +1,6 @@
 import { createServer } from "http";
 import { createReadStream, existsSync, readFileSync, statSync, unlinkSync } from "fs";
-import { join, extname } from "path";
+import { join, extname, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import { Readable } from "stream";
 
@@ -154,10 +154,24 @@ async function main() {
 
   const server = createServer(async (req, res) => {
     try {
-      const urlPath = new URL(req.url, "http://localhost").pathname;
-      const filePath = join(CLIENT_DIR, urlPath);
+      // URL.pathname keeps percent-encoding as-is (e.g. "%20" stays "%20"),
+      // but real filenames on disk have literal characters (a space, not
+      // "%20") — without decoding, any asset with a reserved URL character
+      // in its name (spaces, etc.) always 404s even though the file exists.
+      const rawPathname = new URL(req.url, "http://localhost").pathname;
+      let urlPath;
+      try {
+        urlPath = decodeURIComponent(rawPathname);
+      } catch {
+        urlPath = rawPathname; // malformed escape sequence — fall back rather than crash
+      }
+      // Decoding ".." segments (e.g. from "%2e%2e") makes path traversal
+      // reachable that wasn't before — resolve() then confirm the result is
+      // still inside CLIENT_DIR before ever touching the filesystem.
+      const filePath = resolve(CLIENT_DIR, "." + urlPath);
+      const withinClientDir = filePath === CLIENT_DIR || filePath.startsWith(CLIENT_DIR + sep);
 
-      if (existsSync(filePath) && statSync(filePath).isFile()) {
+      if (withinClientDir && existsSync(filePath) && statSync(filePath).isFile()) {
         const ext = extname(filePath);
         const contentType = MIME_TYPES[ext] || "application/octet-stream";
         applySecurityHeaders(req, res);
