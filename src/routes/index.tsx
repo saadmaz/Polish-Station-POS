@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Sign in — Polish Station OS" },
+      { title: "Sign in · Polish Station OS" },
       { name: "description", content: "Staff login for Polish Station." },
       { name: "robots", content: "noindex, nofollow" },
     ],
@@ -31,7 +31,7 @@ function Login() {
 
   const trapRef = useRef<HTMLInputElement>(null);
 
-  // A username is required before the PIN pad does anything — the same gating
+  // A username is required before the PIN pad does anything, the same gating
   // the old staff-picker provided, without publishing the staff roster.
   const ready = username.trim().length >= 3 && locked === 0 && !busy;
 
@@ -97,11 +97,11 @@ function Login() {
 
     if (err.code === "locked") {
       setLocked(err.remainingSec);
-      fail(`Too many attempts — locked for ${err.remainingSec}s`);
+      fail(`Too many attempts, locked for ${err.remainingSec}s`);
     } else if (err.code === "inactive") {
       fail("This account has been deactivated");
     } else if (err.code === "unknown") {
-      fail("Couldn't reach the server — check your connection");
+      fail("Couldn't reach the server, check your connection");
     } else {
       // Deliberately does not say which of the two was wrong.
       fail("Incorrect username or PIN");
@@ -170,7 +170,7 @@ function Login() {
             />
           </div>
 
-          {/* Hidden keyboard trap — lets a physical keyboard drive the PIN pad */}
+          {/* Hidden keyboard trap: lets a physical keyboard drive the PIN pad */}
           <input
             ref={trapRef}
             type="tel"
@@ -214,7 +214,7 @@ function Login() {
               role="alert"
               className="mb-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-center text-xs font-semibold text-primary"
             >
-              {locked > 0 ? `Too many attempts — try again in ${locked}s` : error}
+              {locked > 0 ? `Too many attempts, try again in ${locked}s` : error}
             </div>
           )}
 

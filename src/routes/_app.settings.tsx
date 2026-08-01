@@ -25,7 +25,7 @@ import {
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/settings")({
-  head: () => ({ meta: [{ title: "Settings — Polish Station OS" }] }),
+  head: () => ({ meta: [{ title: "Settings · Polish Station OS" }] }),
   component: Settings,
 });
 
@@ -158,7 +158,7 @@ function BusinessPanel() {
     <>
       <SectionTitle
         title="Business"
-        desc="Shared across all devices — used on invoices, PDFs and for the VAT rate charged at checkout."
+        desc="Shared across all devices, used on invoices, PDFs and for the VAT rate charged at checkout."
       />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {(
@@ -473,7 +473,7 @@ function BaysPanel() {
     <>
       <SectionTitle
         title="Bays & Capacity"
-        desc="The physical service bays jobs and bookings get assigned to. Currently just the one — add a row here the day a second bay opens and it shows up everywhere (Jobs, Bay Board, Bookings, Walk-In) immediately."
+        desc="The physical service bays jobs and bookings get assigned to. Currently just the one. Add a row here the day a second bay opens, and it shows up everywhere (Jobs, Bay Board, Bookings, Walk-In) immediately."
       />
       <div className="space-y-2">
         {form.map((b, i) => (
@@ -594,11 +594,11 @@ function BookingRulesPanel() {
 
 const NOTIFY_KEY = "ps_notify_settings";
 const NOTIFY_DEFAULTS: Record<string, boolean> = {
-  "SMS — Booking Confirmation": true,
-  "SMS — Ready for Pickup": true,
-  "Email — Receipt": true,
-  "WhatsApp — Before/After Photos": true,
-  "Email — Marketing Campaigns": false,
+  "SMS: Booking Confirmation": true,
+  "SMS: Ready for Pickup": true,
+  "Email: Receipt": true,
+  "WhatsApp: Before/After Photos": true,
+  "Email: Marketing Campaigns": false,
 };
 
 function loadNotify(): Record<string, boolean> {

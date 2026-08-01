@@ -46,7 +46,7 @@ async function main() {
     touched++;
   }
 
-  console.log(`\nDone — ${touched} staff deactivated. Recreate real users from Settings.`);
+  console.log(`\nDone: ${touched} staff deactivated. Recreate real users from Settings.`);
   process.exit(0);
 }
 

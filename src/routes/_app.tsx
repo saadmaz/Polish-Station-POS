@@ -24,7 +24,7 @@ function AppLayout() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   // Order matters: resolve auth first and bounce logged-out visitors to the
-  // login page immediately — before considering data. storeLoading only
+  // login page immediately, before considering data. storeLoading only
   // gates signed-in users (listeners don't even start until login).
   if (loading) return <Spinner />;
 
@@ -33,7 +33,7 @@ function AppLayout() {
   // A bootstrap PIN issued by an admin cannot be used to reach the app.
   if (mustChangePin) return <Navigate to="/change-pin" />;
 
-  // Module access. This is a convenience guard, not the security boundary —
+  // Module access. This is a convenience guard, not the security boundary:
   // firestore.rules enforces the same `perms` claim on every read and write.
   const moduleKey = moduleForPath(pathname);
   if (moduleKey && !can(moduleKey)) {

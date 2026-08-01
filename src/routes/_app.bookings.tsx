@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import type { Booking, BookingStatus } from "@/lib/db";
 
 export const Route = createFileRoute("/_app/bookings")({
-  head: () => ({ meta: [{ title: "Bookings — Polish Station OS" }] }),
+  head: () => ({ meta: [{ title: "Bookings · Polish Station OS" }] }),
   component: Bookings,
 });
 
@@ -187,7 +187,7 @@ function Bookings() {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       })
-      .catch(() => toast.error("Couldn't copy — copy the code manually"));
+      .catch(() => toast.error("Couldn't copy, copy the code manually"));
   }
 
   const todayBookings = bookings
@@ -214,9 +214,9 @@ function Bookings() {
   async function handleCheckin(id: string) {
     try {
       await checkinBooking(id);
-      toast.success("Checked in — job added to queue");
+      toast.success("Checked in, job added to queue");
     } catch {
-      toast.error("Check-in failed — please try again");
+      toast.error("Check-in failed, please try again");
     }
     setActiveCard(null);
   }
@@ -446,7 +446,7 @@ function Bookings() {
                             key={b.id}
                             className="absolute left-1 right-1 rounded-md border-l-[3px] bg-card px-1.5 py-1 cursor-pointer overflow-hidden hover:shadow-card"
                             style={{ top: startPx, height: heightPx, borderLeftColor: color }}
-                            title={`${b.customerName} — ${b.serviceName}`}
+                            title={`${b.customerName} · ${b.serviceName}`}
                             onClick={(e) => {
                               e.stopPropagation();
                               setActiveCard(b.id === activeCard ? null : b.id);

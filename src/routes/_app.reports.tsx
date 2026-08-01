@@ -18,7 +18,7 @@ import {
 } from "recharts";
 
 export const Route = createFileRoute("/_app/reports")({
-  head: () => ({ meta: [{ title: "Reports — Polish Station OS" }] }),
+  head: () => ({ meta: [{ title: "Reports · Polish Station OS" }] }),
   component: Reports,
 });
 
@@ -39,7 +39,7 @@ function dateFrom(period: Period): string {
 }
 
 // Build daily revenue/jobs data from invoice + job arrays.
-// Cash/card split is computed per-payment, not per-invoice — a split-tender
+// Cash/card split is computed per-payment, not per-invoice: a split-tender
 // invoice (part cash, part card) must contribute to both buckets correctly.
 function buildDailyData(
   invoices: Invoice[],
@@ -134,7 +134,7 @@ function Reports() {
         )
       : 0;
 
-  // Technician performance — jobs/revenue/on-time rate attributed to each tech
+  // Technician performance: jobs/revenue/on-time rate attributed to each tech
   // over the period. Revenue is joined through the job a paid invoice came
   // from, same join `_app.staff.tsx` already uses for its per-tech stats.
   const techNames = Array.from(new Set(filteredJobs.map((j) => j.tech).filter(Boolean)));
@@ -167,7 +167,7 @@ function Reports() {
     .sort((a, b) => b.revenue - a.revenue);
   const topTech = techStats[0];
 
-  // Customer lifetime value — ranked by total spend, with average order
+  // Customer lifetime value: ranked by total spend, with average order
   // value (spend / visits) so a customer with one big-ticket visit reads
   // differently from a customer with many small repeat visits.
   const rankedCustomers = [...customers]
@@ -180,7 +180,7 @@ function Reports() {
       ? Math.round(rankedCustomers.reduce((s, c) => s + c.spend, 0) / rankedCustomers.length)
       : 0;
 
-  // Profit & loss — real revenue (invoices) minus real cash-out (expenses),
+  // Profit & loss: real revenue (invoices) minus real cash-out (expenses),
   // not a fabricated per-service margin: there's no cost-of-goods link from
   // a job/service to the inventory it consumed, so a per-service "profit"
   // number would just be invented. This is the honest number available.
@@ -194,7 +194,7 @@ function Reports() {
     }, {}),
   ).sort((a, b) => b[1] - a[1]);
 
-  // Chart data — last 14 days for "today"/"7d", last 30 for "30d", last 60 for "all"
+  // Chart data: last 14 days for "today"/"7d", last 30 for "30d", last 60 for "all"
   const chartDays = period === "today" ? 14 : period === "7d" ? 14 : period === "30d" ? 30 : 60;
   const dailyData = buildDailyData(filteredInvoices, completedJobs, chartDays);
 

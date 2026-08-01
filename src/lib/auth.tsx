@@ -73,7 +73,7 @@ function withClientTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<
 
 /**
  * The app runs on shared hosting whose outbound network intermittently stalls a
- * single Firestore call inside loginFn — the request reaches the server and
+ * single Firestore call inside loginFn: the request reaches the server and
  * simply never returns (observed hanging 45s+), even on a warm worker, roughly
  * 1 attempt in 4. A keep-warm can't fix a per-request stall, so the client
  * time-boxes each attempt and retries: with ~75% per-attempt success, three
@@ -83,7 +83,7 @@ function withClientTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<
  * Retrying is safe: a correct PIN never increments the fail counter, and a
  * wrong PIN / locked / inactive account returns a *result* in well under the
  * per-attempt timeout, so those answers are returned immediately and never
- * trigger a retry — only a genuine timeout/network error does.
+ * trigger a retry; only a genuine timeout/network error does.
  */
 async function loginWithRetry(
   username: string,
@@ -96,7 +96,7 @@ async function loginWithRetry(
     try {
       return await withClientTimeout(loginFn({ data: { username, pin } }), perAttemptMs, "login");
     } catch (err) {
-      lastErr = err; // transient stall / cache-warming — pause, then try again
+      lastErr = err; // transient stall / cache-warming, so pause and try again
       if (i < attempts - 1) await new Promise((r) => setTimeout(r, 1500));
     }
   }
@@ -140,7 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Sync with Firebase Auth session. onIdTokenChanged (rather than
   // onAuthStateChanged) also fires on token refresh, so a server-side
   // revokeRefreshTokens surfaces here as a failed getIdTokenResult and signs
-  // the user out — that is what makes a demotion take effect immediately.
+  // the user out, which is what makes a demotion take effect immediately.
   useEffect(() => {
     const unsub = onIdTokenChanged(firebaseAuth, async (user) => {
       if (!user) {
@@ -153,7 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Role and permissions come from the token claims, the same values
         // firestore.rules enforces on. Reading them from a document instead
         // would let the UI and the rules disagree. The claims alone are enough
-        // to enter the app — no Firestore read on the login critical path.
+        // to enter the app: no Firestore read on the login critical path.
         const { claims } = await user.getIdTokenResult();
         const role = claims.role as StaffRole | undefined;
 
@@ -195,7 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .catch(() => {}); // transient read failure ≠ invalid session
         }
       } catch {
-        // Token revoked — no session.
+        // Token revoked, so no session.
         await signOut(firebaseAuth);
         setStaff(null);
       }
@@ -206,7 +206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, [resetTimer]);
 
-  // Inactivity detection — reset the timer on any user interaction
+  // Inactivity detection: reset the timer on any user interaction
   useEffect(() => {
     if (!staff) return;
     const events = ["mousedown", "keydown", "touchstart", "scroll"] as const;
@@ -220,7 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Keep the app server warm while anyone is signed in. A loaded SPA talks
   // straight to Firestore, so the Node process gets no traffic and Passenger
-  // idles it out (~5 min) — then the next server function (add user, change
+  // idles it out (~5 min), and then the next server function (add user, change
   // PIN) pays a ~20s cold start and 408s. Pinging /healthz (not /) every 4 min
   // from any open tab keeps the login path specifically warm: it exercises
   // firebase-admin + a Firestore connection, which a bare `/` SSR ping never
@@ -249,7 +249,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (result.mustChangePin) sessionStorage.setItem(MUST_CHANGE_KEY, "1");
       setMustChangePin(result.mustChangePin);
 
-      // signInWithCustomToken is a network call too — time-box it so a stalled
+      // signInWithCustomToken is a network call too, so time-box it so a stalled
       // identitytoolkit request surfaces as a retryable error instead of an
       // indefinite "Signing in…" hang.
       await withClientTimeout(

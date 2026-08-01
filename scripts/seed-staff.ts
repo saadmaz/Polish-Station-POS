@@ -98,7 +98,7 @@ async function main() {
     const pin = process.env[s.pinVar]!;
     const pinHash = await bcrypt.hash(pin, 12);
 
-    // Private record — contains pinHash. Readable only by the staff member or Manager+.
+    // Private record: contains pinHash. Readable only by the staff member or Manager+.
     // Written by Admin SDK only (client write is denied in Firestore rules).
     await adminDb.collection("staff").doc(s.id).set({
       name: s.name,
@@ -110,7 +110,7 @@ async function main() {
       lockedUntil: null,
     });
 
-    // Public record — name, role, color only. Used by the login screen before auth.
+    // Public record: name, role, color only. Used by the login screen before auth.
     await adminDb.collection("staff_public").doc(s.id).set({
       name: s.name,
       role: s.role,
@@ -120,7 +120,7 @@ async function main() {
     console.log(`✅  ${s.name.padEnd(12)} ${s.role}`);
   }
 
-  console.log("\nDone — staff seeded successfully.");
+  console.log("\nDone: staff seeded successfully.");
   process.exit(0);
 }
 

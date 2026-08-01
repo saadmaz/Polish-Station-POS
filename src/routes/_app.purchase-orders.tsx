@@ -149,12 +149,12 @@ function CreatePOForm({
               addLine(e.target.value);
             }}
           >
-            <option value="">— Select item to add —</option>
+            <option value="">Select item to add…</option>
             {inventory
               .filter((i) => !lines.find((l) => l.inventoryItemId === i.id))
               .map((i) => (
                 <option key={i.id} value={i.id}>
-                  {i.name} ({i.sku}) — Stock: {i.stock} {i.unit}
+                  {i.name} ({i.sku}) · Stock: {i.stock} {i.unit}
                 </option>
               ))}
           </select>
@@ -422,7 +422,7 @@ function POExpandedContent({ po }: { po: PurchaseOrder }) {
         )}
       </div>
 
-      {/* Lines table — dense editing/review data, kept as a horizontally
+      {/* Lines table: dense editing/review data, kept as a horizontally
           scrollable table at every width rather than a card list. */}
       <div className="overflow-x-auto rounded-lg border border-border mb-3">
         <table className="w-full text-sm">

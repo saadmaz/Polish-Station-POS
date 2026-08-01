@@ -1,7 +1,7 @@
 // Behavioral tests for firestore.rules, run against the emulator.
 //   firebase emulators:exec --only firestore "node scripts/test-rules.mjs"
 //
-// Exercises the SuperAdmin tier and per-user module permissions — the two
+// Exercises the SuperAdmin tier and per-user module permissions: the two
 // properties that are easy to get subtly wrong and impossible to eyeball.
 
 import {
@@ -185,5 +185,5 @@ await check("counters cannot be deleted", assertFails(deleteDoc(doc(admin, "coun
 
 await env.cleanup();
 
-console.log(`\n${fail === 0 ? "✅ ALL PASSED" : "❌ FAILURES"} — ${pass} passed, ${fail} failed\n`);
+console.log(`\n${fail === 0 ? "✅ ALL PASSED" : "❌ FAILURES"}: ${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

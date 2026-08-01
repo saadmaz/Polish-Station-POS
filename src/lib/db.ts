@@ -188,7 +188,7 @@ export interface PaymentRecord {
   method: PaymentMethod;
   amount: number;
   reference: string; // optional free-text: last 4 digits, bank slip #, etc.
-  sessionId: string | null; // shift that collected it — may differ from the invoice's original shift
+  sessionId: string | null; // shift that collected it: may differ from the invoice's original shift
   staffName: string;
   at: string;
 }
@@ -307,7 +307,7 @@ export const taxLabel = (ratePct = businessInfoCache.vatRate): string => `VAT ${
 // The set of physical service bays. Polish Station currently operates one
 // bay, but every screen that assigns/displays a bay (Jobs, Bay Board,
 // Bookings, Walk-In, Settings) reads this single list rather than hardcoding
-// bay names — adding a second bay later is a Settings → Bays edit, not a
+// bay names, so adding a second bay later is a Settings → Bays edit, not a
 // code change.
 
 export const DEFAULT_BAYS: string[] = ["Bay 1"];
@@ -324,7 +324,7 @@ export function sanitizeBays(input: unknown): string[] {
 }
 
 // ─── Payment/refund derived helpers ─────────────────────────────────────────
-// Invoices written before this feature shipped have no `payments` array —
+// Invoices written before this feature shipped have no `payments` array, so
 // synthesize one from the legacy single-method fields so old data keeps
 // working without a Firestore backfill. The legacy amount excludes any
 // deposit already collected earlier (deposits are tracked separately on the
@@ -351,7 +351,7 @@ export function getPayments(inv: Invoice): PaymentRecord[] {
 }
 
 // A deposit collected earlier (via the booking flow) is tracked separately
-// from checkout `payments` — add it back in so "amount paid" reflects the
+// from checkout `payments`; add it back in so "amount paid" reflects the
 // true total collected from the customer, in both legacy and new invoices.
 export function getAmountPaid(inv: Invoice): number {
   return getPayments(inv).reduce((s, p) => s + p.amount, 0) + (inv.depositApplied ?? 0);
@@ -391,7 +391,7 @@ export function isCouponValid(c: Coupon, now: Date = new Date()): boolean {
   return true;
 }
 
-/** Coupon discount off a subtotal — never more than the subtotal itself. */
+/** Coupon discount off a subtotal, never more than the subtotal itself. */
 export function calcCouponDiscount(c: Coupon, subtotal: number): number {
   const raw = c.type === "percent" ? subtotal * (c.value / 100) : c.value;
   return Math.min(Math.max(0, raw), Math.max(0, subtotal));
@@ -441,7 +441,7 @@ export interface Shift {
   verifiedBy: string | null;
 }
 
-// A weekly staff-rota entry — distinct from the till `Shift` (cash-drawer
+// A weekly staff-rota entry, distinct from the till `Shift` (cash-drawer
 // session) above: this is "who's scheduled to work when", not "who's logged
 // into the register".
 export interface RotaShift {
@@ -1133,7 +1133,7 @@ const SEED_EQUIPMENT: Equipment[] = [
     status: "In Maintenance",
     serviceIntervalDays: 90,
     lastServiceDate: new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10),
-    notes: "Sent for carbon brush replacement — Flex service centre",
+    notes: "Sent for carbon brush replacement, Flex service centre",
     createdAt: "2023-06-05T08:00:00.000Z",
   },
 ];
@@ -1153,7 +1153,7 @@ const SEED_MAINTENANCE_LOGS: MaintenanceLog[] = [
     id: "ml2",
     equipmentId: "eq1",
     type: "Repair",
-    description: "Replaced trigger switch — was intermittently cutting out under load",
+    description: "Replaced trigger switch, was intermittently cutting out under load",
     performedBy: "RUPES Agent",
     cost: 8200,
     date: new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10),
@@ -1173,7 +1173,7 @@ const SEED_MAINTENANCE_LOGS: MaintenanceLog[] = [
     id: "ml4",
     equipmentId: "eq3",
     type: "Inspection",
-    description: "O-ring check, hose inspection, pressure test — all within spec",
+    description: "O-ring check, hose inspection, pressure test, all within spec",
     performedBy: "Imran S.",
     cost: 0,
     date: new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10),
@@ -1183,7 +1183,7 @@ const SEED_MAINTENANCE_LOGS: MaintenanceLog[] = [
     id: "ml5",
     equipmentId: "eq5",
     type: "Repair",
-    description: "Carbon brush replacement — sent to authorised Flex service centre",
+    description: "Carbon brush replacement, sent to authorised Flex service centre",
     performedBy: "Flex Service Centre",
     cost: 6800,
     date: new Date(Date.now() - 10 * 86400000).toISOString().slice(0, 10),
@@ -1217,7 +1217,7 @@ const SEED_PURCHASE_ORDERS: PurchaseOrder[] = [
         qtyReceived: 0,
       },
     ],
-    notes: "Reorder triggered by low stock — see inventory alerts",
+    notes: "Reorder triggered by low stock, see inventory alerts",
     createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
     sentAt: null,
     receivedAt: null,

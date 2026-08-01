@@ -1,4 +1,4 @@
-// Error reporting — active only when VITE_SENTRY_DSN is set in .env.
+// Error reporting: active only when VITE_SENTRY_DSN is set in .env.
 // Without a DSN the functions are no-ops that log to console, so the app
 // works in any environment without a Sentry account.
 
@@ -14,7 +14,7 @@ export function initErrorReporting(): void {
     // Capture 10 % of transactions for performance monitoring
     tracesSampleRate: 0.1,
     ignoreErrors: [
-      // Browser quirks — not actionable
+      // Browser quirks, not actionable
       "ResizeObserver loop limit exceeded",
       "ResizeObserver loop completed with undelivered notifications",
       /^Loading chunk \d+ failed/,

@@ -2,12 +2,12 @@ import "dotenv/config";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 
-// Deletes every document in every collection this app uses — a full reset
+// Deletes every document in every collection this app uses: a full reset
 // before loading real data. Unlike purge-staff.ts, this does NOT preserve
 // any SuperAdmin account: after a --confirm run, nobody can log in until
 // `npm run seed:admin` is run again.
 //
-// SAFETY: dry-run by default — it counts what WOULD be deleted and changes
+// SAFETY: dry-run by default. It counts what WOULD be deleted and changes
 // nothing. Pass --confirm to actually delete.
 //
 //   npx tsx scripts/wipe-all-data.ts            # preview only
@@ -78,8 +78,8 @@ async function main() {
   console.log(`Project: ${process.env.FIREBASE_PROJECT_ID}`);
   console.log(
     CONFIRM
-      ? "Mode: ⚠️  LIVE DELETE — every collection below will be wiped\n"
-      : "Mode: dry-run (no changes) — pass --confirm to delete\n",
+      ? "Mode: ⚠️  LIVE DELETE, every collection below will be wiped\n"
+      : "Mode: dry-run (no changes), pass --confirm to delete\n",
   );
 
   const counts: Record<string, number> = {};
@@ -95,7 +95,7 @@ async function main() {
   console.log(`\nTotal: ${total} document(s) across ${COLLECTIONS.length} collections`);
 
   if (total === 0) {
-    console.log("\nNothing to delete — every collection is already empty.");
+    console.log("\nNothing to delete, every collection is already empty.");
     process.exit(0);
   }
 
@@ -114,9 +114,9 @@ async function main() {
   }
 
   console.log(
-    `\n✅ Done — ${deletedTotal} document(s) deleted across ${COLLECTIONS.length} collections.`,
+    `\n✅ Done: ${deletedTotal} document(s) deleted across ${COLLECTIONS.length} collections.`,
   );
-  console.log("   No staff accounts remain — run `npm run seed:admin` before logging in again.");
+  console.log("   No staff accounts remain, run `npm run seed:admin` before logging in again.");
   process.exit(0);
 }
 

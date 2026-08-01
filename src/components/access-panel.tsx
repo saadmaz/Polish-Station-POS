@@ -38,7 +38,7 @@ import { cn } from "@/lib/utils";
 const INPUT =
   "w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20";
 
-// The private staff docs — Manager+/Admin may read these under firestore.rules,
+// The private staff docs: Manager+/Admin may read these under firestore.rules,
 // and only Admin+ ever reaches this panel (settings module).
 interface StaffRow {
   id: string;
@@ -51,18 +51,18 @@ interface StaffRow {
 }
 
 const ERROR_TEXT: Record<StaffActionError, string> = {
-  unauthorized: "Your session expired or you lack permission — sign in again.",
+  unauthorized: "Your session expired or you lack permission. Sign in again.",
   forbidden: "You can't perform this action on a user at or above your own role.",
   not_found: "That user no longer exists.",
   username_taken: "That username is already taken.",
   name_taken: "Another active user already has that display name.",
-  last_super_admin: "This is the last Super Admin — promote someone else first.",
+  last_super_admin: "This is the last Super Admin. Promote someone else first.",
   self_target: "You can't change your own role or deactivate yourself here.",
 };
 
 // Hard ceiling on any staff mutation. The shared host's outbound route to
 // Firestore intermittently stalls, and without this the request could hang
-// forever — which is exactly what left the "Create user" button spinning with
+// forever, which is exactly what left the "Create user" button spinning with
 // no error and no way out. The server functions already retry internally, so
 // hitting this means the network was down for the whole window: surface a real
 // error instead of an endless spinner.
@@ -95,7 +95,7 @@ async function idToken(): Promise<string | null> {
   // getIdToken() (not getIdToken(true)): return the cached ID token and only
   // hit the network to refresh when it's actually expired. Forcing a refresh
   // added a ~2-4s round-trip to securetoken.googleapis.com on every call for
-  // no benefit — the server re-reads the caller's role from the staff doc and
+  // no benefit: the server re-reads the caller's role from the staff doc and
   // never trusts the token claim, so a freshly-minted token buys nothing.
   return (await firebaseAuth.currentUser?.getIdToken()) ?? null;
 }
@@ -129,7 +129,7 @@ export function AccessPanel() {
           .sort((a, b) => rank(b.role) - rank(a.role) || a.name.localeCompare(b.name)),
       );
     } catch {
-      toast.error("Couldn't load staff — check your permissions and connection.");
+      toast.error("Couldn't load staff. Check your permissions and connection.");
     } finally {
       setLoading(false);
     }
@@ -140,7 +140,7 @@ export function AccessPanel() {
   }, [load]);
 
   // An Admin may act on strictly-lower roles; a SuperAdmin on anyone. Mirrors
-  // the server's mayActOn — the server is authoritative, this only hides
+  // the server's mayActOn: the server is authoritative, this only hides
   // buttons the user could not use anyway.
   const canActOn = useCallback(
     (row: StaffRow) => {
@@ -407,7 +407,7 @@ function DeleteDialog({
     try {
       const token = await idToken();
       if (!token) {
-        toast.error("Session expired — sign in again.");
+        toast.error("Session expired. Sign in again.");
         return;
       }
       const res = await withActionTimeout(
@@ -420,7 +420,7 @@ function DeleteDialog({
         toast.error(ERROR_TEXT[res.error]);
       }
     } catch {
-      toast.error("Delete failed — check your connection.");
+      toast.error("Delete failed. Check your connection.");
     } finally {
       setBusy(false);
     }
@@ -480,7 +480,7 @@ function ActiveToggle({
     try {
       const token = await idToken();
       if (!token) {
-        toast.error("Session expired — sign in again.");
+        toast.error("Session expired. Sign in again.");
         return;
       }
       const res = await withActionTimeout(
@@ -495,7 +495,7 @@ function ActiveToggle({
         toast.error(ERROR_TEXT[res.error]);
       }
     } catch {
-      toast.error("Action failed — check your connection.");
+      toast.error("Action failed. Check your connection.");
     } finally {
       setBusy(false);
     }
@@ -552,7 +552,7 @@ function StaffDialog({
     [me],
   );
 
-  // Picking a role pre-loads that role's default module set — the admin then
+  // Picking a role pre-loads that role's default module set; the admin then
   // tweaks it. Editing keeps the user's current set unless the role changes.
   function pickRole(r: StaffRole) {
     setRole(r);
@@ -578,7 +578,7 @@ function StaffDialog({
     try {
       const token = await idToken();
       if (!token) {
-        toast.error("Session expired — sign in again.");
+        toast.error("Session expired. Sign in again.");
         return;
       }
 
@@ -619,7 +619,7 @@ function StaffDialog({
         toast.error(ERROR_TEXT[res.error]);
       }
     } catch {
-      toast.error("Save failed — check your connection.");
+      toast.error("Save failed. Check your connection.");
     } finally {
       setBusy(false);
     }
@@ -632,7 +632,7 @@ function StaffDialog({
       </h3>
       <p className="text-sm text-muted-foreground mb-4">
         {mode === "create"
-          ? "The user signs in with this username and PIN. This is their permanent PIN — they are not asked to change it."
+          ? "The user signs in with this username and PIN. This is their permanent PIN, and they are not asked to change it."
           : "Change role, colour, and module access. Username can't be changed here."}
       </p>
 
@@ -769,20 +769,20 @@ function ResetPinDialog({
     try {
       const token = await idToken();
       if (!token) {
-        toast.error("Session expired — sign in again.");
+        toast.error("Session expired. Sign in again.");
         return;
       }
       const res = await withActionTimeout(
         resetPinFn({ data: { idToken: token, targetStaffId: row.id, newPin: pin } }),
       );
       if (res.success) {
-        toast.success(`PIN reset for ${row.name} — they'll set their own on next login`);
+        toast.success(`PIN reset for ${row.name}. They'll set their own on next login`);
         onSaved();
       } else {
         toast.error(ERROR_TEXT[res.error]);
       }
     } catch {
-      toast.error("Reset failed — check your connection.");
+      toast.error("Reset failed. Check your connection.");
     } finally {
       setBusy(false);
     }

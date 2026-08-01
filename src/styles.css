@@ -5,7 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Polish Station OS — Design System
+ * Polish Station OS · Design System
  * Theme: Red (brand), Charcoal Grey (surface), White
  */
 
@@ -80,11 +80,11 @@
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.22 0.01 270);
 
-  /* Brand red — primary CTA */
+  /* Brand red, primary CTA */
   --primary: oklch(0.55 0.21 27);
   --primary-foreground: oklch(0.99 0 0);
 
-  /* Charcoal — sidebar / dark surfaces */
+  /* Charcoal, sidebar / dark surfaces */
   --charcoal: oklch(0.24 0.008 270);
   --charcoal-foreground: oklch(0.97 0 0);
 
@@ -118,7 +118,7 @@
   --chart-4: oklch(0.78 0.15 75);
   --chart-5: oklch(0.6 0.13 240);
 
-  /* Sidebar — charcoal surface with red accent */
+  /* Sidebar, charcoal surface with red accent */
   --sidebar: oklch(0.22 0.008 270);
   --sidebar-foreground: oklch(0.85 0.005 270);
   --sidebar-primary: oklch(0.55 0.21 27);

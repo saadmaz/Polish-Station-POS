@@ -8,7 +8,7 @@ import { ShiftModal } from "@/components/shift-modal";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/dashboard")({
-  head: () => ({ meta: [{ title: "Dashboard — Polish Station OS" }] }),
+  head: () => ({ meta: [{ title: "Dashboard · Polish Station OS" }] }),
   component: Dashboard,
 });
 

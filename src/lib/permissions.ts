@@ -1,14 +1,14 @@
 // Single source of truth for roles and module access.
 //
 // Two orthogonal concepts:
-//   • Role        — what you may DO (create / update / delete). A hierarchy for
-//                   Manager < Admin < SuperAdmin; Cashier and Advisor are peers.
-//   • Permissions — which modules you may SEE. An explicit per-user list that a
-//                   SuperAdmin edits. Roles only supply the default list.
+//   • Role: what you may DO (create / update / delete). A hierarchy for
+//           Manager < Admin < SuperAdmin; Cashier and Advisor are peers.
+//   • Permissions: which modules you may SEE. An explicit per-user list that a
+//                  SuperAdmin edits. Roles only supply the default list.
 //
 // Both are carried in the Firebase custom-token claims, so firestore.rules and
 // the UI read the same values. This file is imported by client, server and
-// seed scripts — keep it free of any firebase/react imports.
+// seed scripts, so keep it free of any firebase/react imports.
 
 export type StaffRole = "Technician" | "Cashier" | "Advisor" | "Manager" | "Admin" | "SuperAdmin";
 
@@ -23,7 +23,7 @@ export const STAFF_ROLES: StaffRole[] = [
 
 // Cashier and Advisor deliberately share a rank: neither is a superset of the
 // other, so seniority comparisons between them are meaningless (and are never
-// made — only Admin+ can manage staff).
+// made (only Admin+ can manage staff).
 const ROLE_RANK: Record<StaffRole, number> = {
   Technician: 1,
   Cashier: 2,
@@ -91,7 +91,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<StaffRole, ModuleKey[]> = {
 };
 
 /**
- * A SuperAdmin always holds every module — the permission list is not consulted.
+ * A SuperAdmin always holds every module; the permission list is not consulted.
  * Without this, revoking `settings` from the last SuperAdmin would lock the
  * whole business out of user management with no way back in.
  */

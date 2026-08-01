@@ -1,5 +1,5 @@
 // SuperAdmin creates a user from Settings → Staff & Access, that user signs in
-// with the admin-given PIN (NO forced PIN change — the admin's PIN is the
+// with the admin-given PIN (NO forced PIN change: the admin's PIN is the
 // working credential), and finally the SuperAdmin deletes the account.
 // Exercises createStaffFn, loginFn, and deleteStaffFn end to end against the
 // emulator (the project-ID-aligned harness makes verifyIdToken work, so the
@@ -54,16 +54,13 @@ await check("account is NOT flagged for a forced PIN change", async () => {
 });
 
 // The whole point: signing in with the admin-given PIN drops straight into the
-// app — no /change-pin detour.
+// app, no /change-pin detour.
 const fresh = await (await browser.newContext()).newPage();
 await check("new user signs in with the admin PIN and lands straight in the app", async () => {
   await signIn(fresh, newUsername, newPin);
   await fresh.waitForURL(/dashboard/, { timeout: 20000 });
   const onChangePin = fresh.url().includes("change-pin");
-  assert(
-    !onChangePin,
-    "new user was sent to the change-PIN screen — should go straight to the app",
-  );
+  assert(!onChangePin, "new user was sent to the change-PIN screen, should go straight to the app");
 });
 await fresh.close();
 

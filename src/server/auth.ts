@@ -72,7 +72,7 @@ export function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise
  *  bad window passes.
  *
  *  ONLY wrap operations that are safe to re-issue: reads, and writes that are
- *  idempotent (set/delete — NOT `create`, which is single-shot by design; see
+ *  idempotent (set/delete, NOT `create`, which is single-shot by design; see
  *  claimUsername in staff.ts for that case). */
 export async function withRetry<T>(
   fn: () => Promise<T>,
@@ -95,7 +95,7 @@ export async function withRetry<T>(
 // ── In-memory staff cache ───────────────────────────────────────────────────
 // Login must NOT depend on a live Firestore read. This shared host
 // intermittently stalls the outbound route to firestore.googleapis.com for
-// seconds at a time — proven in production, and proven NOT to be a stale-socket
+// seconds at a time. Proven in production, and proven NOT to be a stale-socket
 // issue (brand-new connections stall too). A stalled read hung login. So keep
 // the whole (tiny) staff collection in process memory, refreshed in the
 // background; login does an in-memory lookup + bcrypt + local token mint with
@@ -172,15 +172,15 @@ function ensureStaffCache(): void {
 let warmLoopActive = false;
 
 /** Called by /healthz (boot self-warm + keep-warm cron). If the cache is cold,
- *  kick off a background loop — once — that keeps retrying the load until it
+ *  kick off a background loop (once) that keeps retrying the load until it
  *  succeeds, so a freshly-spawned worker becomes login-ready within a couple of
  *  seconds instead of only when the first (40s-stalling) login forces the load.
  *  Returns immediately; never blocks the caller. Deliberately NOT a top-level
- *  side effect — this is a "use server" module, so module-load code would leak
+ *  side effect: this is a "use server" module, so module-load code would leak
  *  into / break the client bundle; it runs only when invoked server-side. */
 export function warmStaffCache(): void {
   if (cacheLoadedAt !== 0) {
-    void refreshStaffCache().catch(() => {}); // already warm — just refresh
+    void refreshStaffCache().catch(() => {}); // already warm, just refresh
     return;
   }
   if (warmLoopActive) return; // a load loop is already running
@@ -202,7 +202,7 @@ export function invalidateStaffCache(): Promise<void> {
 
 /** Fallback for a login on a worker whose cache hasn't loaded yet: read just
  *  this one user (username index → staff doc) instead of the whole collection.
- *  Two small reads, each retried — plain reads are reliable from this host, so
+ *  Two small reads, each retried. Plain reads are reliable from this host, so
  *  a cold worker still serves a working login instead of rejecting it. */
 async function readStaffDirect(key: string): Promise<CachedStaff | undefined> {
   const idx = await withRetry(
@@ -249,7 +249,7 @@ export const loginFn = createServerFn({ method: "POST" })
     let staff: CachedStaff | undefined;
 
     if (cacheLoadedAt !== 0) {
-      // Warm cache — the fast path: no network at all.
+      // Warm cache: the fast path, no network at all.
       let staffId = staffIdByUsername.get(key);
       // A just-created user may not be in the cache yet; one forced refresh
       // covers that (and genuinely-unknown usernames, which are rare).
@@ -260,7 +260,7 @@ export const loginFn = createServerFn({ method: "POST" })
       staff = staffId ? staffById.get(staffId) : undefined;
     } else {
       // Cold worker (freshly spawned; its cache is still loading). Do NOT fail
-      // the login — plain Firestore READS are reliable from this host, it is
+      // the login: plain Firestore READS are reliable from this host, it is
       // only the cache's whole-collection load that can lag. Read this one
       // user directly so a login on a cold worker still works, and nudge the
       // background load along for the next request.
@@ -351,7 +351,7 @@ export const changeOwnPinFn = createServerFn({ method: "POST" })
     try {
       // No checkRevoked here: it adds an identitytoolkit round trip this host
       // tends to stall (the change-PIN screen hung on it in production), and
-      // the current-PIN re-proof below is the real gate — a revoked-but-valid
+      // the current-PIN re-proof below is the real gate: a revoked-but-valid
       // token without the current PIN still gets rejected.
       const decoded = await withTimeout(adminAuth.verifyIdToken(idToken), 8_000, "token verify");
       uid = decoded.uid;

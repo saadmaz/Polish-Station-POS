@@ -9,7 +9,7 @@ import { changeOwnPinFn } from "@/server/auth";
 export const Route = createFileRoute("/change-pin")({
   head: () => ({
     meta: [
-      { title: "Change PIN — Polish Station OS" },
+      { title: "Change PIN · Polish Station OS" },
       { name: "robots", content: "noindex, nofollow" },
     ],
   }),
@@ -52,7 +52,7 @@ function ChangePin() {
       // auto-refreshes if the token has actually expired.
       const idToken = await firebaseAuth.currentUser?.getIdToken();
       if (!idToken) {
-        toast.error("Session expired — please sign in again");
+        toast.error("Session expired, please sign in again");
         await logout();
         return;
       }
@@ -67,17 +67,16 @@ function ChangePin() {
       }
 
       if (result.error === "wrong_pin") setError("Your current PIN is incorrect");
-      else if (result.error === "weak_pin")
-        setError("That PIN is too easy to guess — pick another");
+      else if (result.error === "weak_pin") setError("That PIN is too easy to guess, pick another");
       else if (result.error === "same_pin")
         setError("The new PIN must differ from your current one");
       else {
-        toast.error("Session expired — please sign in again");
+        toast.error("Session expired, please sign in again");
         await logout();
         return;
       }
     } catch {
-      setError("Couldn't reach the server — check your connection");
+      setError("Couldn't reach the server, check your connection");
     } finally {
       setBusy(false);
       setCurrentPin("");

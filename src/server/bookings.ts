@@ -6,10 +6,10 @@ import { withTimeout } from "./auth";
 
 // Public, unauthenticated surface for the /book widget. firestore.rules
 // requires isAuth() for both `services` reads and `bookings` writes (by
-// design — see firestore.rules), so an anonymous visitor cannot use the
+// design, see firestore.rules), so an anonymous visitor cannot use the
 // client SDK for any of this. These server functions run on the Admin SDK,
 // which bypasses rules entirely, the same way loginFn does for the login
-// screen. Nothing here trusts client-submitted pricing or duration — both
+// screen. Nothing here trusts client-submitted pricing or duration; both
 // are re-derived from the `services` doc server-side.
 
 // ── Bookable services ─────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ async function activeBookingsOnDate(date: string) {
 
 const DateSchema = z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) });
 
-/** Times on the given date that are already at capacity — the widget disables these. */
+/** Times on the given date that are already at capacity; the widget disables these. */
 export const getFullSlotsFn = createServerFn({ method: "GET" })
   .validator((raw: unknown) => DateSchema.parse(raw))
   .handler(async ({ data }): Promise<string[]> => {
@@ -86,7 +86,7 @@ export type CreateBookingResult =
 
 // Best-effort abuse guard: this is the only write reachable with zero
 // authentication anywhere in the app, so it gets its own cap independent of
-// the per-slot capacity check below. In-memory, per-process — resets on a
+// the per-slot capacity check below. In-memory, per-process, resets on a
 // cold start like the caches in server/auth.ts. Good enough to stop a casual
 // script from flooding the booking list; not a substitute for a CDN/WAF-level
 // rate limiter if this page ever sees real abuse.

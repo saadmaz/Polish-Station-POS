@@ -1,7 +1,7 @@
-// Central React store — Firestore-backed with real-time onSnapshot listeners.
+// Central React store: Firestore-backed with real-time onSnapshot listeners.
 // All reads come from in-memory state synced by Firestore.
 // All writes go to Firestore; onSnapshot updates local state automatically.
-// Components call useStore() — the interface is identical to the old localStorage version.
+// Components call useStore(); the interface is identical to the old localStorage version.
 
 import {
   createContext,
@@ -84,7 +84,7 @@ function localNextSeq(items: { id: string }[], prefix: string, startAt: number):
  * Firestore transaction, so two tills charging at the same moment can never
  * mint the same id and silently overwrite each other's document. The local max
  * is used as a floor (self-heals a missing or backwards counter) and as the
- * fallback when the transaction can't run at all (offline) — which degrades to
+ * fallback when the transaction can't run at all (offline), which degrades to
  * the previous single-till behavior instead of blocking the sale.
  */
 async function nextSeqId(
@@ -104,7 +104,7 @@ async function nextSeqId(
       return `${prefix}${n}`;
     });
   } catch (err) {
-    console.error(`[store] counter "${counterName}" unavailable — local allocation:`, err);
+    console.error(`[store] counter "${counterName}" unavailable, local allocation:`, err);
     return `${prefix}${localNext}`;
   }
 }
@@ -216,11 +216,11 @@ interface Store {
   deleteInventoryItem: (id: string) => void;
   adjustStock: (id: string, delta: number) => void;
 
-  // Business info (settings/business doc — letterhead + VAT rate)
+  // Business info (settings/business doc: letterhead + VAT rate)
   businessInfo: BusinessInfo;
   saveBusinessInfo: (b: BusinessInfo) => void;
 
-  // Bays (settings/bays doc — the list of physical service bays)
+  // Bays (settings/bays doc: the list of physical service bays)
   bays: string[];
   saveBays: (bays: string[]) => void;
 
@@ -306,7 +306,7 @@ function logAudit(
 // ── Provider ──────────────────────────────────────────────────────────────────
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  // Firestore rules require an authenticated user — listeners must not start
+  // Firestore rules require an authenticated user, so listeners must not start
   // until login completes, or all 13 fail with permission-denied (and, before
   // error handlers were added, never resolved storeLoading: infinite spinner).
   const { staff } = useAuth();
@@ -343,7 +343,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const actorRef = useRef<{ id: string; name: string } | null>(null);
   actorRef.current = staff ? { id: staff.id, name: staff.name } : null;
 
-  // Ref always holds latest state — safe to use in async mutations without stale closures
+  // Ref always holds latest state, safe to use in async mutations without stale closures
   const S = useRef({
     jobs,
     customers,
@@ -394,7 +394,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // ── Firestore listeners ────────────────────────────────────────────────────
   useEffect(() => {
     // Not signed in: no listeners (rules would deny them all). Mark the store
-    // "loaded" so no route ever waits forever on data that can't arrive —
+    // "loaded" so no route ever waits forever on data that can't arrive:
     // the auth guard in _app.tsx redirects to login before data is needed.
     if (!staffId) {
       setStoreLoading(false);
@@ -404,7 +404,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     // Collections whose read rules require a module claim. Subscribing without
     // it would only produce a permission-denied, so skip it and leave the slice
-    // empty — the same end state, without the failed request.
+    // empty: the same end state, without the failed request.
     const allowed = (m: ModuleKey) => hasModule(staff.role, staff.permissions, m);
 
     type Sub = () => Unsubscribe;
@@ -415,7 +415,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // back to ascending order (which is what every consumer historically
     // assumed from the un-ordered reads). Without a cap, a year of trading
     // makes every login download the shop's entire history. Anything older
-    // than the cap still exists in Firestore — it's just not streamed to every
+    // than the cap still exists in Firestore, it's just not streamed to every
     // till on every login.
     const newestFirst = (path: string, field: string, n: number): Query =>
       query(fs(path), orderBy(field, "desc"), limit(n));
@@ -621,7 +621,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ),
       );
 
-    // Bind `done` to the real subscription count, not a hardcoded 13 — a
+    // Bind `done` to the real subscription count, not a hardcoded 13. A
     // stale constant here is what produces an infinite loading spinner.
     // Unblock the UI on a quorum rather than every listener: the first few
     // snapshots (services/customers/jobs/bookings lead the multiplexed
@@ -634,7 +634,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     function done() {
       if (++loaded >= quorum) setStoreLoading(false);
     }
-    // An errored listener still counts as done — data stays empty, but the UI
+    // An errored listener still counts as done: data stays empty, but the UI
     // must never hang on a spinner because a subscription failed.
     function fail(name: string) {
       return (err: unknown) => {
@@ -683,7 +683,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // ── Shift total recalculation ──────────────────────────────────────────────
   // Sums payments/refunds tagged with this shift's sessionId, across ALL
-  // invoices — not just invoices originally opened in this shift. This is
+  // invoices, not just invoices originally opened in this shift. This is
   // what makes "collect the rest of a bill next week" and "refund today for
   // a sale from last month" reconcile against the *current* drawer, not the
   // invoice's original one.
@@ -1083,7 +1083,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const openShiftFn = useCallback(
     // Awaits the write directly (bypassing the fire-and-forget `write()` helper)
     // so the caller can tell whether the shift actually opened before showing
-    // a success toast — this gates cash reconciliation, so a silent failure
+    // a success toast: this gates cash reconciliation, so a silent failure
     // here is a real operational risk.
     async (data: {
       staffId: string;
@@ -1217,7 +1217,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         receivedAt: allReceived ? new Date().toISOString() : po.receivedAt,
       });
       // Adjust inventory stock for newly received quantities. Compare against
-      // the *original* po.lines (pre-update) — updatedLines already carries
+      // the *original* po.lines (pre-update): updatedLines already carries
       // the new cumulative qtyReceived, so comparing against it would always
       // read as "nothing new received."
       for (const l of po.lines) {
@@ -1270,7 +1270,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const refreshAll = useCallback(() => {}, []); // no-op — onSnapshot handles refresh
+  const refreshAll = useCallback(() => {}, []); // no-op: onSnapshot handles refresh
 
   // ── Context value ──────────────────────────────────────────────────────────
   const value: Store = {

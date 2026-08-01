@@ -19,7 +19,7 @@ export const diagFn = createServerFn({ method: "POST" })
     const steps: string[] = [];
 
     // Each step is recorded BEFORE and AFTER, so a hang leaves the "before"
-    // marker as the last thing written — pinpointing the exact culprit.
+    // marker as the last thing written, pinpointing the exact culprit.
     const mark = async (s: string) => {
       steps.push(`${s} @${Date.now()}`);
       await ref.set({ steps, at: Date.now() }).catch(() => {});

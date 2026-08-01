@@ -24,7 +24,7 @@ import { useStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
-// Visibility comes from the user's `perms` claim, not from the role — a
+// Visibility comes from the user's `perms` claim, not from the role: a
 // SuperAdmin grants modules per person. MODULES is the ordering and the
 // source of the label and route; this map only supplies the icon.
 const ICONS: Record<ModuleKey, React.ComponentType<{ className?: string }>> = {
@@ -156,7 +156,7 @@ function UserRow({
   );
 }
 
-/** Desktop sidebar. Hidden on phones — the TopBar hamburger opens
+/** Desktop sidebar. Hidden on phones: the TopBar hamburger opens
  *  MobileNavSheet instead, because a fixed 224px rail on a 375px screen
  *  leaves the actual app ~150px wide. */
 export function AppSidebar() {

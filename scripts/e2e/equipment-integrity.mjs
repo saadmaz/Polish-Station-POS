@@ -1,13 +1,13 @@
 // Proves the Critical fix: adding equipment used to call db.equipment.nextId()
 // (src/lib/db.ts), a counter over a localStorage list that real equipment
-// writes never touch — so it returned the same id on every call, and the
+// writes never touch, so it returned the same id on every call, and the
 // second setDoc() in a session silently overwrote the first equipment
 // record in Firestore. See src/routes/_app.equipment.tsx.
 import { chromium } from "playwright";
 import { BASE_URL, adminDb, check, assert, summarize } from "./_shared.mjs";
 import { TEST_STAFF } from "../seed-emulator.mjs";
 
-console.log("Equipment add — ID collision / data-loss check:");
+console.log("Equipment add: ID collision / data-loss check:");
 
 const browser = await chromium.launch();
 const page = await (await browser.newContext()).newPage();

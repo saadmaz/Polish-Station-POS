@@ -26,7 +26,7 @@ import { calcTier, isCouponValid } from "@/lib/db";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/customers")({
-  head: () => ({ meta: [{ title: "Customers — Polish Station OS" }] }),
+  head: () => ({ meta: [{ title: "Customers · Polish Station OS" }] }),
   component: Customers,
 });
 
@@ -179,7 +179,7 @@ function CustomerForm({
             </div>
           ))}
           {form.vehicles.length === 0 && (
-            <p className="text-xs text-muted-foreground">No vehicles — add one above</p>
+            <p className="text-xs text-muted-foreground">No vehicles, add one above</p>
           )}
         </div>
       </div>
@@ -213,8 +213,8 @@ function useCustomerHistory(customer: Customer) {
   const customerJobs = jobs.filter((j) => j.customerId === customer.id).reverse();
   const history = customerInvoices.slice(0, 5);
 
-  // A data-subject export: everything this business holds on one customer —
-  // profile, vehicles, loyalty balance, and full job/invoice history — not
+  // A data-subject export: everything this business holds on one customer
+  // (profile, vehicles, loyalty balance, and full job/invoice history), not
   // just the 5-row preview shown in the expanded panel.
   function exportCustomerData() {
     const payload = {
@@ -409,7 +409,7 @@ function CustomerRow({
   );
 }
 
-// Mobile equivalent of CustomerRow — a stacked card instead of a table row,
+// Mobile equivalent of CustomerRow: a stacked card instead of a table row,
 // sharing the same history lookup and expanded detail panel.
 function CustomerCard({
   customer,
@@ -676,7 +676,7 @@ function CouponsPanel() {
       {formMode && canManage && (
         <div className="p-5 border-b border-border">
           <h3 className="font-display font-bold mb-4">
-            {formMode === "add" ? "Add New Coupon" : `Edit — ${(formMode as Coupon).code}`}
+            {formMode === "add" ? "Add New Coupon" : `Edit · ${(formMode as Coupon).code}`}
           </h3>
           <CouponForm
             initial={formMode === "add" ? null : (formMode as Coupon)}
@@ -927,7 +927,7 @@ function Customers() {
       {formMode && (
         <div className="mb-6 rounded-xl border border-border bg-card shadow-card p-5">
           <h2 className="font-display font-bold mb-4">
-            {formMode === "add" ? "Add New Customer" : `Edit — ${(formMode as Customer).name}`}
+            {formMode === "add" ? "Add New Customer" : `Edit · ${(formMode as Customer).name}`}
           </h2>
           <CustomerForm
             initial={formMode === "add" ? null : (formMode as Customer)}

@@ -18,7 +18,7 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 
-// Opt-in only (VITE_USE_FIREBASE_EMULATOR=true) — every other build/run talks
+// Opt-in only (VITE_USE_FIREBASE_EMULATOR=true): every other build/run talks
 // to the real project exactly as before. Exists so `npm run dev` and
 // Playwright tests can exercise the app (login, bookings, staff mgmt)
 // without writing test data into the live production Firestore project,

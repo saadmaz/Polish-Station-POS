@@ -134,7 +134,7 @@ await check("Refund updates invoice status and customer spend", async () => {
 
   const invoiceRow = page.locator("tr", { hasText: customerName }).first();
   await invoiceRow.locator('button:has-text("Refund")').click();
-  await page.waitForSelector("text=Refund —", { timeout: 10000 });
+  await page.waitForSelector("text=Refund ·", { timeout: 10000 });
   await page.fill('input[placeholder*="unhappy"]', "E2E test refund");
   await page.click('button:has-text("Refund LKR")');
   await page.waitForSelector("text=refunded on", { timeout: 10000 });

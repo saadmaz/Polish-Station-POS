@@ -114,7 +114,7 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
 
     if (!upper || upper.length < 4) return;
 
-    // Internal lookup — find any customer with this plate
+    // Internal lookup: find any customer with this plate
     for (const c of customers) {
       const match = c.vehicles.find(
         (v) => v.plate.replace(/\s/g, "").toUpperCase() === upper.replace(/\s/g, ""),
@@ -132,7 +132,7 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
     }
   }
 
-  // Explicit VIN decode (NHTSA) — triggered by button
+  // Explicit VIN decode (NHTSA), triggered by button
   async function handleVINLookup() {
     const plate = form.plate.replace(/\s/g, "");
     if (!VIN_RE.test(plate)) {
@@ -209,7 +209,7 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
       bay: form.bay || "—",
       status: "Confirmed",
       notes: form.notes,
-      // Omit rather than set to `undefined` — Firestore's client SDK
+      // Omit rather than set to `undefined`: Firestore's client SDK
       // setDoc() throws on an explicit undefined field value (this
       // previously broke every booking created with no deposit required).
       ...(form.requireDeposit ? { depositAmount: form.depositAmount } : {}),
@@ -221,7 +221,7 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
       : "";
 
     toast.success("Booking confirmed", {
-      description: `${form.name} — ${svc.name} on ${form.date} at ${form.time}${depositNote}`,
+      description: `${form.name}: ${svc.name} on ${form.date} at ${form.time}${depositNote}`,
     });
     setForm(EMPTY);
     setLookupState("idle");
@@ -242,7 +242,7 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 gap-4 py-4">
-          {/* Phone — auto-fills customer */}
+          {/* Phone: auto-fills customer */}
           <div className="space-y-1.5">
             <label className="text-sm font-medium">Phone</label>
             <input
@@ -364,7 +364,7 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
               <option value="">Select a service…</option>
               {services.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name} — LKR {s.price.toLocaleString()} ({s.durationMin}m)
+                  {s.name} · LKR {s.price.toLocaleString()} ({s.durationMin}m)
                 </option>
               ))}
             </select>

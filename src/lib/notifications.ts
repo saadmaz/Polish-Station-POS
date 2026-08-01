@@ -27,9 +27,9 @@ export const TEMPLATE_VARS = [
 
 export const DEFAULT_TEMPLATES = {
   jobReady:
-    "Hi {customerName}! 🚗✨ Your {vehicle} ({plate}) is ready for pickup at Polish Station. Come collect whenever you're ready — thank you for choosing us! 🙏",
+    "Hi {customerName}! 🚗✨ Your {vehicle} ({plate}) is ready for pickup at Polish Station. Come collect whenever you're ready. Thank you for choosing us! 🙏",
   serviceReminder:
-    "Hi {customerName}! 👋 It's been {daysSinceVisit} days since your last visit at Polish Station. Your {vehicle} deserves some TLC — book your next detail today! Give us a call or reply to this message. 🚗",
+    "Hi {customerName}! 👋 It's been {daysSinceVisit} days since your last visit at Polish Station. Your {vehicle} deserves some TLC. Book your next detail today! Give us a call or reply to this message. 🚗",
   reviewRequest:
-    "Hi {customerName}! We hope you loved the detail on your {vehicle} 🚗✨ If you have a moment, we'd really appreciate a Google review — it helps us a lot!\n{reviewLink}\nThank you so much! 🙏 — Polish Station",
+    "Hi {customerName}! We hope you loved the detail on your {vehicle} 🚗✨ If you have a moment, we'd really appreciate a Google review, it helps us a lot!\n{reviewLink}\nThank you so much! 🙏\nPolish Station",
 };

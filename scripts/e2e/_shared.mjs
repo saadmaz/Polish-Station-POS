@@ -4,7 +4,7 @@ import { getFirestore } from "firebase-admin/firestore";
 export const BASE_URL = process.env.E2E_BASE_URL ?? "http://127.0.0.1:5173";
 
 if (!process.env.FIRESTORE_EMULATOR_HOST) {
-  console.error("❌ FIRESTORE_EMULATOR_HOST is not set — refusing to run against a real project.");
+  console.error("❌ FIRESTORE_EMULATOR_HOST is not set, refusing to run against a real project.");
   process.exit(1);
 }
 

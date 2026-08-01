@@ -8,7 +8,7 @@ import { getFirestore } from "firebase-admin/firestore";
 // this is a hard delete: it removes the private staff doc, the public roster
 // doc, and the username index entry, then revokes any live session.
 //
-// SAFETY: dry-run by default — it lists exactly who WOULD be deleted and
+// SAFETY: dry-run by default. It lists exactly who WOULD be deleted and
 // changes nothing. Pass --confirm to actually delete.
 //
 //   npx tsx scripts/purge-staff.ts            # preview only
@@ -39,7 +39,7 @@ const adminAuth = getAuth();
 async function main() {
   console.log(`Project: ${process.env.FIREBASE_PROJECT_ID}`);
   console.log(
-    CONFIRM ? "Mode: ⚠️  LIVE DELETE\n" : "Mode: dry-run (no changes) — pass --confirm to delete\n",
+    CONFIRM ? "Mode: ⚠️  LIVE DELETE\n" : "Mode: dry-run (no changes), pass --confirm to delete\n",
   );
 
   const snap = await adminDb.collection("staff").get();
@@ -57,12 +57,12 @@ async function main() {
   );
 
   if (keep.length === 0) {
-    console.error("\n❌ Refusing to run: no SuperAdmin found — this would delete every account.");
+    console.error("\n❌ Refusing to run: no SuperAdmin found, this would delete every account.");
     process.exit(1);
   }
 
   if (remove.length === 0) {
-    console.log("\nNothing to delete — only SuperAdmin(s) remain.");
+    console.log("\nNothing to delete, only SuperAdmin(s) remain.");
     process.exit(0);
   }
 
@@ -86,7 +86,7 @@ async function main() {
     deleted++;
   }
 
-  console.log(`\n✅ Done — ${deleted} account(s) deleted, ${keep.length} SuperAdmin(s) kept.`);
+  console.log(`\n✅ Done: ${deleted} account(s) deleted, ${keep.length} SuperAdmin(s) kept.`);
   process.exit(0);
 }
 

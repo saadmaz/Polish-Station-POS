@@ -10,7 +10,7 @@ import type { InventoryItem } from "@/lib/db";
 import { newId } from "@/lib/db";
 
 export const Route = createFileRoute("/_app/inventory")({
-  head: () => ({ meta: [{ title: "Inventory — Polish Station OS" }] }),
+  head: () => ({ meta: [{ title: "Inventory · Polish Station OS" }] }),
   component: Inventory,
 });
 
@@ -311,7 +311,7 @@ function Inventory() {
       {formMode && (
         <div className="mb-6 rounded-xl border border-border bg-card shadow-card p-5">
           <h2 className="font-display font-bold mb-4">
-            {formMode === "add" ? "Add New Item" : `Edit — ${(formMode as InventoryItem).name}`}
+            {formMode === "add" ? "Add New Item" : `Edit · ${(formMode as InventoryItem).name}`}
           </h2>
           <ItemForm
             initial={formMode === "add" ? null : (formMode as InventoryItem)}

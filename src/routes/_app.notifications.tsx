@@ -118,7 +118,7 @@ function RemindersTab() {
       <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800/40 dark:bg-blue-900/20">
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
         <p className="text-sm text-blue-700 dark:text-blue-300">
-          Clicking <strong>WhatsApp</strong> opens the app with the pre-filled message — review and
+          Clicking <strong>WhatsApp</strong> opens the app with the pre-filled message. Review and
           tap Send. The customer is automatically removed from this list once marked.
         </p>
       </div>
@@ -554,7 +554,7 @@ function NotificationsPage() {
           <Bell className="h-6 w-6 text-primary" /> Notifications & Reminders
         </h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Send service reminders and review requests via WhatsApp — one-click deep links, no backend
+          Send service reminders and review requests via WhatsApp: one-click deep links, no backend
           required
         </p>
       </div>

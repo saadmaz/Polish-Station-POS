@@ -1,7 +1,7 @@
 #!/bin/bash
 # Orchestrates the e2e suite against the Firebase emulator only. Intended to
 # run inside `firebase emulators:exec`, which sets FIRESTORE_EMULATOR_HOST /
-# FIREBASE_AUTH_EMULATOR_HOST for us — every script here refuses to run
+# FIREBASE_AUTH_EMULATOR_HOST for us; every script here refuses to run
 # without those set, so this can never touch the real production project.
 #
 # Serves the real production build (vite build + start.mjs) rather than

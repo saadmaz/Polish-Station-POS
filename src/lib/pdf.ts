@@ -325,7 +325,7 @@ function buildDoc(opts: DocOptions): jsPDF {
   y += 14;
 
   // ── Payment / Quotation info ─────────────────────────────────────────────────
-  // Lists every tender line (split payments show one row per method) —
+  // Lists every tender line (split payments show one row per method), and
   // falls back to the single legacy `method` field for older invoices.
   if (opts.docType === "INVOICE" && (opts.method || (opts.payments?.length ?? 0) > 0)) {
     const pays =
@@ -424,7 +424,7 @@ function buildDoc(opts: DocOptions): jsPDF {
 
   doc.setTextColor(...MUTED);
   doc.text(
-    `Thank you for choosing ${getBusinessInfo().trading} — Sri Lanka's premier car care destination.`,
+    `Thank you for choosing ${getBusinessInfo().trading}, Sri Lanka's premier car care destination.`,
     ML,
     footerY + 10,
   );

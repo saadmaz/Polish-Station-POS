@@ -1,7 +1,7 @@
 // Seeds the Firebase emulator (never the real project) with the minimum
 // fixture Playwright's e2e specs need: one login-able staff account and a
 // couple of bookable services. Run only against FIRESTORE_EMULATOR_HOST /
-// FIREBASE_AUTH_EMULATOR_HOST — refuses to run otherwise, so this can never
+// FIREBASE_AUTH_EMULATOR_HOST, refuses to run otherwise, so this can never
 // accidentally seed test data into the live production Firestore project.
 //
 //   firebase emulators:exec --only firestore,auth "node scripts/seed-emulator.mjs && node ..."
@@ -12,7 +12,7 @@ import bcrypt from "bcryptjs";
 import { pathToFileURL } from "node:url";
 
 if (!process.env.FIRESTORE_EMULATOR_HOST) {
-  console.error("❌ FIRESTORE_EMULATOR_HOST is not set — refusing to run against a real project.");
+  console.error("❌ FIRESTORE_EMULATOR_HOST is not set, refusing to run against a real project.");
   process.exit(1);
 }
 
@@ -87,7 +87,7 @@ async function main() {
 }
 
 // Guarded: the e2e specs import TEST_STAFF/TEST_SERVICES from this module
-// for their own fixtures — without this check, every one of those imports
+// for their own fixtures. Without this check, every one of those imports
 // would re-run the seed (harmless since it's idempotent, but noisy and slow).
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((err) => {

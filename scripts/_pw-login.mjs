@@ -11,7 +11,7 @@ mark("login screen ready", t);
 
 await page.fill("#username", process.env.SU_USER ?? "ADMIN");
 t = Date.now();
-// Never hardcode a real credential in the repo — pass it at run time:
+// Never hardcode a real credential in the repo, pass it at run time:
 //   SU_PIN=xxxx node scripts/_pw-login.mjs
 const pin = process.env.SU_PIN;
 if (!pin) {

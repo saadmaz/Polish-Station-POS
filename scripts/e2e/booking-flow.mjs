@@ -1,6 +1,6 @@
 // Proves the Critical fix: the public /book widget used to write bookings
 // straight into the visitor's own localStorage (src/lib/db.ts), so they
-// never reached the shop's real data at all — see src/server/bookings.ts.
+// never reached the shop's real data at all, see src/server/bookings.ts.
 // This drives the full public booking wizard as an anonymous visitor, then
 // checks Firestore directly (Admin SDK, bypassing the browser entirely) to
 // prove the booking actually landed server-side with the right details.
@@ -55,7 +55,7 @@ await check(
     assert(b.customerName === customerName, "customer name mismatch");
     assert(b.serviceId === service.id, "serviceId mismatch");
     // Price/duration must come from the server-side service lookup, never the
-    // client payload — this is the tamper-resistance half of the same fix.
+    // client payload: this is the tamper-resistance half of the same fix.
     assert(
       b.price === service.price,
       `price should be server-derived (${service.price}), got ${b.price}`,

@@ -11,7 +11,7 @@ import type { RotaShift } from "@/lib/db";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/staff")({
-  head: () => ({ meta: [{ title: "Staff — Polish Station OS" }] }),
+  head: () => ({ meta: [{ title: "Staff · Polish Station OS" }] }),
   component: StaffPage,
 });
 

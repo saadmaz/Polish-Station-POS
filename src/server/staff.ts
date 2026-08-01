@@ -54,7 +54,7 @@ interface Caller {
 /**
  * Verify the caller's ID token and read their role from the *staff document*,
  * not from the token claim. A claim can be up to an hour stale; the document is
- * authoritative — which is also why `checkRevoked` is deliberately NOT used:
+ * authoritative, which is also why `checkRevoked` is deliberately NOT used:
  * it adds a blocking identitytoolkit round trip that this shared host tends to
  * stall (the same class of hang that broke login before preferRest), and a
  * demoted/deactivated caller is already rejected by the fresh doc read below.
@@ -107,8 +107,8 @@ async function requireManager(idToken: string): Promise<Caller | null> {
 
 /**
  * An Admin may act on anyone strictly below them. A SuperAdmin may act on
- * anyone. This is what stops an Admin from editing a peer Admin, and — combined
- * with the role check in `assertMayAssignRole` — from escalating themselves.
+ * anyone. This is what stops an Admin from editing a peer Admin, and, combined
+ * with the role check in `assertMayAssignRole`, from escalating themselves.
  */
 function mayActOn(caller: Caller, targetRole: StaffRole): boolean {
   if (isSuperAdmin(caller.role)) return true;
@@ -123,7 +123,7 @@ function mayAssignRole(caller: Caller, newRole: StaffRole): boolean {
 }
 
 /** Count active SuperAdmins, optionally ignoring one staffId (the one being
- *  changed). Equality-only query — no composite index required. */
+ *  changed). Equality-only query, no composite index required. */
 async function otherActiveSuperAdmins(excludeStaffId: string): Promise<number> {
   const snap = await withRetry(
     () => adminDb.collection("staff").where("role", "==", "SuperAdmin").get(),
@@ -138,7 +138,7 @@ async function otherActiveSuperAdmins(excludeStaffId: string): Promise<number> {
  *
  *  This is a read-then-write check, so two simultaneous creates of the same
  *  name could both pass. Closing that needs a `staffNames/{lower}` index doc
- *  the way usernames works — worth doing when jobs move to `techId`. */
+ *  the way usernames works; worth doing when jobs move to `techId`. */
 async function nameTaken(name: string, excludeStaffId?: string): Promise<boolean> {
   const snap = await withRetry(
     () => adminDb.collection("staff").where("name", "==", name).get(),
@@ -148,7 +148,7 @@ async function nameTaken(name: string, excludeStaffId?: string): Promise<boolean
 }
 
 /** Claim the username index doc. `.create()` is single-shot (it throws if the
- *  doc exists) — that atomicity is what guarantees uniqueness, but it also
+ *  doc exists); that atomicity is what guarantees uniqueness, but it also
  *  means a naive retry after a STALLED create would see "already exists" and
  *  wrongly report username_taken for a claim we actually won. So on a timeout,
  *  re-read the doc: if it now holds OUR staffId the create did land (success);
@@ -171,7 +171,7 @@ async function claimUsername(key: string, staffId: string): Promise<boolean> {
         "username re-check",
       ).catch(() => null);
       if (snap?.exists) return snap.data()?.staffId === staffId;
-      // Not created — the stall killed it before it landed. Try again.
+      // Not created: the stall killed it before it landed. Try again.
     }
   }
   throw new Error("username claim failed after retries");
@@ -232,7 +232,7 @@ export const createStaffFn = createServerFn({ method: "POST" })
           permissions,
           pinHash,
           active: true,
-          // The admin-issued PIN IS the working credential — users sign in with
+          // The admin-issued PIN IS the working credential: users sign in with
           // exactly what the admin gives them and are never forced to change it.
           mustChangePin: false,
           failCount: 0,
@@ -248,7 +248,7 @@ export const createStaffFn = createServerFn({ method: "POST" })
         return batch.commit();
       }, "staff create commit");
     } catch (err) {
-      // Don't strand the username on a failed create — it would be
+      // Don't strand the username on a failed create: it would be
       // unclaimable forever with no staff doc to explain why.
       await adminDb
         .collection("usernames")
@@ -320,7 +320,7 @@ export const updateStaffFn = createServerFn({ method: "POST" })
     }, "staff update commit");
 
     // Role and permissions live in the token claims, which survive ID-token
-    // refresh. Revoke so a demotion bites before the target logs out — but
+    // refresh. Revoke so a demotion bites before the target logs out, but
     // best-effort: the staff doc is already updated and re-checked server-side.
     revokeBestEffort(data.targetStaffId);
 
@@ -402,7 +402,7 @@ export const resetPinFn = createServerFn({ method: "POST" })
       () =>
         targetRef.update({
           pinHash: newPinHash,
-          // The admin sets the PIN and the user signs in with exactly that — no
+          // The admin sets the PIN and the user signs in with exactly that: no
           // forced change on next login.
           mustChangePin: false,
           failCount: 0,
@@ -425,7 +425,7 @@ const DeleteStaffSchema = z.object({
 });
 
 // Hard delete, distinct from deactivate: removes the account entirely rather
-// than disabling it. Same seniority rules as every other staff mutation — an
+// than disabling it. Same seniority rules as every other staff mutation: an
 // Admin may delete anyone strictly below them, a SuperAdmin anyone; nobody may
 // delete themselves or the last remaining SuperAdmin.
 export const deleteStaffFn = createServerFn({ method: "POST" })
@@ -444,7 +444,7 @@ export const deleteStaffFn = createServerFn({ method: "POST" })
     if (!mayActOn(caller, targetRole)) return { success: false, error: "forbidden" };
 
     // Deleting the final SuperAdmin would strand the business with nobody able
-    // to manage users — same guard as demote/deactivate.
+    // to manage users, same guard as demote/deactivate.
     if (targetRole === "SuperAdmin" && (await otherActiveSuperAdmins(data.targetStaffId)) === 0) {
       return { success: false, error: "last_super_admin" };
     }

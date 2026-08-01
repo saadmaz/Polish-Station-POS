@@ -30,7 +30,7 @@ function useNotifications(): Notification[] {
         id: `oos-${item.id}`,
         type: "warning",
         title: "Out of stock",
-        description: `${item.name} (${item.sku}) — reorder qty: ${item.reorder}`,
+        description: `${item.name} (${item.sku}), reorder qty: ${item.reorder}`,
         read: false,
       });
     } else if (item.stock <= item.reorder) {
@@ -38,7 +38,7 @@ function useNotifications(): Notification[] {
         id: `low-${item.id}`,
         type: "warning",
         title: "Low stock",
-        description: `${item.name} — ${item.stock} ${item.unit} remaining (reorder at ${item.reorder})`,
+        description: `${item.name}: ${item.stock} ${item.unit} remaining (reorder at ${item.reorder})`,
         read: false,
       });
     }
@@ -52,7 +52,7 @@ function useNotifications(): Notification[] {
         id: `qc-${j.id}`,
         type: "info",
         title: "Awaiting QC",
-        description: `${j.id} · ${j.customerName} — ${j.serviceName} ready for inspection`,
+        description: `${j.id} · ${j.customerName} · ${j.serviceName} ready for inspection`,
         read: false,
       });
     });
@@ -66,7 +66,7 @@ function useNotifications(): Notification[] {
         id: `ovr-${j.id}`,
         type: "warning",
         title: "Overdue job",
-        description: `${j.id} · ${j.customerName} — ${over}m over estimate (${j.serviceName})`,
+        description: `${j.id} · ${j.customerName}, ${over}m over estimate (${j.serviceName})`,
         read: false,
       });
     });
@@ -83,7 +83,7 @@ function useNotifications(): Notification[] {
           id: `bk-${b.id}`,
           type: "info",
           title: "Upcoming booking",
-          description: `${b.id} · ${b.customerName} at ${b.time} — ${b.serviceName}`,
+          description: `${b.id} · ${b.customerName} at ${b.time} · ${b.serviceName}`,
           read: false,
         });
       }

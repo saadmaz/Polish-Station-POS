@@ -5,10 +5,10 @@ import bcrypt from "bcryptjs";
 import { ALL_MODULES } from "../src/lib/permissions";
 
 // Bootstraps the one account the whole system starts from: the super admin.
-// Idempotent — safe to run repeatedly. It never overwrites an existing PIN, so
+// Idempotent, safe to run repeatedly. It never overwrites an existing PIN, so
 // re-running after the admin has changed their PIN will not reset it.
 //
-//   SUPERADMIN_PIN=0011  (exactly 4 digits, from .env — never hardcoded)
+//   SUPERADMIN_PIN=0011  (exactly 4 digits, from .env, never hardcoded)
 //
 // Username is fixed to ADMIN; change SUPERADMIN_USERNAME to override.
 
@@ -84,7 +84,7 @@ async function main() {
 
   console.log("✅ Super admin ready");
   console.log(`   Username : ${USERNAME}`);
-  console.log(`   PIN      : ${existing.exists ? "(unchanged — already seeded)" : PIN}`);
+  console.log(`   PIN      : ${existing.exists ? "(unchanged, already seeded)" : PIN}`);
   console.log(`   Role     : SuperAdmin`);
   if (mustChangePin) console.log("   Note     : must change PIN on first login");
   process.exit(0);

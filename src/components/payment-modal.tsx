@@ -184,7 +184,7 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
       return;
     }
     // NaN passes both comparisons below (NaN <= 0 and NaN > x are both false),
-    // and Firestore will store it — poisoning every derived total after that.
+    // and Firestore will store it, poisoning every derived total after that.
     if (!Number.isFinite(refundAmount) || refundAmount <= 0 || refundAmount > refundable) {
       toast.error(`Refund amount must be between 1 and ${refundable.toLocaleString()}`);
       return;
@@ -213,7 +213,7 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
       <div className="relative z-10 w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-card border border-border shadow-elevated p-6 mx-4">
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-display text-lg font-bold">
-            {mode === "collect" ? "Collect Payment" : "Refund"} — {invoice.id}
+            {mode === "collect" ? "Collect Payment" : "Refund"} · {invoice.id}
           </h2>
           <button
             onClick={onClose}
@@ -230,7 +230,7 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
 
         {!openShift && (
           <p className="mb-4 text-sm text-warning">
-            No active shift — open a shift before collecting or refunding.
+            No active shift. Open a shift before collecting or refunding.
           </p>
         )}
 

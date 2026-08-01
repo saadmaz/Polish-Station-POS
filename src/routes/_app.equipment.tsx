@@ -690,7 +690,7 @@ function EquipmentPage() {
           <div>
             <p className="text-sm font-semibold text-destructive">Service overdue</p>
             <p className="mt-0.5 text-sm text-destructive/80">
-              {overdueEquipment.map((e) => e.name).join(", ")} — schedule maintenance immediately.
+              {overdueEquipment.map((e) => e.name).join(", ")}: schedule maintenance immediately.
             </p>
           </div>
         </div>

@@ -1,6 +1,6 @@
 // Regression check for the login flow itself, since this session's emulator
 // wiring (src/lib/firebase.ts, src/server/firebase-admin.ts) touches the
-// exact modules loginFn depends on. Not a new behavior — just proof the
+// exact modules loginFn depends on. Not a new behavior, just proof the
 // existing critical path still works end to end against the emulator.
 import { chromium } from "playwright";
 import { BASE_URL, check, summarize } from "./_shared.mjs";

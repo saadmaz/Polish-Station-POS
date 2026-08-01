@@ -14,7 +14,7 @@ import {
 import type { Job } from "@/lib/db";
 
 export const Route = createFileRoute("/_app/bay-board")({
-  head: () => ({ meta: [{ title: "Bay Board — Polish Station OS" }] }),
+  head: () => ({ meta: [{ title: "Bay Board · Polish Station OS" }] }),
   component: BayBoard,
 });
 
@@ -62,7 +62,7 @@ function BayCard({ bay, job, tick }: { bay: string; job: Job | undefined; tick: 
   }
 
   const elapsed = liveElapsedMin(job);
-  // suppress ts warning about tick not being used — it's there to trigger re-render
+  // suppress ts warning about tick not being used: it's there to trigger re-render
   void tick;
 
   const pct = Math.min(100, job.estimateMin > 0 ? (elapsed / job.estimateMin) * 100 : 0);

@@ -25,7 +25,7 @@ import { newId } from "@/lib/db";
 import { buildWALink, fillTemplate } from "@/lib/notifications";
 
 export const Route = createFileRoute("/_app/jobs")({
-  head: () => ({ meta: [{ title: "Active Jobs — Polish Station OS" }] }),
+  head: () => ({ meta: [{ title: "Active Jobs · Polish Station OS" }] }),
   component: ActiveJobs,
 });
 
@@ -184,7 +184,7 @@ function PhotosTab({ job }: { job: Job }) {
                       className="w-full aspect-square object-cover rounded-md border border-border cursor-pointer"
                       onClick={() => setLightbox(photo.url)}
                     />
-                    {/* Always visible on touch devices — opacity-0 + group-hover
+                    {/* Always visible on touch devices: opacity-0 + group-hover
                         would make these controls unreachable without a mouse. */}
                     <div className="absolute inset-0 flex items-center justify-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
                       <button
@@ -450,7 +450,7 @@ function DetailsTab({
         {job.startedAt && <div>Started: {new Date(job.startedAt).toLocaleString()}</div>}
         {job.completedAt && <div>Completed: {new Date(job.completedAt).toLocaleString()}</div>}
         {!openShift && (
-          <div className="text-warning mt-1">No active shift — job won't be linked to revenue</div>
+          <div className="text-warning mt-1">No active shift, job won't be linked to revenue</div>
         )}
       </div>
     </div>
@@ -623,7 +623,7 @@ function JobDetail({ job, onClose }: { job: Job; onClose: () => void }) {
             }
             className="w-full flex items-center justify-center gap-2 rounded-md bg-green-600 py-2.5 text-sm font-semibold text-white hover:bg-green-700"
           >
-            <MessageCircle className="h-4 w-4" /> Notify Customer — Car Ready
+            <MessageCircle className="h-4 w-4" /> Notify Customer: Car Ready
           </a>
         )}
         <button

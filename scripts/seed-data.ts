@@ -1,6 +1,6 @@
 // Seed business data to Firestore.
 // Run: npm run seed:data
-// Safe to re-run — skips collections that already have documents unless --force is passed.
+// Safe to re-run: skips collections that already have documents unless --force is passed.
 
 import "dotenv/config";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
@@ -580,7 +580,7 @@ const EQUIPMENT = [
     status: "In Maintenance",
     serviceIntervalDays: 90,
     lastServiceDate: daysAgo(10).slice(0, 10),
-    notes: "Sent for carbon brush replacement — Flex service centre",
+    notes: "Sent for carbon brush replacement, Flex service centre",
     createdAt: "2023-06-05T08:00:00.000Z",
   },
 ];
@@ -600,7 +600,7 @@ const MAINTENANCE_LOGS = [
     id: "ml2",
     equipmentId: "eq1",
     type: "Repair",
-    description: "Replaced trigger switch — was intermittently cutting out under load",
+    description: "Replaced trigger switch, was intermittently cutting out under load",
     performedBy: "RUPES Agent",
     cost: 8200,
     date: daysAgo(120).slice(0, 10),
@@ -620,7 +620,7 @@ const MAINTENANCE_LOGS = [
     id: "ml4",
     equipmentId: "eq3",
     type: "Inspection",
-    description: "O-ring check, hose inspection, pressure test — all within spec",
+    description: "O-ring check, hose inspection, pressure test, all within spec",
     performedBy: "Imran S.",
     cost: 0,
     date: daysAgo(90).slice(0, 10),
@@ -630,7 +630,7 @@ const MAINTENANCE_LOGS = [
     id: "ml5",
     equipmentId: "eq5",
     type: "Repair",
-    description: "Carbon brush replacement — sent to authorised Flex service centre",
+    description: "Carbon brush replacement, sent to authorised Flex service centre",
     performedBy: "Flex Service Centre",
     cost: 6800,
     date: daysAgo(10).slice(0, 10),
@@ -664,7 +664,7 @@ const PURCHASE_ORDERS = [
         qtyReceived: 0,
       },
     ],
-    notes: "Reorder triggered by low stock — see inventory alerts",
+    notes: "Reorder triggered by low stock, see inventory alerts",
     createdAt: daysAgo(2),
     sentAt: null,
     receivedAt: null,
@@ -672,7 +672,7 @@ const PURCHASE_ORDERS = [
   },
 ];
 
-// Counters seed — keeps sequential IDs in sync
+// Counters seed: keeps sequential IDs in sync
 const COUNTERS = {
   jobs: { value: 1047 },
   bookings: { value: 205 },
@@ -718,7 +718,7 @@ async function main() {
   for (const [name, data] of collections) {
     const empty = await collectionIsEmpty(name);
     if (!empty && !FORCE) {
-      console.log(`  skip  ${name} (already has data — use --force to overwrite)`);
+      console.log(`  skip  ${name} (already has data, use --force to overwrite)`);
       continue;
     }
     await batchWrite(name, data);

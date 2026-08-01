@@ -37,7 +37,7 @@ import { TenderLineEditor, PaymentModal, type TenderLine } from "@/components/pa
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 export const Route = createFileRoute("/_app/pos")({
-  head: () => ({ meta: [{ title: "POS / Checkout — Polish Station OS" }] }),
+  head: () => ({ meta: [{ title: "POS / Checkout · Polish Station OS" }] }),
   component: POS,
 });
 
@@ -209,7 +209,7 @@ function POS() {
     }
     const validTenders = tenderLines.filter((l) => l.amount > 0);
     // total can legitimately be 0 when points redemption covers the whole
-    // bill — only demand a cash/card/transfer tender for what's still owed.
+    // bill: only demand a cash/card/transfer tender for what's still owed.
     if (total > 0 && validTenders.length === 0) {
       toast.error("Add at least one payment (Cash/Card/Transfer)");
       return;
@@ -227,7 +227,7 @@ function POS() {
       tip,
       total,
       sessionId: openShift?.id ?? null,
-      // Omit the key entirely rather than setting it to `undefined` —
+      // Omit the key entirely rather than setting it to `undefined`:
       // Firestore's client SDK batch.set() throws on an explicit undefined
       // field value (this previously broke every checkout with no deposit).
       ...(depositPaid > 0 ? { depositApplied: depositPaid } : {}),
@@ -342,7 +342,7 @@ function POS() {
         {i.status !== "Void" && (
           <button
             disabled={!row.canVoid}
-            title={row.canVoid ? undefined : "Money already collected — use Refund instead"}
+            title={row.canVoid ? undefined : "Money already collected, use Refund instead"}
             onClick={() => {
               if (confirm(`Void ${i.id}?`)) {
                 voidInvoice(i.id);
@@ -511,7 +511,7 @@ function POS() {
           <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800/40 dark:bg-green-900/20 space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-green-700 dark:text-green-400 flex items-center gap-1.5">
-                <Star className="h-4 w-4" /> Payment complete — {chargedInfo.invoiceId}
+                <Star className="h-4 w-4" /> Payment complete · {chargedInfo.invoiceId}
               </p>
               <button
                 onClick={() => setChargedInfo(null)}
@@ -569,7 +569,7 @@ function POS() {
           {charging
             ? "Processing…"
             : total <= 0
-              ? "Complete — Covered by Points"
+              ? "Complete: Covered by Points"
               : tendered > 0 && tendered < (depositPaid > 0 ? balanceDue : total)
                 ? `Collect LKR ${tendered.toLocaleString()} of LKR ${(depositPaid > 0 ? balanceDue : total).toLocaleString()}`
                 : depositPaid > 0
@@ -587,7 +587,7 @@ function POS() {
 
         {!openShift && (
           <p className="mt-2 text-center text-[11px] text-warning">
-            No active shift — open a shift first
+            No active shift, open a shift first
           </p>
         )}
       </>
@@ -641,7 +641,7 @@ function POS() {
             ))}
             {filteredJobs.length === 0 && (
               <div className="text-sm text-muted-foreground text-center py-4">
-                No jobs found — enter customer name below for manual billing
+                No jobs found. Enter customer name below for manual billing
               </div>
             )}
           </div>
@@ -690,7 +690,7 @@ function POS() {
                 <option value="">+ Add service…</option>
                 {services.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.name} — LKR {s.price.toLocaleString()}
+                    {s.name} · LKR {s.price.toLocaleString()}
                   </option>
                 ))}
               </select>
@@ -959,12 +959,12 @@ function POS() {
         </div>
       </div>
 
-      {/* Payment panel — desktop/tablet sticky sidebar */}
+      {/* Payment panel: desktop/tablet sticky sidebar */}
       <aside className="hidden rounded-xl border border-border bg-card shadow-card p-5 h-fit sticky top-4 lg:block">
         {renderPaymentPanel()}
       </aside>
 
-      {/* Payment panel — mobile: totals bar pinned above the viewport bottom, full panel in a sheet */}
+      {/* Payment panel, mobile: totals bar pinned above the viewport bottom, full panel in a sheet */}
       <div className="fixed inset-x-0 bottom-0 z-40 flex items-center gap-3 border-t border-border bg-card p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-elevated lg:hidden">
         <div className="min-w-0 flex-1">
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground">

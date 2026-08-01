@@ -6,7 +6,7 @@ import { diagFn } from "@/server/diag";
 
 // TEMPORARY diagnostic page. Feeds the current admin's ID token to diagFn, which
 // times each Firestore/Auth operation createStaffFn performs, and prints the
-// result — so we can see WHICH call stalls on the shared host.
+// result, so we can see WHICH call stalls on the shared host.
 // DELETE along with src/server/diag.ts once the hang is understood.
 export const Route = createFileRoute("/diag")({ component: Diag });
 
@@ -16,11 +16,11 @@ function Diag() {
   const [ran, setRan] = useState(false);
 
   useEffect(() => {
-    // Wait for Firebase to restore the session before reading currentUser —
+    // Wait for Firebase to restore the session before reading currentUser:
     // on a fresh page load it is null for the first moment.
     if (loading || ran) return;
     if (!staff) {
-      setLines(["NOT SIGNED IN — log in first, then open /diag"]);
+      setLines(["NOT SIGNED IN. Log in first, then open /diag"]);
       return;
     }
     setRan(true);

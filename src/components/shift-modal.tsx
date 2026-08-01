@@ -100,7 +100,7 @@ function OpenShiftPanel({ onClose }: { onClose: () => void }) {
       });
       onClose();
     } catch {
-      toast.error("Couldn't open shift — please try again");
+      toast.error("Couldn't open shift, please try again");
     } finally {
       setBusy(false);
     }
@@ -120,7 +120,7 @@ function OpenShiftPanel({ onClose }: { onClose: () => void }) {
             .filter((s) => isManagerOrAbove(s.role) || s.role === "Advisor")
             .map((s) => (
               <option key={s.id} value={s.id}>
-                {s.name} — {s.role}
+                {s.name} · {s.role}
               </option>
             ))}
         </select>
@@ -183,7 +183,7 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
 
   // Cash/card totals mirror recalcShift in store.tsx: sum payments/refunds
   // tagged with THIS shift's sessionId across all invoices, not just
-  // invoices opened during this shift — a balance collected or refunded
+  // invoices opened during this shift: a balance collected or refunded
   // during this shift affects this drawer regardless of which shift the
   // original sale happened in.
   let cashSales = 0;
@@ -218,7 +218,7 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
       return;
     }
     if (needsNote) {
-      toast.error(`Variance is LKR ${absVariance.toLocaleString()} — please add an explanation`);
+      toast.error(`Variance is LKR ${absVariance.toLocaleString()}, please add an explanation`);
       return;
     }
     setBusy(true);
@@ -235,7 +235,7 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
       });
       onClose();
     } catch {
-      toast.error("Couldn't close shift — please try again");
+      toast.error("Couldn't close shift, please try again");
     } finally {
       setBusy(false);
     }
@@ -306,7 +306,7 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
       {absVariance > 500 && (
         <div className="flex items-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          Variance exceeds LKR 500 — explanation required below.
+          Variance exceeds LKR 500. Explanation required below.
         </div>
       )}
 
@@ -338,7 +338,7 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
             .filter((s) => isManagerOrAbove(s.role))
             .map((s) => (
               <option key={s.id} value={s.name}>
-                {s.name} — {s.role}
+                {s.name} · {s.role}
               </option>
             ))}
         </select>
@@ -439,7 +439,7 @@ export function ShiftModal({ open, onOpenChange }: ShiftModalProps) {
                       hour: "2-digit",
                       minute: "2-digit",
                     })}{" "}
-                    — by {recentClosed.staffName}
+                    by {recentClosed.staffName}
                   </div>
                 )}
                 <button

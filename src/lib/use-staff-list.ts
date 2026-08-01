@@ -4,7 +4,7 @@ import { db } from "./firebase";
 import type { StaffRole } from "./permissions";
 
 // The roster as seen from the public collection. Permissions live only on the
-// private staff docs, so this shape carries an empty list — consumers that need
+// private staff docs, so this shape carries an empty list. Consumers that need
 // real module access read it from the auth claims, not from here.
 export interface PublicStaff {
   id: string;
@@ -15,7 +15,7 @@ export interface PublicStaff {
   username: string;
 }
 
-// Module-level cache — fetched once per page load, shared across all consumers.
+// Module-level cache, fetched once per page load, shared across all consumers.
 let cache: PublicStaff[] | null = null;
 let inFlight: Promise<PublicStaff[]> | null = null;
 

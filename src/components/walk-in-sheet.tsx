@@ -85,7 +85,7 @@ export function WalkInSheet({ open, onOpenChange }: WalkInSheetProps) {
     });
 
     toast.success("Walk-in added to queue", {
-      description: `${form.name} — ${svc.name} · LKR ${svc.price.toLocaleString()}`,
+      description: `${form.name}: ${svc.name} · LKR ${svc.price.toLocaleString()}`,
     });
     setForm(EMPTY);
     setSubmitting(false);
@@ -154,7 +154,7 @@ export function WalkInSheet({ open, onOpenChange }: WalkInSheetProps) {
               <option value="">Select a service…</option>
               {services.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name} — Rs {s.price.toLocaleString()} ({s.durationMin}m)
+                  {s.name} · Rs {s.price.toLocaleString()} ({s.durationMin}m)
                 </option>
               ))}
             </select>

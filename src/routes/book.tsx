@@ -22,7 +22,7 @@ type Service = BookableService;
 export const Route = createFileRoute("/book")({
   head: () => ({
     meta: [
-      { title: "Book an Appointment — Polish Station" },
+      { title: "Book an Appointment · Polish Station" },
       { name: "description", content: "Book your car detailing appointment online." },
     ],
   }),
@@ -57,7 +57,7 @@ function fmtTime(t: string) {
   return `${hour}:${m.toString().padStart(2, "0")} ${ampm}`;
 }
 
-// Local Y-M-D, not d.toISOString().slice(0, 10) — that converts to UTC first,
+// Local Y-M-D, not d.toISOString().slice(0, 10): that converts to UTC first,
 // which silently rolls the date back by one for any positive-UTC-offset
 // timezone (including Sri Lanka, where this business operates): a card
 // visually labeled "11" would submit "date: ...-10", one day behind what
@@ -277,7 +277,7 @@ function TimeStep({
         if (!cancelled) setFullSlots(new Set(full));
       })
       .catch(() => {
-        if (!cancelled) setFullSlots(new Set()); // fail open — worst case a full slot slips through server-side re-check on submit
+        if (!cancelled) setFullSlots(new Set()); // fail open: worst case a full slot slips through server-side re-check on submit
       });
     return () => {
       cancelled = true;
@@ -547,7 +547,7 @@ function ConfirmationStep({ bookingId, form }: { bookingId: string; form: FormSt
   ].join("");
   const gcLink =
     `https://calendar.google.com/calendar/render?action=TEMPLATE` +
-    `&text=${encodeURIComponent(`${form.service?.name} — Polish Station`)}` +
+    `&text=${encodeURIComponent(`${form.service?.name} · Polish Station`)}` +
     `&dates=${startDT}/${endDT}` +
     `&details=${encodeURIComponent("Car detailing appointment at Polish Station.")}`;
 

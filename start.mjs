@@ -8,7 +8,7 @@ import { Readable } from "stream";
 // sourcing), so FIREBASE_* / VITE_SENTRY_DSN must be loaded from .env here or
 // firebase-admin (inside the dynamic SERVER_ENTRY import below) will see undefined
 // credentials at request time. Parsed inline rather than via the dotenv package so
-// the server needs no node_modules at all — the entire app (dependencies included)
+// the server needs no node_modules at all: the entire app (dependencies included)
 // is bundled into dist/server by the build.
 function loadDotEnv(path) {
   if (!existsSync(path)) return;
@@ -38,7 +38,7 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const CLIENT_DIR = join(__dirname, "dist", "client");
 const SERVER_ENTRY = new URL("./dist/server/server.js", import.meta.url).href;
 
-// Only set by the e2e test harness / local emulator runs — never in a real
+// Only set by the e2e test harness / local emulator runs, never in a real
 // deploy, since production never has FIRESTORE_EMULATOR_HOST in its .env.
 // Without this, the CSP below (correctly) blocks the browser from ever
 // reaching a local Firestore/Auth emulator, which made every e2e login
@@ -82,7 +82,7 @@ function applySecurityHeaders(req, res) {
       "form-action 'self'",
     ].join("; "),
   );
-  // HSTS — only set when request comes over HTTPS (direct TLS or via cPanel proxy)
+  // HSTS: only set when request comes over HTTPS (direct TLS or via cPanel proxy)
   const isSecure = req.headers["x-forwarded-proto"] === "https" || req.socket.encrypted;
   if (isSecure) {
     res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
@@ -156,17 +156,17 @@ async function main() {
     try {
       // URL.pathname keeps percent-encoding as-is (e.g. "%20" stays "%20"),
       // but real filenames on disk have literal characters (a space, not
-      // "%20") — without decoding, any asset with a reserved URL character
+      // "%20"): without decoding, any asset with a reserved URL character
       // in its name (spaces, etc.) always 404s even though the file exists.
       const rawPathname = new URL(req.url, "http://localhost").pathname;
       let urlPath;
       try {
         urlPath = decodeURIComponent(rawPathname);
       } catch {
-        urlPath = rawPathname; // malformed escape sequence — fall back rather than crash
+        urlPath = rawPathname; // malformed escape sequence, fall back rather than crash
       }
       // Decoding ".." segments (e.g. from "%2e%2e") makes path traversal
-      // reachable that wasn't before — resolve() then confirm the result is
+      // reachable that wasn't before, so resolve() then confirm the result is
       // still inside CLIENT_DIR before ever touching the filesystem.
       const filePath = resolve(CLIENT_DIR, "." + urlPath);
       const withinClientDir = filePath === CLIENT_DIR || filePath.startsWith(CLIENT_DIR + sep);

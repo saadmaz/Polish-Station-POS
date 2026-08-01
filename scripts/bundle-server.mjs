@@ -1,7 +1,7 @@
 // Post-build step: inline every npm dependency into the SSR server bundle.
 //
 // The app deploys over FTP to shared hosting, where uploading node_modules
-// (~50k files) takes longer than the hosting allows in practice — every prior
+// (~50k files) takes longer than the hosting allows in practice; every prior
 // deploy attempt timed out on it. With dependencies inlined, the deploy
 // payload is just dist/ + start.mjs and the server needs no node_modules.
 //
@@ -9,7 +9,7 @@
 // Vite's ssr.noExternal because Rollup's CommonJS interop breaks
 // firebase-admin's ESM wrappers (`.default` of its CJS core resolves to
 // undefined → "Cannot read properties of undefined (reading 'SDK_VERSION')"
-// at import time). esbuild's node-mode interop handles it — bundling
+// at import time). esbuild's node-mode interop handles it: bundling
 // firebase-admin this way is the standard approach for AWS Lambda deploys.
 import { build } from "esbuild";
 import { mkdirSync, renameSync, rmSync } from "fs";
