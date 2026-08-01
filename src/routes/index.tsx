@@ -124,7 +124,7 @@ function Login() {
           {/* Logo */}
           <div className="flex items-center justify-center gap-2.5 mb-1">
             <img
-              src="/Logo/PS Logo Main.png"
+              src="/Logo/PS Logo Icon.png"
               alt="Polish Station"
               className="h-11 w-11 shrink-0 object-contain"
             />

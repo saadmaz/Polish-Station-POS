@@ -176,13 +176,11 @@ export function AppSidebar() {
           collapsed && "flex-col gap-2 px-2",
         )}
       >
-        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-white p-1 shadow-red">
-          <img
-            src="/Logo/PS Logo Main.png"
-            alt="Polish Station"
-            className="h-full w-full object-contain"
-          />
-        </div>
+        <img
+          src="/Logo/PS Logo Icon.png"
+          alt="Polish Station"
+          className="h-9 w-9 shrink-0 object-contain"
+        />
         {!collapsed && (
           <div className="min-w-0 flex-1 leading-tight">
             <div className="text-xs font-semibold tracking-[0.18em] text-sidebar-foreground/70">
@@ -227,13 +225,11 @@ export function MobileNavSheet({
       >
         <SheetHeader className="px-4 pt-5 pb-2">
           <SheetTitle className="flex items-center gap-2 text-sidebar-foreground">
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-white p-1 shadow-red">
-              <img
-                src="/Logo/PS Logo Main.png"
-                alt="Polish Station"
-                className="h-full w-full object-contain"
-              />
-            </span>
+            <img
+              src="/Logo/PS Logo Icon.png"
+              alt="Polish Station"
+              className="h-9 w-9 shrink-0 object-contain"
+            />
             <span className="text-sm font-bold">STATION OS</span>
           </SheetTitle>
         </SheetHeader>

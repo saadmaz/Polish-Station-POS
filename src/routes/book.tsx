@@ -685,7 +685,7 @@ function BookPage() {
         <header className="border-b border-gray-200 bg-white px-4 py-4">
           <div className="mx-auto flex max-w-xl items-center gap-3">
             <img
-              src="/Logo/PS Logo Main.png"
+              src="/Logo/PS Logo Icon.png"
               alt="Polish Station"
               className="h-9 w-9 shrink-0 object-contain"
             />

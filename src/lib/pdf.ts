@@ -48,18 +48,12 @@ function rule(doc: jsPDF, y: number, color = RULE) {
   doc.line(ML, y, MR, y);
 }
 
-// Source PNG is 594×420 — not square — so fit-by-width inside a square badge
-// rather than stretching it into a circle-in-oval distortion.
-const LOGO_ASPECT = 594 / 420;
-
 function drawLogo(doc: jsPDF, x: number, y: number, box: number) {
   doc.setFillColor(...WHITE);
   doc.roundedRect(x, y, box, box, 1.5, 1.5, "F");
   const pad = box * 0.12;
-  const innerW = box - pad * 2;
-  const innerH = innerW / LOGO_ASPECT;
-  const offsetY = (box - innerH) / 2;
-  doc.addImage(LOGO_PNG_BASE64, "PNG", x + pad, y + offsetY, innerW, innerH);
+  const inner = box - pad * 2;
+  doc.addImage(LOGO_PNG_BASE64, "PNG", x + pad, y + pad, inner, inner);
 }
 
 function badge(
