@@ -46,8 +46,6 @@ const CAT_COLORS: Record<string, string> = {
   Coating: "var(--charcoal)",
 };
 
-const BAYS = ["—", "Bay 1", "Bay 2", "Bay 3", "Bay 4", "Bay 5"];
-
 // ─── Image compression ────────────────────────────────────────────────────────
 
 async function compressImage(file: File, maxWidth = 1200, quality = 0.72): Promise<string> {
@@ -378,6 +376,7 @@ function DetailsTab({
   setBay: (v: string) => void;
   openShift: unknown;
 }) {
+  const { bays } = useStore();
   const overdue = job.elapsedMin > job.estimateMin;
   return (
     <div className="space-y-5">
@@ -428,7 +427,7 @@ function DetailsTab({
             value={bay}
             onChange={(e) => setBay(e.target.value)}
           >
-            {BAYS.map((b) => (
+            {["—", ...bays].map((b) => (
               <option key={b} value={b}>
                 {b}
               </option>

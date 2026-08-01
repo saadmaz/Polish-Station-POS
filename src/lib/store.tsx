@@ -37,7 +37,9 @@ import {
   getQCTemplate,
   DEFAULT_NOTIFICATION_SETTINGS,
   DEFAULT_BUSINESS_INFO,
+  DEFAULT_BAYS,
   sanitizeBusinessInfo,
+  sanitizeBays,
   setBusinessInfoCache,
   getPayments,
   getAmountPaid,
@@ -218,6 +220,10 @@ interface Store {
   businessInfo: BusinessInfo;
   saveBusinessInfo: (b: BusinessInfo) => void;
 
+  // Bays (settings/bays doc — the list of physical service bays)
+  bays: string[];
+  saveBays: (bays: string[]) => void;
+
   // Invoices
   addInvoice: (
     inv: Omit<Invoice, "id" | "createdAt" | "method" | "status" | "payments"> & {
@@ -330,6 +336,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [sentNotificationsList, setSentNotificationsList] = useState<SentNotification[]>([]);
   const [auditList, setAuditList] = useState<AuditLog[]>([]);
   const [businessInfo, setBusinessInfo] = useState<BusinessInfo>(DEFAULT_BUSINESS_INFO);
+  const [bays, setBays] = useState<string[]>(DEFAULT_BAYS);
 
   // Actor identity for audit entries, read through a ref so the mutation
   // callbacks don't have to re-create whenever the profile doc refreshes.
@@ -515,6 +522,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           done();
         },
         fail("settings/business"),
+      ),
+    );
+    add(() =>
+      onSnapshot(
+        fd("settings", "bays"),
+        (s) => {
+          setBays(s.exists() ? sanitizeBays(s.data()) : DEFAULT_BAYS);
+          done();
+        },
+        fail("settings/bays"),
       ),
     );
     add(() =>
@@ -1237,6 +1254,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
+  // ── Bays ────────────────────────────────────────────────────────────────────
+  const saveBays = useCallback((next: string[]) => {
+    setDoc(fd("settings", "bays"), { bays: sanitizeBays({ bays: next }) }).catch((err) =>
+      console.error("[store] saveBays:", err),
+    );
+  }, []);
+
   const recordNotification = useCallback(
     (n: Omit<SentNotification, "id" | "sentAt">): SentNotification => {
       const entry: SentNotification = { ...n, id: newId(), sentAt: new Date().toISOString() };
@@ -1287,6 +1311,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     recordNotification,
     businessInfo,
     saveBusinessInfo,
+    bays,
+    saveBays,
     addJob,
     updateJob,
     deleteJob,

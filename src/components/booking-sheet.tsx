@@ -68,7 +68,7 @@ async function decodeVIN(vin: string): Promise<string | null> {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
-  const { services, customers, addBooking } = useStore();
+  const { services, customers, addBooking, bays } = useStore();
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
 
@@ -419,7 +419,7 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
                 onChange={(e) => set("bay", e.target.value)}
               >
                 <option value="">TBA</option>
-                {["Bay 1", "Bay 2", "Bay 3", "Bay 4", "Bay 5"].map((b) => (
+                {bays.map((b) => (
                   <option key={b} value={b}>
                     {b}
                   </option>

@@ -303,6 +303,26 @@ export const calcTax = (subtotal: number, ratePct = businessInfoCache.vatRate): 
   Math.round(subtotal * (ratePct / 100));
 export const taxLabel = (ratePct = businessInfoCache.vatRate): string => `VAT ${ratePct}%`;
 
+// ─── Bays (settings/bays Firestore doc) ──────────────────────────────────────
+// The set of physical service bays. Polish Station currently operates one
+// bay, but every screen that assigns/displays a bay (Jobs, Bay Board,
+// Bookings, Walk-In, Settings) reads this single list rather than hardcoding
+// bay names — adding a second bay later is a Settings → Bays edit, not a
+// code change.
+
+export const DEFAULT_BAYS: string[] = ["Bay 1"];
+
+/** Coerce an untrusted doc shape into a safe, non-empty list of bay names. */
+export function sanitizeBays(input: unknown): string[] {
+  const d = (typeof input === "object" && input !== null ? input : {}) as Record<string, unknown>;
+  const raw = Array.isArray(d.bays) ? d.bays : null;
+  if (!raw) return DEFAULT_BAYS;
+  const names = raw
+    .filter((b): b is string => typeof b === "string" && b.trim().length > 0)
+    .map((b) => b.trim());
+  return names.length > 0 ? names : DEFAULT_BAYS;
+}
+
 // ─── Payment/refund derived helpers ─────────────────────────────────────────
 // Invoices written before this feature shipped have no `payments` array —
 // synthesize one from the legacy single-method fields so old data keeps

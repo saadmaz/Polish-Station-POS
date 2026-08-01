@@ -18,8 +18,6 @@ export const Route = createFileRoute("/_app/bay-board")({
   component: BayBoard,
 });
 
-const BAYS = ["Bay 1", "Bay 2", "Bay 3", "Bay 4", "Bay 5"];
-
 const CAT_COLORS: Record<string, { bg: string; border: string; text: string }> = {
   Exterior: { bg: "bg-info/10", border: "border-info/40", text: "text-info" },
   Interior: { bg: "bg-success/10", border: "border-success/40", text: "text-success" },
@@ -150,7 +148,7 @@ function BayCard({ bay, job, tick }: { bay: string; job: Job | undefined; tick: 
 // ─── Main bay board ───────────────────────────────────────────────────────────
 
 function BayBoard() {
-  const { jobs } = useStore();
+  const { jobs, bays } = useStore();
   const [tick, setTick] = useState(0);
   const [time, setTime] = useState(new Date());
   const [fullscreen, setFullscreen] = useState(false);
@@ -179,7 +177,7 @@ function BayBoard() {
     return activeJobs.find((j) => j.bay === bay);
   }
 
-  const occupiedCount = BAYS.filter((b) => bayJob(b)).length;
+  const occupiedCount = bays.filter((b) => bayJob(b)).length;
 
   return (
     <div
@@ -193,7 +191,7 @@ function BayBoard() {
         <div>
           <h1 className="text-2xl font-display font-black tracking-tight">Bay Board</h1>
           <p className="text-sm text-muted-foreground">
-            {occupiedCount}/{BAYS.length} bays occupied · Live view updates every 30s
+            {occupiedCount}/{bays.length} bays occupied · Live view updates every 30s
           </p>
         </div>
         <div className="flex items-center gap-4">
@@ -239,7 +237,7 @@ function BayBoard() {
 
       {/* Bay grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 shrink-0">
-        {BAYS.map((bay) => (
+        {bays.map((bay) => (
           <BayCard key={bay} bay={bay} job={bayJob(bay)} tick={tick} />
         ))}
       </div>

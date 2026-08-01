@@ -19,6 +19,8 @@ import {
   Check,
   X,
   Download,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -44,7 +46,7 @@ const SECTIONS = [
     id: "bays",
     icon: ParkingMeter,
     name: "Bays & Capacity",
-    desc: "Bay types, capacity rules, maintenance",
+    desc: "Add, rename, or remove service bays",
   },
   {
     id: "booking",
@@ -426,34 +428,91 @@ function CatalogPanel() {
 }
 
 function BaysPanel() {
-  const bays = [
-    { id: "Bay 1", type: "Wash + Detail", status: "Active" },
-    { id: "Bay 2", type: "Wash", status: "Active" },
-    { id: "Bay 3", type: "Paint Correction", status: "Maintenance" },
-    { id: "Bay 4", type: "Coating Booth", status: "Active" },
-    { id: "Bay 5", type: "Express", status: "Active" },
-  ];
+  const { bays, saveBays } = useStore();
+  const [form, setForm] = useState<string[]>(bays);
+  const [dirty, setDirty] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  // Follow remote updates (another till saving) until this form is touched.
+  useEffect(() => {
+    if (!dirty) setForm(bays);
+  }, [bays, dirty]);
+
+  function rename(i: number, value: string) {
+    setForm((f) => f.map((b, idx) => (idx === i ? value : b)));
+    setDirty(true);
+    setSaved(false);
+  }
+  function addBay() {
+    setForm((f) => [...f, `Bay ${f.length + 1}`]);
+    setDirty(true);
+    setSaved(false);
+  }
+  function removeBay(i: number) {
+    setForm((f) => f.filter((_, idx) => idx !== i));
+    setDirty(true);
+    setSaved(false);
+  }
+  function save() {
+    const cleaned = form.map((b) => b.trim()).filter(Boolean);
+    if (cleaned.length === 0) {
+      toast.error("Keep at least one bay");
+      return;
+    }
+    saveBays(cleaned);
+    setDirty(false);
+    setSaved(true);
+  }
+  function reset() {
+    setForm(bays);
+    setDirty(false);
+    setSaved(false);
+  }
+
   return (
     <>
       <SectionTitle
         title="Bays & Capacity"
-        desc="Configure service bays and their daily capacity rules."
+        desc="The physical service bays jobs and bookings get assigned to. Currently just the one — add a row here the day a second bay opens and it shows up everywhere (Jobs, Bay Board, Bookings, Walk-In) immediately."
       />
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {bays.map((b) => (
-          <div
-            key={b.id}
-            className="flex items-center justify-between rounded-lg border border-border p-3"
-          >
-            <div>
-              <div className="font-display font-bold">{b.id}</div>
-              <div className="text-xs text-muted-foreground">{b.type}</div>
-            </div>
-            <StatusChip variant={b.status === "Active" ? "success" : "warning"}>
-              {b.status}
-            </StatusChip>
+      <div className="space-y-2">
+        {form.map((b, i) => (
+          <div key={i} className="flex items-center gap-2 rounded-lg border border-border p-3">
+            <div className="font-display font-bold text-muted-foreground text-sm w-6">{i + 1}</div>
+            <input
+              value={b}
+              onChange={(e) => rename(i, e.target.value)}
+              className="flex-1 min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            />
+            <button
+              onClick={() => removeBay(i)}
+              disabled={form.length <= 1}
+              aria-label={`Remove ${b || "bay"}`}
+              title={form.length <= 1 ? "At least one bay is required" : "Remove bay"}
+              className="rounded-md p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-30 disabled:pointer-events-none"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
           </div>
         ))}
+      </div>
+      <button
+        onClick={addBay}
+        className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-dashed border-input px-3 py-2 text-sm text-muted-foreground hover:border-primary hover:text-primary"
+      >
+        <Plus className="h-4 w-4" /> Add Bay
+      </button>
+      <div className="mt-6 flex items-center gap-2 justify-end">
+        {saved && <span className="text-xs text-success font-medium">Saved ✓</span>}
+        <button onClick={reset} className="rounded-md border border-input px-4 py-2 text-sm">
+          Reset
+        </button>
+        <button
+          onClick={save}
+          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red"
+        >
+          Save Changes
+        </button>
       </div>
     </>
   );

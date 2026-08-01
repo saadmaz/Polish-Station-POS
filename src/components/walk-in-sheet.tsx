@@ -27,7 +27,7 @@ const EMPTY = {
 };
 
 export function WalkInSheet({ open, onOpenChange }: WalkInSheetProps) {
-  const { services, customers, openShift, addJob } = useStore();
+  const { services, customers, openShift, addJob, bays } = useStore();
   const { staff } = useAuth();
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
@@ -178,7 +178,7 @@ export function WalkInSheet({ open, onOpenChange }: WalkInSheetProps) {
                 onChange={(e) => set("bay", e.target.value)}
               >
                 <option value="">Assign later</option>
-                {["Bay 1", "Bay 2", "Bay 3", "Bay 4", "Bay 5"].map((b) => (
+                {bays.map((b) => (
                   <option key={b} value={b}>
                     {b}
                   </option>

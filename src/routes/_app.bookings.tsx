@@ -168,7 +168,8 @@ function BookingCard({
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 function Bookings() {
-  const { bookings, updateBooking, deleteBooking, checkinBooking, markDepositPaid } = useStore();
+  const { bookings, updateBooking, deleteBooking, checkinBooking, markDepositPaid, bays } =
+    useStore();
   const [view, setView] = useState<"day" | "week" | "list">("day");
   const [currentDate, setCurrentDate] = useState(new Date().toISOString().slice(0, 10));
   const [bookingOpen, setBookingOpen] = useState(false);
@@ -235,24 +236,23 @@ function Bookings() {
   // Day view calendar grid
   function DayGrid({ date }: { date: string }) {
     const dayBookings = bookings.filter((b) => b.date === date);
-    const bays = ["Bay 1", "Bay 2", "Bay 3", "Bay 4", "Bay 5"];
     const byBay: Record<string, Booking[]> = {};
     bays.forEach((bay) => {
       byBay[bay] = [];
     });
     dayBookings.forEach((b) => {
-      const bay = b.bay && b.bay !== "—" ? b.bay : "Bay 1";
+      // Unassigned bookings ("—" or empty) default into the first bay column
+      // so nothing silently disappears from the day view.
+      const bay = b.bay && b.bay !== "—" ? b.bay : bays[0];
       if (!byBay[bay]) byBay[bay] = [];
       byBay[bay].push(b);
     });
-    // unassigned bookings go into the first available bay column
-    const unassigned = dayBookings.filter((b) => !b.bay || b.bay === "—");
-    unassigned.forEach((b) => {
-      byBay["Bay 1"].push(b);
-    });
 
     return (
-      <div className="grid grid-cols-[60px_repeat(5,1fr)] divide-x divide-border overflow-x-auto">
+      <div
+        className="grid divide-x divide-border overflow-x-auto"
+        style={{ gridTemplateColumns: `60px repeat(${bays.length}, 1fr)` }}
+      >
         <div>
           <div className="h-10 border-b border-border" />
           {HOURS.map((h) => (
