@@ -169,8 +169,13 @@ export function AppSidebar() {
         collapsed ? "w-16" : "w-56",
       )}
     >
-      {/* Logo */}
-      <div className="flex items-center gap-2 px-4 py-5">
+      {/* Logo + collapse toggle */}
+      <div
+        className={cn(
+          "flex items-center gap-2 border-b border-sidebar-border px-4 py-4",
+          collapsed && "flex-col gap-2 px-2",
+        )}
+      >
         <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-white p-1 shadow-red">
           <img
             src="/Logo/PS Logo Main.png"
@@ -179,32 +184,27 @@ export function AppSidebar() {
           />
         </div>
         {!collapsed && (
-          <div className="leading-tight">
+          <div className="min-w-0 flex-1 leading-tight">
             <div className="text-xs font-semibold tracking-[0.18em] text-sidebar-foreground/70">
               POLISH
             </div>
             <div className="-mt-0.5 text-sm font-bold text-sidebar-foreground">STATION OS</div>
           </div>
         )}
+        <button
+          onClick={() => setCollapsed((c) => !c)}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+        >
+          {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
+        </button>
       </div>
 
       <NavLinks collapsed={collapsed} />
 
       <div className="mt-auto border-t border-sidebar-border p-2">
         <UserRow collapsed={collapsed} />
-        <button
-          onClick={() => setCollapsed((c) => !c)}
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          className="mt-1 flex w-full items-center justify-center gap-2 rounded-md py-2 text-xs text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-        >
-          {collapsed ? (
-            <ChevronsRight className="h-4 w-4" />
-          ) : (
-            <>
-              <ChevronsLeft className="h-4 w-4" /> Collapse
-            </>
-          )}
-        </button>
       </div>
     </aside>
   );
