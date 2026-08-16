@@ -70,6 +70,8 @@ All variables live in **one `.env` file** placed directly in the cPanel applicat
 | `FIREBASE_PRIVATE_KEY`              | `src/server/firebase-admin.ts`        | runtime; keep the literal `\n` sequences, the code un-escapes them |
 | `VITE_SENTRY_DSN`                   | `src/lib/error-reporting.ts`          | build time (optional, Sentry activates only if set)                 |
 | `SENTRY_DSN`                        | not currently read anywhere in `src/` | reserved/unused, safe to leave blank                               |
+| `RESEND_API_KEY`                    | `src/server/public-api.ts`            | runtime; optional — new-lead email alert is skipped if blank        |
+| `LEADS_NOTIFY_EMAIL`                | `src/server/public-api.ts`            | runtime; studio inbox that receives the alert above                 |
 | `STAFF_PIN_s1`…`STAFF_PIN_s9`       | `scripts/seed-staff.ts` only          | **one-time seed script**, not read by the running app               |
 | `PORT`                              | `start.mjs`                           | runtime; Passenger sets this automatically, don't set it yourself  |
 

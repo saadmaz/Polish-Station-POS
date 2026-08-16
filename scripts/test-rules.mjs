@@ -48,6 +48,8 @@ const admin = ctx("ad", "Admin", ALL);
 const managerPos = ctx("mgr", "Manager", ["pos", "dashboard"]);
 const cashierNoPos = ctx("cash1", "Cashier", ["dashboard"]); // POS revoked
 const cashierPos = ctx("cash2", "Cashier", ["pos", "dashboard"]);
+const advisorLeads = ctx("adv1", "Advisor", ["leads", "dashboard"]);
+const advisorNoLeads = ctx("adv2", "Advisor", ["dashboard"]); // leads revoked
 const anon = env.unauthenticatedContext().firestore();
 
 let pass = 0,
@@ -72,6 +74,11 @@ await env.withSecurityRulesDisabled(async (c) => {
   await setDoc(doc(d, "invoices/inv1"), { total: 100 });
   await setDoc(doc(d, "purchaseOrders/po1"), { total: 5 });
   await setDoc(doc(d, "settings/notifications"), { x: 1 });
+  await setDoc(doc(d, "leads/lead1"), { name: "Test Lead", type: "contact", status: "new" });
+  await setDoc(doc(d, "newsletterSubscribers/a@example.com"), {
+    email: "a@example.com",
+    status: "subscribed",
+  });
 });
 
 console.log("\nStaff roster & username index (enumeration hole is closed):");
@@ -182,6 +189,54 @@ await check(
   assertFails(setDoc(doc(cashierPos, "counters/invoices"), { next: "oops" })),
 );
 await check("counters cannot be deleted", assertFails(deleteDoc(doc(admin, "counters/invoices"))));
+
+console.log("\nLeads & newsletter subscribers (public intake, staff triage):");
+await check("anon CANNOT read leads", assertFails(getDoc(doc(anon, "leads/lead1"))));
+await check(
+  "anon CANNOT write leads (the public routes use the Admin SDK, not this client)",
+  assertFails(setDoc(doc(anon, "leads/lead2"), { name: "Bot", type: "contact", status: "new" })),
+);
+await check(
+  "authed staff WITHOUT leads module cannot read leads",
+  assertFails(getDoc(doc(advisorNoLeads, "leads/lead1"))),
+);
+await check(
+  "authed staff WITH leads module can read leads",
+  assertSucceeds(getDoc(doc(advisorLeads, "leads/lead1"))),
+);
+await check(
+  "authed staff WITH leads module can update lead status",
+  assertSucceeds(
+    setDoc(doc(advisorLeads, "leads/lead1"), { status: "contacted" }, { merge: true }),
+  ),
+);
+await check(
+  "staff (non-Manager) CANNOT create a lead directly (Admin SDK only)",
+  assertFails(
+    setDoc(doc(advisorLeads, "leads/lead3"), { name: "X", type: "contact", status: "new" }),
+  ),
+);
+await check(
+  "advisor (not Manager+) cannot delete a lead",
+  assertFails(deleteDoc(doc(advisorLeads, "leads/lead1"))),
+);
+await check(
+  "anon CANNOT read newsletter subscribers",
+  assertFails(getDoc(doc(anon, "newsletterSubscribers/a@example.com"))),
+);
+await check(
+  "authed staff WITH leads module can read newsletter subscribers",
+  assertSucceeds(getDoc(doc(advisorLeads, "newsletterSubscribers/a@example.com"))),
+);
+await check(
+  "nobody can write newsletter subscribers client-side (Admin SDK only)",
+  assertFails(
+    setDoc(doc(advisorLeads, "newsletterSubscribers/b@example.com"), {
+      email: "b@example.com",
+      status: "subscribed",
+    }),
+  ),
+);
 
 await env.cleanup();
 

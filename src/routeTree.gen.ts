@@ -22,6 +22,7 @@ import { Route as AppReportsRouteImport } from './routes/_app.reports'
 import { Route as AppPurchaseOrdersRouteImport } from './routes/_app.purchase-orders'
 import { Route as AppPosRouteImport } from './routes/_app.pos'
 import { Route as AppNotificationsRouteImport } from './routes/_app.notifications'
+import { Route as AppLeadsRouteImport } from './routes/_app.leads'
 import { Route as AppJobsRouteImport } from './routes/_app.jobs'
 import { Route as AppInventoryRouteImport } from './routes/_app.inventory'
 import { Route as AppEquipmentRouteImport } from './routes/_app.equipment'
@@ -29,6 +30,9 @@ import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppCustomersRouteImport } from './routes/_app.customers'
 import { Route as AppBookingsRouteImport } from './routes/_app.bookings'
 import { Route as AppBayBoardRouteImport } from './routes/_app.bay-board'
+import { Route as ApiPublicNewsletterRouteImport } from './routes/api.public.newsletter'
+import { Route as ApiPublicContactRouteImport } from './routes/api.public.contact'
+import { Route as ApiPublicBookingRouteImport } from './routes/api.public.booking'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -94,6 +98,11 @@ const AppNotificationsRoute = AppNotificationsRouteImport.update({
   path: '/notifications',
   getParentRoute: () => AppRoute,
 } as any)
+const AppLeadsRoute = AppLeadsRouteImport.update({
+  id: '/leads',
+  path: '/leads',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppJobsRoute = AppJobsRouteImport.update({
   id: '/jobs',
   path: '/jobs',
@@ -129,6 +138,21 @@ const AppBayBoardRoute = AppBayBoardRouteImport.update({
   path: '/bay-board',
   getParentRoute: () => AppRoute,
 } as any)
+const ApiPublicNewsletterRoute = ApiPublicNewsletterRouteImport.update({
+  id: '/api/public/newsletter',
+  path: '/api/public/newsletter',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicContactRoute = ApiPublicContactRouteImport.update({
+  id: '/api/public/contact',
+  path: '/api/public/contact',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicBookingRoute = ApiPublicBookingRouteImport.update({
+  id: '/api/public/booking',
+  path: '/api/public/booking',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -144,12 +168,16 @@ export interface FileRoutesByFullPath {
   '/equipment': typeof AppEquipmentRoute
   '/inventory': typeof AppInventoryRoute
   '/jobs': typeof AppJobsRoute
+  '/leads': typeof AppLeadsRoute
   '/notifications': typeof AppNotificationsRoute
   '/pos': typeof AppPosRoute
   '/purchase-orders': typeof AppPurchaseOrdersRoute
   '/reports': typeof AppReportsRoute
   '/settings': typeof AppSettingsRoute
   '/staff': typeof AppStaffRoute
+  '/api/public/booking': typeof ApiPublicBookingRoute
+  '/api/public/contact': typeof ApiPublicContactRoute
+  '/api/public/newsletter': typeof ApiPublicNewsletterRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -165,12 +193,16 @@ export interface FileRoutesByTo {
   '/equipment': typeof AppEquipmentRoute
   '/inventory': typeof AppInventoryRoute
   '/jobs': typeof AppJobsRoute
+  '/leads': typeof AppLeadsRoute
   '/notifications': typeof AppNotificationsRoute
   '/pos': typeof AppPosRoute
   '/purchase-orders': typeof AppPurchaseOrdersRoute
   '/reports': typeof AppReportsRoute
   '/settings': typeof AppSettingsRoute
   '/staff': typeof AppStaffRoute
+  '/api/public/booking': typeof ApiPublicBookingRoute
+  '/api/public/contact': typeof ApiPublicContactRoute
+  '/api/public/newsletter': typeof ApiPublicNewsletterRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -188,12 +220,16 @@ export interface FileRoutesById {
   '/_app/equipment': typeof AppEquipmentRoute
   '/_app/inventory': typeof AppInventoryRoute
   '/_app/jobs': typeof AppJobsRoute
+  '/_app/leads': typeof AppLeadsRoute
   '/_app/notifications': typeof AppNotificationsRoute
   '/_app/pos': typeof AppPosRoute
   '/_app/purchase-orders': typeof AppPurchaseOrdersRoute
   '/_app/reports': typeof AppReportsRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/staff': typeof AppStaffRoute
+  '/api/public/booking': typeof ApiPublicBookingRoute
+  '/api/public/contact': typeof ApiPublicContactRoute
+  '/api/public/newsletter': typeof ApiPublicNewsletterRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -211,12 +247,16 @@ export interface FileRouteTypes {
     | '/equipment'
     | '/inventory'
     | '/jobs'
+    | '/leads'
     | '/notifications'
     | '/pos'
     | '/purchase-orders'
     | '/reports'
     | '/settings'
     | '/staff'
+    | '/api/public/booking'
+    | '/api/public/contact'
+    | '/api/public/newsletter'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -232,12 +272,16 @@ export interface FileRouteTypes {
     | '/equipment'
     | '/inventory'
     | '/jobs'
+    | '/leads'
     | '/notifications'
     | '/pos'
     | '/purchase-orders'
     | '/reports'
     | '/settings'
     | '/staff'
+    | '/api/public/booking'
+    | '/api/public/contact'
+    | '/api/public/newsletter'
   id:
     | '__root__'
     | '/'
@@ -254,12 +298,16 @@ export interface FileRouteTypes {
     | '/_app/equipment'
     | '/_app/inventory'
     | '/_app/jobs'
+    | '/_app/leads'
     | '/_app/notifications'
     | '/_app/pos'
     | '/_app/purchase-orders'
     | '/_app/reports'
     | '/_app/settings'
     | '/_app/staff'
+    | '/api/public/booking'
+    | '/api/public/contact'
+    | '/api/public/newsletter'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -270,6 +318,9 @@ export interface RootRouteChildren {
   DiagRoute: typeof DiagRoute
   HealthzRoute: typeof HealthzRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  ApiPublicBookingRoute: typeof ApiPublicBookingRoute
+  ApiPublicContactRoute: typeof ApiPublicContactRoute
+  ApiPublicNewsletterRoute: typeof ApiPublicNewsletterRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -365,6 +416,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppNotificationsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/leads': {
+      id: '/_app/leads'
+      path: '/leads'
+      fullPath: '/leads'
+      preLoaderRoute: typeof AppLeadsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/jobs': {
       id: '/_app/jobs'
       path: '/jobs'
@@ -414,6 +472,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppBayBoardRouteImport
       parentRoute: typeof AppRoute
     }
+    '/api/public/newsletter': {
+      id: '/api/public/newsletter'
+      path: '/api/public/newsletter'
+      fullPath: '/api/public/newsletter'
+      preLoaderRoute: typeof ApiPublicNewsletterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/contact': {
+      id: '/api/public/contact'
+      path: '/api/public/contact'
+      fullPath: '/api/public/contact'
+      preLoaderRoute: typeof ApiPublicContactRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/booking': {
+      id: '/api/public/booking'
+      path: '/api/public/booking'
+      fullPath: '/api/public/booking'
+      preLoaderRoute: typeof ApiPublicBookingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -425,6 +504,7 @@ interface AppRouteChildren {
   AppEquipmentRoute: typeof AppEquipmentRoute
   AppInventoryRoute: typeof AppInventoryRoute
   AppJobsRoute: typeof AppJobsRoute
+  AppLeadsRoute: typeof AppLeadsRoute
   AppNotificationsRoute: typeof AppNotificationsRoute
   AppPosRoute: typeof AppPosRoute
   AppPurchaseOrdersRoute: typeof AppPurchaseOrdersRoute
@@ -441,6 +521,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppEquipmentRoute: AppEquipmentRoute,
   AppInventoryRoute: AppInventoryRoute,
   AppJobsRoute: AppJobsRoute,
+  AppLeadsRoute: AppLeadsRoute,
   AppNotificationsRoute: AppNotificationsRoute,
   AppPosRoute: AppPosRoute,
   AppPurchaseOrdersRoute: AppPurchaseOrdersRoute,
@@ -459,6 +540,9 @@ const rootRouteChildren: RootRouteChildren = {
   DiagRoute: DiagRoute,
   HealthzRoute: HealthzRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  ApiPublicBookingRoute: ApiPublicBookingRoute,
+  ApiPublicContactRoute: ApiPublicContactRoute,
+  ApiPublicNewsletterRoute: ApiPublicNewsletterRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

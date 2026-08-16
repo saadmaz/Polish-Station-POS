@@ -57,6 +57,7 @@ import type {
   Job,
   JobPhoto,
   JobStatus,
+  Lead,
   MaintenanceLog,
   NotificationSettings,
   PaymentMethod,
@@ -133,6 +134,7 @@ interface Store {
   purchaseOrdersList: PurchaseOrder[];
   auditList: AuditLog[];
   rotaShiftsList: RotaShift[];
+  leads: Lead[];
 
   // computed
   openShift: Shift | undefined;
@@ -189,6 +191,9 @@ interface Store {
   ) => Customer;
   updateCustomer: (c: Customer) => void;
   deleteCustomer: (id: string) => void;
+
+  // Leads (contact/booking inquiries from the public site)
+  updateLead: (l: Lead) => void;
 
   // Coupons
   addCoupon: (c: Omit<Coupon, "id" | "createdAt" | "redeemedCount">) => Coupon;
@@ -330,6 +335,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [maintenanceLogsList, setMaintenanceLogsList] = useState<MaintenanceLog[]>([]);
   const [purchaseOrdersList, setPurchaseOrdersList] = useState<PurchaseOrder[]>([]);
   const [rotaShiftsList, setRotaShiftsList] = useState<RotaShift[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [notificationSettingsData, setNotificationSettingsData] = useState<NotificationSettings>(
     DEFAULT_NOTIFICATION_SETTINGS,
   );
@@ -592,6 +598,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           fail("purchaseOrders"),
         ),
       );
+    if (allowed("leads"))
+      add(() =>
+        onSnapshot(
+          newestFirst("leads", "createdAt", 500),
+          (s) => {
+            setLeads(s.docs.map((d) => ({ id: d.id, ...d.data() }) as Lead).reverse());
+            done();
+          },
+          fail("leads"),
+        ),
+      );
     if (allowed("notifications") && isManagerOrAbove(staff.role))
       add(() =>
         onSnapshot(
@@ -818,6 +835,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const updateCustomer = useCallback((c: Customer) => write("customers", c), []);
 
   const deleteCustomer = useCallback((id: string) => remove("customers", id), []);
+
+  // ── Lead mutations ─────────────────────────────────────────────────────────
+  const updateLead = useCallback((l: Lead) => write("leads", l), []);
 
   // ── Coupon mutations ───────────────────────────────────────────────────────
   const addCoupon = useCallback(
@@ -1289,6 +1309,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     purchaseOrdersList,
     auditList,
     rotaShiftsList,
+    leads,
     openShift,
     lowStockItems,
     overdueEquipment,
@@ -1323,6 +1344,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addCustomer,
     updateCustomer,
     deleteCustomer,
+    updateLead,
     addCoupon,
     updateCoupon,
     deleteCoupon,

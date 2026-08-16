@@ -176,6 +176,42 @@ export interface Booking {
   depositStatus?: DepositStatus;
 }
 
+// ── Leads (contact/booking inquiries from the public polishstation.lk site) ───
+// Written by the Admin SDK from the unauthenticated src/routes/api.public.*
+// routes (see src/server/public-api.ts); staff triage them here into a real
+// Customer/Booking by hand.
+export type LeadType = "contact" | "booking";
+export type LeadStatus = "new" | "contacted" | "converted" | "archived";
+
+export interface Lead {
+  id: string;
+  type: LeadType;
+  name: string;
+  email?: string;
+  phone?: string;
+  message?: string;
+  vehicle?: string;
+  serviceId?: string;
+  preferredDate?: string;
+  timeWindow?: string;
+  notes?: string;
+  status: LeadStatus;
+  source: string;
+  createdAt: string;
+  ip?: string | null;
+}
+
+export type NewsletterStatus = "subscribed" | "unsubscribed";
+
+export interface NewsletterSubscriber {
+  id: string; // = email
+  email: string;
+  status: NewsletterStatus;
+  source: string;
+  subscribedAt: string;
+  unsubscribedAt?: string;
+}
+
 export interface InvoiceLine {
   name: string;
   qty: number;

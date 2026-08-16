@@ -16,6 +16,7 @@ import {
   Hammer,
   ShoppingCart,
   Bell,
+  Inbox,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
@@ -33,6 +34,7 @@ const ICONS: Record<ModuleKey, React.ComponentType<{ className?: string }>> = {
   jobs: Wrench,
   "bay-board": MonitorPlay,
   customers: Users,
+  leads: Inbox,
   inventory: Boxes,
   equipment: Hammer,
   "purchase-orders": ShoppingCart,

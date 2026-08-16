@@ -192,6 +192,28 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ── Leads (contact/booking inquiries from the public polishstation.lk
+    //    marketing site) ────────────────────────────────────────────────────
+    // Written exclusively by the Admin SDK from the unauthenticated
+    // src/routes/api.public.*.ts routes, which bypasses these rules entirely
+    // by design — that's how an anonymous site visitor is able to create one
+    // at all. `create` is false here for everyone else. Staff triage (status
+    // changes, convert-to-customer) is a normal authenticated client write,
+    // gated behind the new "leads" module like every other staff-facing list.
+    match /leads/{leadId} {
+      allow read:   if hasModule("leads");
+      allow create: if false;
+      allow update: if hasModule("leads");
+      allow delete: if hasModule("leads") && isManagerOrAbove();
+    }
+
+    // Doc id = email, so the public newsletter route's upsert is idempotent.
+    // No staff UI mutates this collection yet, so writes stay Admin-SDK-only.
+    match /newsletterSubscribers/{subscriberId} {
+      allow read:  if hasModule("leads");
+      allow write: if false;
+    }
+
     // ── Staff rota ────────────────────────────────────────────────────────
     // Distinct from `shifts` (the till/cash-drawer session) above — this is
     // "who's scheduled to work when". Read is open (a technician viewing the
