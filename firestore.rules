@@ -34,11 +34,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Public staff list (name, role, color, active — never pinHash).
-    // Authenticated reads only: the login screen no longer needs the roster,
-    // so the employee directory is not exposed to the internet.
+    // Public staff list (name, username, role, color, active — never pinHash).
+    // Unauthenticated reads are intentional: the login screen is a staff
+    // picker and must show this roster before anyone is signed in.
     match /staff_public/{staffId} {
-      allow read:  if isAuth();
+      allow read:  if true;
       allow write: if false; // Admin SDK only
     }
 
