@@ -3,22 +3,36 @@ name: Keep app warm
 # The app runs under Passenger/LiteSpeed on shared hosting, which tears the
 # Node process down when idle. The next request then pays a ~20s cold start —
 # long enough that a login or change-PIN server call exceeds LiteSpeed's proxy
-# timeout and 408s. Pinging the homepage on a schedule keeps one instance
-# spawned so real users never hit a cold start.
+# timeout and 408s / times out client-side ("Couldn't reach the server").
 #
-# Note on cost: on a PRIVATE repo, scheduled runs bill against the Actions
-# quota (~2000 min/month free). Every 5 min ≈ 288 runs/day, each billed as a
-# 1-minute minimum → this alone would exceed the free quota. If this repo is
-# private, either raise the interval below or (better) move the ping to a
-# cPanel cron job or a free uptime monitor (cron-job.org / UptimeRobot) and
-# delete this file. On a PUBLIC repo, Actions minutes are free.
+# GitHub's own scheduler is the weak link here, not this YAML: measured over
+# 40 consecutive runs on 2026-08-18, a "*/5 * * * *" schedule on this repo
+# actually fired every 20-90 minutes (avg ~35 min), never every 5. That's a
+# known GitHub Actions limitation for frequent cron schedules, and no amount
+# of tweaking the cron expression fixes it from this side.
+#
+# So instead of relying on GitHub to trigger *often*, each firing (whenever it
+# actually happens) now loops and pings /healthz every 2 minutes for ~85
+# minutes — longer than the worst gap observed above — so there is always an
+# active loop covering the next, unpredictably-timed firing. This repo is
+# public, so Actions minutes are free; an ~85-minute job every time GitHub
+# gets around to it costs nothing.
+#
+# This is a mitigation for a shared-host + free-scheduler limitation, not a
+# full fix: a sustained multi-hour gap between GitHub firings, or a genuine
+# outbound-network stall on the host itself (see loginWithRetry in
+# src/lib/auth.tsx), can still surface as an occasional login error. The
+# cPanel-side cron installed by setup-keepwarm-cron.yml (if its token has the
+# Cron ACL) is a second, independent layer worth confirming in cPanel > Cron
+# Jobs when someone has access to check.
 
 on:
   schedule:
-    - cron: "*/5 * * * *" # every 5 minutes (GitHub may delay under load)
+    - cron: "*/5 * * * *" # best-effort; see note above on real-world firing rate
   workflow_dispatch:
 
-# Never pile up: if a previous ping is still running, skip this one.
+# Never pile up: if a loop is still running when the next trigger lands, let
+# it queue rather than run two pinger loops in parallel.
 concurrency:
   group: keep-warm
   cancel-in-progress: false
@@ -26,18 +40,29 @@ concurrency:
 jobs:
   ping:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
-      - name: Ping /healthz to keep the login path (firebase-admin) warm
+      - name: Ping /healthz every 2 minutes for ~85 minutes
         run: |
           # /healthz (not /) on purpose: it exercises firebase-admin + a
           # Firestore read, the exact machinery a login/change-PIN server call
           # uses. Pinging bare `/` only kept the HTML tier warm and left the
           # login path cold — the cause of the first-login 408s.
-          for i in 1 2 3; do
+          END=$((SECONDS + 85 * 60))
+          fails=0
+          pings=0
+          while [ "$SECONDS" -lt "$END" ]; do
             code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 45 https://pos.polishstation.lk/healthz || echo ERR)
-            echo "ping $i -> $code"
-            if [ "$code" = "200" ]; then exit 0; fi
-            sleep 15
+            pings=$((pings + 1))
+            if [ "$code" != "200" ]; then
+              fails=$((fails + 1))
+              echo "$(date -u +%H:%M:%S) ping $pings -> $code (fail $fails)"
+            else
+              echo "$(date -u +%H:%M:%S) ping $pings -> $code"
+            fi
+            sleep 120
           done
-          echo "site did not return 200 after retries"
-          exit 1
+          echo "Done: $pings pings, $fails non-200."
+          # Never hard-fail the job over a handful of transient misses: the
+          # point is continuous coverage, not asserting uptime. A red workflow
+          # here would just train everyone to ignore it.

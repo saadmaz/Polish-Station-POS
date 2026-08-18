@@ -103,6 +103,34 @@ jobs:
           # --delete on dist/: built assets are content-hashed, so without it
           # every deploy leaves the previous build's files behind forever.
 
+      # restart.txt above makes Passenger tear down and respawn the Node
+      # process. Without this step, the FIRST real request after a deploy —
+      # often someone's login — pays the full cold start: ~9s process spawn
+      # plus firebase-admin init plus the first Firestore read, easily enough
+      # to exceed LiteSpeed's proxy timeout or the client's retry budget and
+      # surface as "Couldn't reach the server" on the PIN pad. Chase /healthz
+      # (not `/`: it specifically exercises the firebase-admin + Firestore
+      # path a login uses, see src/routes/healthz.ts) until it reports warm,
+      # so the deploy itself pays that cost instead of a live user.
+      - name: Warm up the app after restart
+        if: success()
+        timeout-minutes: 3
+        run: |
+          for i in $(seq 1 12); do
+            body=$(curl -s --max-time 30 https://pos.polishstation.lk/healthz || echo ERR)
+            echo "warm-up $i -> $body"
+            if [ "$body" = "ok" ]; then
+              echo "App warm."
+              exit 0
+            fi
+            sleep 5
+          done
+          # Non-fatal: a still-cold app here doesn't mean the deploy failed,
+          # just that the first real request will pay the cold-start cost the
+          # app's own warm-up layers (start.mjs, keep-warm.yml, open tabs)
+          # would otherwise have absorbed.
+          echo "App did not report warm after retries (non-fatal)."
+
       # The upload succeeding doesn't mean the app is up — Passenger has to be
       # able to read .htaccess (LiteSpeed 503s the whole vhost when it can't:
       # "[HTAccess] Failed to open ...: Permission denied" in the server error
