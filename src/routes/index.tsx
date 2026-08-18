@@ -140,28 +140,20 @@ function Login() {
   }
 
   return (
-    <div className="brushed-charcoal relative min-h-screen flex flex-col overflow-hidden">
-      {/* Ambient brand glow */}
-      <div className="pointer-events-none absolute -top-40 -left-32 h-96 w-96 rounded-full bg-primary/20 blur-[110px]" />
-      <div className="pointer-events-none absolute -bottom-40 -right-24 h-[28rem] w-[28rem] rounded-full bg-primary/10 blur-[130px]" />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,oklch(0.1_0.005_270/0.4)_100%)]" />
-
+    <div className="brushed-charcoal relative min-h-screen flex flex-col">
       <div className="relative flex-1 grid place-items-center px-4 py-10">
-        <div className="login-card-enter relative w-full max-w-[440px] overflow-hidden rounded-[28px] border border-white/10 bg-card/95 text-card-foreground shadow-elevated backdrop-blur-xl">
+        <div className="login-card-enter relative w-full max-w-[440px] overflow-hidden rounded-2xl border border-border bg-card text-card-foreground shadow-elevated">
           {/* Brand accent bar */}
-          <div className="gradient-brand h-1 w-full" />
+          <div className="h-[3px] w-full bg-primary" />
 
           <div className="p-7 sm:p-8">
             {/* Logo */}
             <div className="mb-1 flex flex-col items-center gap-2.5">
-              <div className="relative">
-                <div className="absolute inset-0 rounded-full bg-primary/25 blur-xl" />
-                <img
-                  src="/Logo/PS Logo Icon.png"
-                  alt="Polish Station"
-                  className="relative h-13 w-13 shrink-0 object-contain drop-shadow-sm"
-                />
-              </div>
+              <img
+                src="/Logo/PS Logo Icon.png"
+                alt="Polish Station"
+                className="h-12 w-12 shrink-0 object-contain"
+              />
               <div className="text-center leading-tight">
                 <div className="text-[10px] font-bold tracking-[0.32em] text-muted-foreground">
                   POLISH STATION
@@ -170,7 +162,7 @@ function Login() {
               </div>
             </div>
 
-            <div className="mx-auto my-4 h-px w-14 bg-linear-to-r from-transparent via-border to-transparent" />
+            <div className="mx-auto my-4 h-px w-14 bg-border" />
 
             <p className="mb-6 text-center text-[13px] text-muted-foreground">
               {picked ? "Enter your 4-digit PIN" : "Who's clocking in?"}
@@ -185,15 +177,10 @@ function Login() {
                   type="button"
                   onClick={changeUser}
                   disabled={busy}
-                  className="group mb-6 flex w-full items-center gap-3 rounded-2xl border border-border/70 bg-linear-to-br from-background to-muted/30 px-3.5 py-3 text-left transition-all duration-200 hover:border-primary/40 hover:shadow-sm disabled:opacity-50"
+                  className="group mb-6 flex w-full items-center gap-3 rounded-xl border border-border bg-background px-3.5 py-3 text-left transition-colors hover:border-primary/40 disabled:opacity-50"
                 >
-                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-muted text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
-                    <ArrowLeft className="h-4 w-4" />
-                  </span>
-                  <Avatar
-                    staff={picked}
-                    className="h-9 w-9 text-xs ring-2 ring-background shadow-card"
-                  />
+                  <ArrowLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <Avatar staff={picked} className="h-9 w-9 text-xs" />
                   <span className="min-w-0 flex-1 truncate text-sm font-semibold">
                     {picked.name}
                   </span>
@@ -229,11 +216,11 @@ function Login() {
                     <div
                       key={i}
                       className={cn(
-                        "h-4 w-4 rounded-full border-2 transition-all duration-150",
+                        "h-3.5 w-3.5 rounded-full border-2 transition-colors",
                         shake
                           ? "border-primary bg-primary"
                           : i < pin.length
-                            ? "scale-110 border-primary bg-primary shadow-[0_0_12px_var(--primary)]"
+                            ? "border-foreground bg-foreground"
                             : "border-border bg-transparent",
                       )}
                     />
@@ -244,7 +231,7 @@ function Login() {
                 {error && (
                   <div
                     role="alert"
-                    className="mb-4 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2.5 text-center text-xs font-semibold text-primary"
+                    className="mb-4 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2.5 text-center text-xs font-semibold text-primary"
                   >
                     {locked > 0 ? `Too many attempts, try again in ${locked}s` : error}
                   </div>
@@ -283,11 +270,8 @@ function Login() {
 
       <div
         suppressHydrationWarning
-        className="relative flex items-center justify-center gap-2 pb-6 text-center font-mono text-xs text-white/40 min-h-[20px]"
+        className="pb-6 text-center font-mono text-xs text-white/40 min-h-5"
       >
-        {now && (
-          <span className="h-1.5 w-1.5 rounded-full bg-primary/70 shadow-[0_0_6px_var(--primary)] animate-pulse" />
-        )}
         {now
           ? now.toLocaleString([], {
               weekday: "short",
@@ -303,10 +287,10 @@ function Login() {
       <style>{`
         @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
         .animate-shake { animation: shake 0.35s ease-in-out; }
-        @keyframes loginCardEnter { from { opacity:0; transform:translateY(14px) scale(0.98); } to { opacity:1; transform:translateY(0) scale(1); } }
-        .login-card-enter { animation: loginCardEnter 0.45s cubic-bezier(0.16,1,0.3,1); }
-        @keyframes tileEnter { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
-        .tile-enter { animation: tileEnter 0.35s ease-out backwards; }
+        @keyframes loginCardEnter { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+        .login-card-enter { animation: loginCardEnter 0.35s ease-out; }
+        @keyframes tileEnter { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+        .tile-enter { animation: tileEnter 0.25s ease-out backwards; }
       `}</style>
     </div>
   );
@@ -329,10 +313,10 @@ function NumKey({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "grid h-14 place-items-center rounded-2xl font-display text-xl font-semibold transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:active:scale-100",
+        "grid h-14 place-items-center rounded-xl font-display text-xl font-semibold transition-colors active:scale-95 disabled:opacity-40 disabled:active:scale-100",
         ghost
           ? "bg-muted text-muted-foreground hover:bg-muted/70"
-          : "bg-linear-to-b from-charcoal to-charcoal/85 text-charcoal-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_2px_8px_rgba(0,0,0,0.25)] hover:brightness-110 hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_4px_14px_rgba(0,0,0,0.3)]",
+          : "bg-charcoal text-charcoal-foreground hover:bg-charcoal/90",
       )}
     >
       {children}
@@ -351,12 +335,10 @@ function Avatar({ staff, className }: { staff: PublicStaff; className?: string }
   return (
     <div
       className={cn(
-        "grid shrink-0 place-items-center rounded-full font-display font-bold text-white shadow-[0_2px_6px_rgba(0,0,0,0.2)]",
+        "grid shrink-0 place-items-center rounded-full font-display font-bold text-white",
         className,
       )}
-      style={{
-        backgroundImage: `linear-gradient(155deg, ${staff.color}, color-mix(in oklch, ${staff.color}, black 25%))`,
-      }}
+      style={{ backgroundColor: staff.color }}
     >
       {initials(staff.name)}
     </div>
@@ -395,14 +377,10 @@ function StaffPicker({
           key={staff.id}
           type="button"
           onClick={() => onPick(staff)}
-          style={{ animationDelay: `${Math.min(i, 8) * 35}ms` }}
-          className="tile-enter group relative flex items-center gap-2.5 overflow-hidden rounded-2xl border border-border/70 bg-linear-to-br from-background to-muted/30 p-2.5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/10 active:translate-y-0 active:scale-[0.98]"
+          style={{ animationDelay: `${Math.min(i, 8) * 30}ms` }}
+          className="tile-enter flex items-center gap-2.5 rounded-xl border border-border bg-background p-2.5 text-left transition-colors hover:border-primary/40 hover:bg-muted/50 active:scale-[0.98]"
         >
-          <span
-            className="absolute inset-y-0 left-0 w-0.75 opacity-0 transition-opacity duration-200 group-hover:opacity-100"
-            style={{ backgroundColor: staff.color }}
-          />
-          <Avatar staff={staff} className="h-9 w-9 text-sm ring-2 ring-background" />
+          <Avatar staff={staff} className="h-9 w-9 text-sm" />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-semibold">{staff.name}</span>
             <span className="block truncate text-[11px] text-muted-foreground">
