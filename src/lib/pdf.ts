@@ -11,13 +11,15 @@ const contactLine = () => {
 };
 
 // ─── Brand colours (RGB) ─────────────────────────────────────────────────────
-const RED: [number, number, number] = [210, 30, 30];
-const RED_DARK: [number, number, number] = [160, 20, 20];
-const CHARCOAL: [number, number, number] = [18, 18, 24];
-const SLATE: [number, number, number] = [71, 85, 105];
-const MUTED: [number, number, number] = [148, 163, 184];
-const RULE: [number, number, number] = [226, 232, 240];
-const ROW_ALT: [number, number, number] = [248, 250, 252];
+// Neutral grays (equal-ish R/G/B) on purpose: the previous slate/blue-gray
+// tones (Tailwind slate-*) read as distinctly blue on a white invoice, which
+// looked off. Everything below is genuinely gray or the brand red.
+const RED: [number, number, number] = [200, 28, 28];
+const CHARCOAL: [number, number, number] = [26, 26, 26];
+const SLATE: [number, number, number] = [92, 92, 94];
+const MUTED: [number, number, number] = [142, 142, 145];
+const RULE: [number, number, number] = [224, 224, 226];
+const ROW_ALT: [number, number, number] = [248, 248, 249];
 const WHITE: [number, number, number] = [255, 255, 255];
 const SUCCESS: [number, number, number] = [22, 163, 74];
 const AMBER: [number, number, number] = [180, 120, 0];
@@ -106,12 +108,12 @@ function buildDoc(opts: DocOptions): jsPDF {
   let y = 0;
 
   // ── Header bar ───────────────────────────────────────────────────────────────
+  // Flat fill on purpose: a hard-edged two-tone block used to sit here and
+  // read as a rendering glitch (a visible seam cutting the header in half,
+  // right where the invoice number/date print) rather than an intentional
+  // design.
   doc.setFillColor(...RED);
   doc.rect(0, 0, PW, 42, "F");
-
-  // Subtle dark overlay on right half for depth
-  doc.setFillColor(...RED_DARK);
-  doc.rect(PW / 2, 0, PW / 2, 42, "F");
 
   // Logo mark
   const LOGO_BOX = 15;
@@ -479,8 +481,6 @@ export function downloadPOPDF(po: PurchaseOrder) {
   // Header bar
   doc.setFillColor(...RED);
   doc.rect(0, 0, PW, 42, "F");
-  doc.setFillColor(...RED_DARK);
-  doc.rect(PW / 2, 0, PW / 2, 42, "F");
 
   const LOGO_BOX = 15;
   drawLogo(doc, ML, 5, LOGO_BOX);
