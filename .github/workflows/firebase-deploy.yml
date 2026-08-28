@@ -26,6 +26,15 @@ jobs:
           node-version: 22
           cache: npm
 
+      # The lockfile is generated locally with npm 11; Node 22 ships npm 10.9.
+      # Pinning CI to npm 11 keeps lockfile generation and validation on the
+      # same major — see deploy.yml's identical step for the incident this
+      # fixes (`npm ci` failing with "Missing … from lock file" here, which
+      # silently skipped every rules deploy while the app-code deploy next to
+      # it kept succeeding).
+      - name: Pin npm to match local lockfile tooling
+        run: npm install -g npm@11
+
       - run: npm ci --include=dev
 
       - name: Write service account credentials
