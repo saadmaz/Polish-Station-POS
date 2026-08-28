@@ -274,13 +274,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (result.mustChangePin) sessionStorage.setItem(MUST_CHANGE_KEY, "1");
       setMustChangePin(result.mustChangePin);
 
-      // signInWithCustomToken is a network call too, so time-box it so a stalled
-      // identitytoolkit request surfaces as a retryable error instead of an
-      // indefinite "Signing in…" hang.
-      await withClientTimeout(
-        signInWithCustomToken(firebaseAuth, result.customToken),
-        15_000,
+      // signInWithCustomToken is a *separate* network call straight to Google's
+      // identitytoolkit — not our server, so loginWithRetry's resilience above
+      // doesn't cover it. It used to be time-boxed but never actually retried
+      // despite the comment claiming otherwise, leaving exactly one 15s shot:
+      // any blip reaching Google's auth domain specifically (a shop router/DNS
+      // hiccup, while everything else including our own server stays fine)
+      // failed here with no second chance. Retrying is safe: the custom token
+      // is short-lived but reusable, so signing in again with the same token
+      // after a stalled attempt is not a fresh login.
+      await retryTransient(
+        () => signInWithCustomToken(firebaseAuth, result.customToken),
         "sign-in",
+        4,
+        10_000,
       );
       return null; // null = success
     } catch (err) {
