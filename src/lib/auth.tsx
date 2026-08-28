@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { signInWithCustomToken, signOut, onIdTokenChanged } from "firebase/auth";
+import { toast } from "sonner";
 import { doc, getDoc } from "firebase/firestore";
 import { auth as firebaseAuth, db } from "./firebase";
 import { loginFn, type LoginResult } from "@/server/auth";
@@ -233,9 +234,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // firebase-admin + a Firestore connection, which a bare `/` SSR ping never
   // touches. So a manager's open dashboard keeps a new employee's first login
   // on a shop tablet fast. Complements PassengerMinInstances and the cron.
+  // Same stale-bundle check as the login screen (see src/routes/index.tsx),
+  // but softer here: a signed-in tab may be mid-checkout, so nudge with a
+  // dismissible toast instead of reloading out from under someone. Fires at
+  // most once per tab so it doesn't re-toast every 4 minutes.
   useEffect(() => {
     if (!staff) return;
-    const ping = () => void fetch("/healthz", { cache: "no-store" }).catch(() => {});
+    let notified = false;
+    const ping = () =>
+      void fetch("/healthz", { cache: "no-store" })
+        .then((r) => {
+          const serverBuild = r.headers.get("X-Build-Id");
+          if (notified || !serverBuild || serverBuild === __BUILD_ID__) return;
+          notified = true;
+          toast.info("An update is available", {
+            description: "Refresh when convenient to get the latest fixes.",
+            action: { label: "Refresh", onClick: () => window.location.reload() },
+            duration: Infinity,
+          });
+        })
+        .catch(() => {});
     ping(); // once on mount too, not only after the first interval
     const t = setInterval(ping, 4 * 60 * 1000);
     return () => clearInterval(t);

@@ -61,8 +61,20 @@ function Login() {
   // a few seconds later in case the first hit lands mid-boot, buys the ~20s
   // cold-start time back while the user is still picking their name/typing
   // their PIN instead of during the login request itself.
+  // Also self-heals the real "keeps showing up" case: a till left on this
+  // screen for hours is running whatever JS it loaded with, forever — a
+  // server-side fix (like a wider login retry budget) does nothing for a
+  // tab that never reloads to pick it up. If /healthz reports a newer build
+  // than this bundle was compiled with, reload; nobody's mid-PIN-entry loses
+  // anything meaningful on the login screen, unlike doing this post-login.
   useEffect(() => {
-    const ping = () => void fetch("/healthz", { cache: "no-store" }).catch(() => {});
+    const ping = () =>
+      void fetch("/healthz", { cache: "no-store" })
+        .then((r) => {
+          const serverBuild = r.headers.get("X-Build-Id");
+          if (serverBuild && serverBuild !== __BUILD_ID__) window.location.reload();
+        })
+        .catch(() => {});
     ping();
     const t = setTimeout(ping, 5000);
     return () => clearTimeout(t);

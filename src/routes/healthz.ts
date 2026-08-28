@@ -66,7 +66,11 @@ export const Route = createFileRoute("/healthz")({
             warmTokenVerify(adminAuth),
           ]);
           return new Response("ok", {
-            headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
+            headers: {
+              "Content-Type": "text/plain",
+              "Cache-Control": "no-store",
+              "X-Build-Id": __BUILD_ID__,
+            },
           });
         } catch (err) {
           // Best-effort: reaching this handler already proves the Node/SSR tier
@@ -75,7 +79,11 @@ export const Route = createFileRoute("/healthz")({
           console.error("[healthz] warm-up failed:", err);
           return new Response("degraded", {
             status: 200,
-            headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" },
+            headers: {
+              "Content-Type": "text/plain",
+              "Cache-Control": "no-store",
+              "X-Build-Id": __BUILD_ID__,
+            },
           });
         }
       },
