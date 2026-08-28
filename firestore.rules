@@ -72,8 +72,8 @@ service cloud.firestore {
     }
 
     // ── Settings ──────────────────────────────────────────────────────────
-    // Every signed-in user reads settings (tax rate, booking rules) regardless
-    // of module access — the POS and booking flows depend on them.
+    // Every signed-in user reads settings (business info, booking rules)
+    // regardless of module access — the POS and booking flows depend on them.
     match /settings/{settingId} {
       allow read:  if isAuth();
       allow write: if isManagerOrAbove() && hasModule("settings");

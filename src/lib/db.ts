@@ -246,7 +246,6 @@ export interface Invoice {
   customerName: string;
   lines: InvoiceLine[];
   subtotal: number;
-  tax: number;
   tip: number;
   total: number;
   method: PaymentMethod;
@@ -280,31 +279,27 @@ export interface Coupon {
 }
 
 // ─── Business info (settings/business Firestore doc) ────────────────────────
-// Single source of truth for the letterhead details and the VAT rate charged
-// at checkout and printed on invoices/quotations. Lives in Firestore so every
-// till shows the same rate; the store keeps this module-level cache in sync so
-// non-React code (the PDF builders) reads the same values the UI charges.
+// Single source of truth for the letterhead details printed on
+// invoices/quotations. Lives in Firestore so every till shows the same
+// details; the store keeps this module-level cache in sync so non-React code
+// (the PDF builders) reads the same values the UI uses.
 
 export interface BusinessInfo {
   name: string;
   trading: string;
-  vat: string; // VAT registration number, printed on invoices
   phone: string;
   email: string;
   address: string;
   hours: string;
-  vatRate: number; // percent, e.g. 18
 }
 
 export const DEFAULT_BUSINESS_INFO: BusinessInfo = {
   name: "Polish Station (Pvt) Ltd",
   trading: "Polish Station",
-  vat: "VAT-184220985-7000",
   phone: "+94 11 250 8821",
   email: "hello@polishstation.lk",
   address: "No. 22C, Sri Saranankara Road, Dehiwala",
   hours: "Mon–Sat · 08:00–18:00",
-  vatRate: 18,
 };
 
 /** Coerce an untrusted doc/localStorage shape into a safe BusinessInfo. */
@@ -312,17 +307,13 @@ export function sanitizeBusinessInfo(input: unknown): BusinessInfo {
   const d = (typeof input === "object" && input !== null ? input : {}) as Record<string, unknown>;
   const str = (k: keyof BusinessInfo) =>
     typeof d[k] === "string" ? (d[k] as string) : DEFAULT_BUSINESS_INFO[k as "name"];
-  const rate = Number(d.vatRate);
   return {
     name: str("name"),
     trading: str("trading"),
-    vat: str("vat"),
     phone: str("phone"),
     email: str("email"),
     address: str("address"),
     hours: str("hours"),
-    vatRate:
-      Number.isFinite(rate) && rate >= 0 && rate <= 100 ? rate : DEFAULT_BUSINESS_INFO.vatRate,
   };
 }
 
@@ -334,10 +325,6 @@ export function setBusinessInfoCache(b: BusinessInfo): void {
 export function getBusinessInfo(): BusinessInfo {
   return businessInfoCache;
 }
-
-export const calcTax = (subtotal: number, ratePct = businessInfoCache.vatRate): number =>
-  Math.round(subtotal * (ratePct / 100));
-export const taxLabel = (ratePct = businessInfoCache.vatRate): string => `VAT ${ratePct}%`;
 
 // ─── Bays (settings/bays Firestore doc) ──────────────────────────────────────
 // The set of physical service bays. Polish Station currently operates one

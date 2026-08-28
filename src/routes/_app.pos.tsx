@@ -24,8 +24,6 @@ import {
   getAmountRefunded,
   getInvoiceBalance,
   describePaymentMethods,
-  calcTax,
-  taxLabel,
   isCouponValid,
   calcCouponDiscount,
   calcPointsValue,
@@ -65,7 +63,6 @@ function POS() {
     voidInvoice,
     notificationSettingsData,
     recordNotification,
-    businessInfo,
   } = useStore();
   const { staff } = useAuth();
 
@@ -137,7 +134,7 @@ function POS() {
         next.qty = Math.max(1, Math.floor(next.qty) || 1);
         next.unitPrice = Math.max(0, next.unitPrice || 0);
         // A discount larger than the line itself would make the line (and
-        // potentially the subtotal/VAT) negative.
+        // potentially the subtotal) negative.
         next.discount = Math.min(Math.max(0, next.discount || 0), next.qty * next.unitPrice);
         return next;
       }),
@@ -153,8 +150,7 @@ function POS() {
   const subtotal = lines.reduce((s, l) => s + l.unitPrice * l.qty - l.discount, 0);
   const couponDiscount = appliedCoupon ? calcCouponDiscount(appliedCoupon, subtotal) : 0;
   const discountedSubtotal = Math.max(0, subtotal - couponDiscount);
-  const tax = calcTax(discountedSubtotal, businessInfo.vatRate);
-  const grossTotal = discountedSubtotal + tax + tip;
+  const grossTotal = discountedSubtotal + tip;
   const pointsBalance = customerRecord?.loyaltyPoints ?? 0;
   // Clamp live so a stale value from a previously-selected customer never
   // over-redeems once the balance it was checked against has changed.
@@ -223,7 +219,6 @@ function POS() {
       customerName: customerName || "Guest",
       lines: lines.map(({ key: _k, ...l }) => l),
       subtotal,
-      tax,
       tip,
       total,
       sessionId: openShift?.id ?? null,
@@ -445,7 +440,6 @@ function POS() {
               tone="success"
             />
           )}
-          <Row label={taxLabel(businessInfo.vatRate)} value={`LKR ${tax.toLocaleString()}`} />
           <Row label="Tip" value={`LKR ${tip.toLocaleString()}`} />
           {pointsValue > 0 && (
             <Row

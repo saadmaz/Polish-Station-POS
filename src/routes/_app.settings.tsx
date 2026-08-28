@@ -34,7 +34,7 @@ const SECTIONS = [
     id: "business",
     icon: Building2,
     name: "Business",
-    desc: "Name, logo, hours, tax rate, receipt header",
+    desc: "Name, logo, hours, receipt header",
   },
   {
     id: "catalog",
@@ -126,7 +126,7 @@ function SectionTitle({ title, desc }: { title: string; desc: string }) {
 }
 
 // Stored in the settings/business Firestore doc (shared by every till and
-// consumed by POS tax math + PDF letterheads), not per-device localStorage.
+// consumed by the PDF letterheads), not per-device localStorage.
 function BusinessPanel() {
   const { businessInfo, saveBusinessInfo } = useStore();
   const [form, setForm] = useState<BusinessInfo>(businessInfo);
@@ -138,7 +138,7 @@ function BusinessPanel() {
     if (!dirty) setForm(businessInfo);
   }, [businessInfo, dirty]);
 
-  function set(k: keyof BusinessInfo, v: string | number) {
+  function set(k: keyof BusinessInfo, v: string) {
     setForm((f) => ({ ...f, [k]: v }));
     setDirty(true);
     setSaved(false);
@@ -158,19 +158,18 @@ function BusinessPanel() {
     <>
       <SectionTitle
         title="Business"
-        desc="Shared across all devices, used on invoices, PDFs and for the VAT rate charged at checkout."
+        desc="Shared across all devices, used on invoices and PDFs."
       />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {(
           [
             ["Business Name", "name"],
             ["Trading Name", "trading"],
-            ["VAT / Tax No.", "vat"],
             ["Phone", "phone"],
             ["Email", "email"],
             ["Address", "address"],
             ["Opening Hours", "hours"],
-          ] as [string, Exclude<keyof BusinessInfo, "vatRate">][]
+          ] as [string, keyof BusinessInfo][]
         ).map(([label, key]) => (
           <label key={key} className="block">
             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -183,26 +182,6 @@ function BusinessPanel() {
             />
           </label>
         ))}
-        <label className="block">
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            VAT Rate (%)
-          </span>
-          <input
-            type="number"
-            min={0}
-            max={100}
-            step={0.5}
-            value={form.vatRate}
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              set("vatRate", Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0);
-            }}
-            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-          />
-          <span className="mt-1 block text-[11px] text-muted-foreground">
-            Applied to every new POS checkout and printed on invoices/quotations.
-          </span>
-        </label>
       </div>
       <div className="mt-6 flex items-center gap-2 justify-end">
         {saved && <span className="text-xs text-success font-medium">Saved ✓</span>}

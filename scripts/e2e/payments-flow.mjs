@@ -75,7 +75,7 @@ await check("manual billing: enter customer + custom line item", async () => {
 let invoiceId;
 
 await check("split tender: partial Cash payment marks invoice Partially Paid", async () => {
-  const total = Math.round(unitPrice * 1.18); // subtotal + 18% VAT, no tip
+  const total = unitPrice; // subtotal, no tax, no tip
   const partial = Math.round(total / 2);
 
   await page.click('aside button:has-text("Cash")');

@@ -221,7 +221,7 @@ interface Store {
   deleteInventoryItem: (id: string) => void;
   adjustStock: (id: string, delta: number) => void;
 
-  // Business info (settings/business doc: letterhead + VAT rate)
+  // Business info (settings/business doc: letterhead details)
   businessInfo: BusinessInfo;
   saveBusinessInfo: (b: BusinessInfo) => void;
 
@@ -524,7 +524,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         (s) => {
           const info = s.exists() ? sanitizeBusinessInfo(s.data()) : DEFAULT_BUSINESS_INFO;
           setBusinessInfo(info);
-          setBusinessInfoCache(info); // keeps calcTax/PDF letterhead in sync
+          setBusinessInfoCache(info); // keeps PDF letterhead in sync
           done();
         },
         fail("settings/business"),

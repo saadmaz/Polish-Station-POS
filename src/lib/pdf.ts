@@ -1,6 +1,6 @@
 import jsPDF from "jspdf";
 import type { Invoice, InvoiceLine, Job, PurchaseOrder } from "./db";
-import { getPayments, getAmountRefunded, calcTax, taxLabel, getBusinessInfo } from "./db";
+import { getPayments, getAmountRefunded, getBusinessInfo } from "./db";
 import { LOGO_PNG_BASE64 } from "./logo-asset";
 
 // Letterhead details come from the settings/business Firestore doc (cached in
@@ -93,7 +93,6 @@ interface DocOptions {
   couponCode?: string;
   couponDiscount?: number;
   pointsDiscount?: number;
-  tax: number;
   tip?: number;
   total: number;
   method?: string;
@@ -136,7 +135,6 @@ function buildDoc(opts: DocOptions): jsPDF {
   doc.setFontSize(7);
   doc.setTextColor(255, 220, 220);
   doc.text(contactLine(), TX, 28);
-  doc.text(`VAT Reg: ${getBusinessInfo().vat}`, TX, 33.5);
 
   // Doc type (right side)
   doc.setFont("helvetica", "bold");
@@ -319,7 +317,6 @@ function buildDoc(opts: DocOptions): jsPDF {
   if (opts.pointsDiscount && opts.pointsDiscount > 0) {
     totalRow("Loyalty Points Redeemed", `− ${fmt(opts.pointsDiscount)}`, false, SUCCESS);
   }
-  totalRow(taxLabel(), fmt(opts.tax));
   if (opts.tip && opts.tip > 0) totalRow("Tip / Gratuity", fmt(opts.tip));
 
   y += 1;
@@ -464,7 +461,6 @@ export function downloadInvoicePDF(invoice: Invoice, job?: Job) {
     couponCode: invoice.couponCode,
     couponDiscount: invoice.couponDiscount,
     pointsDiscount: invoice.pointsRedeemedValue,
-    tax: invoice.tax,
     tip: invoice.tip,
     total: invoice.total,
     method: invoice.method,
@@ -701,8 +697,7 @@ export function downloadQuotationPDF(opts: {
   notes?: string;
 }) {
   const subtotal = opts.lines.reduce((s, l) => s + l.unitPrice * l.qty - l.discount, 0);
-  const tax = calcTax(subtotal);
-  const total = subtotal + tax;
+  const total = subtotal;
 
   const validDate = new Date();
   validDate.setDate(validDate.getDate() + 30);
@@ -722,7 +717,6 @@ export function downloadQuotationPDF(opts: {
     vehicleModel: opts.vehicleModel,
     lines: opts.lines,
     subtotal,
-    tax,
     total,
     status: "ESTIMATE",
     notes: opts.notes,
