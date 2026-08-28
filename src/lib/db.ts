@@ -144,11 +144,19 @@ export interface Invoice {
   status: InvoiceStatus;
   sessionId: string | null;
   createdAt: string;
-  // The Booking this revenue belongs to. Every invoice created through
-  // addInvoice() now has one: it's stamped to an existing booking if one was
-  // passed in, or to a booking auto-created on the spot for a walk-in sale
-  // (see job-linking.ts). Optional only because invoices written before this
-  // field existed don't have it — there is no backfill for historical rows.
+  // The Job this revenue belongs to. Every invoice created through
+  // addInvoice() now has one: it's stamped to an existing job if one was
+  // passed in, or to a job synthesized on the spot for a walk-in sale (see
+  // job-linking.ts's synthesizeWalkInJob). Optional only because invoices
+  // written before this field existed don't have it on their own — run
+  // scripts/migrate-invoice-bookings.ts (which backfills bookingId, the
+  // predecessor field below) then scripts/migrate-booking-jobs.ts to
+  // backfill this one for historical rows.
+  jobId?: string | null;
+  // Superseded by jobId above (Job, not Booking, is the canonical work
+  // record now — see job-linking.ts's module comment for why). Kept only so
+  // invoices written during the brief window before jobId existed remain
+  // readable; no new invoice sets this.
   bookingId?: string | null;
   depositApplied?: number;
   payments?: PaymentRecord[];

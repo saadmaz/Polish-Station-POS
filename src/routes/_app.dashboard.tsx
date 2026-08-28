@@ -14,14 +14,15 @@ export const Route = createFileRoute("/_app/dashboard")({
 });
 
 function Dashboard() {
-  const { invoices, bookings, openShift, lowStockItems, refreshAll } = useStore();
+  const { invoices, jobs, openShift, lowStockItems, refreshAll } = useStore();
   const [shiftOpen, setShiftOpen] = useState(false);
 
   // The one computation every KPI card and the timeline both read from —
   // see src/lib/dashboard-metrics.ts for why this replaced four separate
   // ad-hoc "today" filters that used to drift out of sync with each other.
-  const metrics = computeDashboardMetrics(invoices, bookings);
-  const todayBookings = metrics.timelineBookings;
+  // Reads Job, not Booking: Job is the work record now (see job.ts).
+  const metrics = computeDashboardMetrics(invoices, jobs);
+  const todayJobs = metrics.timelineJobs;
 
   const kpis = [
     { label: "Revenue Today", value: `LKR ${metrics.revenueToday.toLocaleString()}` },
@@ -75,33 +76,31 @@ function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Today's bookings timeline */}
+        {/* Today's job timeline */}
         <div className="rounded-xl border border-border bg-card shadow-card">
           <div className="px-5 py-3 border-b border-border">
             <h2 className="font-display text-base font-bold">Today's Timeline</h2>
           </div>
           <div className="p-4 space-y-1.5 max-h-65 overflow-auto">
-            {todayBookings.length > 0 ? (
-              todayBookings
+            {todayJobs.length > 0 ? (
+              todayJobs
                 .sort((a, b) => a.time.localeCompare(b.time))
-                .map((b) => (
-                  <div key={b.id} className="flex items-center gap-3">
+                .map((j) => (
+                  <div key={j.id} className="flex items-center gap-3">
                     <span className="font-mono text-xs w-12 text-muted-foreground shrink-0">
-                      {b.time}
+                      {j.time}
                     </span>
                     <div className="flex-1 rounded-md border border-border px-2.5 py-1.5 bg-background">
-                      <div className="text-xs font-semibold truncate">{b.customerName}</div>
+                      <div className="text-xs font-semibold truncate">{j.customerName}</div>
                       <div className="text-[11px] text-muted-foreground truncate">
-                        {b.serviceName}
+                        {j.serviceName}
                       </div>
                     </div>
-                    <StatusChip variant={statusVariant(b.status)}>{b.status}</StatusChip>
+                    <StatusChip variant={statusVariant(j.status)}>{j.status}</StatusChip>
                   </div>
                 ))
             ) : (
-              <p className="text-xs text-muted-foreground text-center py-4">
-                No bookings for today
-              </p>
+              <p className="text-xs text-muted-foreground text-center py-4">No jobs for today</p>
             )}
           </div>
         </div>

@@ -13,6 +13,7 @@ import {
   type VehicleOwnership,
   type PlateIndexEntry,
 } from "./vehicle";
+import { deriveSizeClass } from "./vehicle-size-class";
 import type { Customer, Booking } from "./db";
 
 export interface VehicleMigrationSource {
@@ -120,6 +121,7 @@ export function buildVehicleMigration(
       lowConfidenceParses.push({ plate, raw: withDescription.vehicleDescription });
     }
     const colour = list.find((s) => s.colour.trim().length > 0)?.colour ?? "";
+    const derivedSizeClass = deriveSizeClass(make, model);
 
     const vehicleId = generateId();
     vehicles.push({
@@ -130,9 +132,11 @@ export function buildVehicleMigration(
       model,
       year,
       colour,
-      sizeClass: "other",
+      sizeClass: derivedSizeClass ?? "other",
       notes: "",
-      needsSizeClassReview: true,
+      // Only flagged for review when the lookup table had nothing to offer —
+      // a confident match doesn't need a human to re-check it.
+      needsSizeClassReview: derivedSizeClass === null,
       createdAt: now,
       updatedAt: now,
     });

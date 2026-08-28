@@ -37,19 +37,40 @@ export function StatusChip({
 export function statusVariant(status: string): Variant {
   const s = status.toLowerCase();
   if (
-    ["paid", "done", "ready", "completed", "in stock", "confirmed", "checked-in", "active"].some(
+    [
+      "paid",
+      "done",
+      "ready",
+      "completed",
+      "delivered",
+      "in stock",
+      "confirmed",
+      "checked-in",
+      "checked_in",
+      "active",
+    ].some((k) => s.includes(k))
+  )
+    return "success";
+  if (["pending", "low stock", "on hold", "awaiting", "qc"].some((k) => s.includes(k)))
+    return "warning";
+  if (
+    [
+      "overdue",
+      "out of stock",
+      "cancelled",
+      "void",
+      "no-show",
+      "no_show",
+      "error",
+      "refunded",
+    ].some((k) => s.includes(k))
+  )
+    return "danger";
+  if (
+    ["ordered", "issued", "info", "in bay", "in progress", "in_progress", "arrived", "booked"].some(
       (k) => s.includes(k),
     )
   )
-    return "success";
-  if (["pending", "low stock", "on hold", "awaiting"].some((k) => s.includes(k))) return "warning";
-  if (
-    ["overdue", "out of stock", "cancelled", "void", "no-show", "error", "refunded"].some((k) =>
-      s.includes(k),
-    )
-  )
-    return "danger";
-  if (["ordered", "issued", "info", "in bay", "in progress"].some((k) => s.includes(k)))
     return "info";
   return "neutral";
 }

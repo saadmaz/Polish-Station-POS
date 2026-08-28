@@ -2,7 +2,7 @@ import "dotenv/config";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
-import { requireEmulatorOrExplicitProduction } from "./_require-emulator";
+import { requireEmulatorOnly } from "./_require-emulator";
 
 // Deletes EVERY staff account that is not a SuperAdmin, leaving only the super
 // admin(s). Unlike reset-staff.ts (which only deactivates the legacy s1..s9),
@@ -17,7 +17,7 @@ import { requireEmulatorOrExplicitProduction } from "./_require-emulator";
 
 const CONFIRM = process.argv.includes("--confirm");
 
-requireEmulatorOrExplicitProduction();
+requireEmulatorOnly();
 
 if (getApps().length === 0) {
   const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");

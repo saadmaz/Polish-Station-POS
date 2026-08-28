@@ -44,7 +44,9 @@ import {
   getAmountPaid,
   type BusinessInfo,
 } from "./db";
-import { synthesizeWalkInBooking } from "./job-linking";
+import { synthesizeWalkInJob } from "./job-linking";
+import { buildTransitionEvent } from "./job";
+import type { Job } from "./job";
 import type {
   AuditLog,
   Booking,
@@ -120,6 +122,7 @@ interface Store {
   customers: Customer[];
   coupons: Coupon[];
   bookings: Booking[];
+  jobs: Job[];
   invoices: Invoice[];
   inventory: InventoryItem[];
   expenses: Expense[];
@@ -307,6 +310,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [jobs, setJobs] = useState<Job[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -334,6 +338,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     customers,
     coupons,
     bookings,
+    jobs,
     invoices,
     shifts,
     expenses,
@@ -349,6 +354,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       customers,
       coupons,
       bookings,
+      jobs,
       invoices,
       shifts,
       expenses,
@@ -363,6 +369,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     customers,
     coupons,
     bookings,
+    jobs,
     invoices,
     shifts,
     expenses,
@@ -453,6 +460,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           done();
         },
         fail("bookings"),
+      ),
+    );
+    add(() =>
+      onSnapshot(
+        newestFirst("jobs", "createdAt", 1000),
+        (s) => {
+          setJobs(s.docs.map((d) => ({ id: d.id, ...d.data() }) as Job).reverse());
+          done();
+        },
+        fail("jobs"),
       ),
     );
     add(() =>
@@ -822,43 +839,51 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // "Paid" rather than incorrectly staying "Partially Paid".
       const amountPaid = getAmountPaid(draft);
 
-      // Every invoice must belong to a same-day Booking so the dashboard's
+      // Every invoice must belong to a same-day Job so the dashboard's
       // "Revenue Today" and "Today's Timeline" can never disagree (see
-      // job-linking.ts). If checkout was started from an existing booking,
-      // use it and mark it done; otherwise this is a walk-in sale with no
-      // booking at all, so synthesize one on the spot.
+      // job-linking.ts). If checkout was started from an existing job, use
+      // it and transition it to delivered; otherwise this is a walk-in sale
+      // with no job at all, so synthesize one — already delivered, with its
+      // full event chain — on the spot.
       const batch = writeBatch(fsDb);
-      let bookingId = data.bookingId ?? null;
-      if (bookingId) {
-        const existing = S.current.bookings.find((b) => b.id === bookingId);
-        if (existing && existing.status !== "Completed") {
-          batch.set(fd("bookings", bookingId), { ...existing, status: "Completed" });
+      const actor = actorRef.current ?? { id: "", name: "" };
+      let jobId = data.jobId ?? null;
+      if (jobId) {
+        const existing = S.current.jobs.find((j) => j.id === jobId);
+        if (existing && existing.status !== "delivered") {
+          const event = buildTransitionEvent(existing, "delivered", actor, draft.createdAt);
+          batch.set(fd("jobs", jobId), {
+            ...existing,
+            status: "delivered",
+            updatedAt: draft.createdAt,
+          });
+          batch.set(fd("jobEvents", event.id), event);
         }
       } else {
-        bookingId = await nextSeqId("bookings", "B-", S.current.bookings, 200);
-        const customer = data.customerId
-          ? S.current.customers.find((x) => x.id === data.customerId)
-          : undefined;
-        const walkInBooking = synthesizeWalkInBooking(
+        jobId = await nextSeqId("jobs", "J-", S.current.jobs, 1);
+        const { job, events } = synthesizeWalkInJob(
           {
-            invoiceId: draft.id,
             createdAt: draft.createdAt,
             customerId: data.customerId,
             customerName: data.customerName,
-            plate: customer?.vehicles[0]?.plate ?? "",
-            vehicleModel: customer?.vehicles[0]?.model ?? "",
+            plate: "", // Vehicle cutover not wired into Job in this stage
+            vehicleModel: "",
             lines: data.lines,
             total: data.total,
             servicesCatalog: services,
           },
-          bookingId,
+          jobId,
+          actor,
         );
-        batch.set(fd("bookings", bookingId), walkInBooking);
+        batch.set(fd("jobs", jobId), job);
+        for (const event of events) {
+          batch.set(fd("jobEvents", event.id), event);
+        }
       }
 
       const inv: Invoice = {
         ...draft,
-        bookingId,
+        jobId,
         status: amountPaid >= draft.total ? "Paid" : amountPaid > 0 ? "Partially Paid" : "Issued",
       };
       batch.set(fd("invoices", inv.id), inv);
@@ -1197,6 +1222,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     customers,
     coupons,
     bookings,
+    jobs,
     invoices,
     inventory,
     expenses,

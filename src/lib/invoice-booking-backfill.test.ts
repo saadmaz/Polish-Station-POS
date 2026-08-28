@@ -3,9 +3,12 @@ import {
   buildInvoiceBookingBackfill,
   applyInvoiceBookingBackfill,
 } from "./invoice-booking-backfill";
+import { buildBookingJobMigration } from "./booking-job-migration";
 import { computeDashboardMetrics, timelineRevenueTotal } from "./dashboard-metrics";
-import { synthesizeWalkInBooking } from "./job-linking";
+import { synthesizeWalkInJob } from "./job-linking";
 import type { Invoice, Service } from "./db";
+
+const ACTOR = { id: "migration-script", name: "Migration" };
 
 const BUSINESS_DATE = "2026-08-28";
 const CREATED_AT = "2026-08-28T04:30:00.000Z"; // Colombo 10:00 on the 28th
@@ -61,14 +64,13 @@ describe("buildInvoiceBookingBackfill", () => {
   });
 });
 
-describe("the revenue/timeline invariant holds across pre- and post-migration data", () => {
+describe("the revenue/timeline invariant holds end-to-end: legacy invoice -> bookingId backfill -> Booking/Job split -> Job-based dashboard", () => {
   it("sum(revenue on timeline items) == Revenue Today, for a mix of already-linked and legacy invoices", () => {
-    // Post-migration invoice: already has a bookingId, exactly like every
-    // invoice created after the dashboard fix shipped.
-    const postBookingId = "B-post-1";
-    const postBooking = synthesizeWalkInBooking(
+    // Post-migration invoice: already has a jobId, exactly like every
+    // invoice created after the Booking/Job split shipped.
+    const postJobId = "J-post-1";
+    const { job: postJob } = synthesizeWalkInJob(
       {
-        invoiceId: "INV-post",
         createdAt: CREATED_AT,
         customerId: null,
         customerName: "Guest",
@@ -78,47 +80,68 @@ describe("the revenue/timeline invariant holds across pre- and post-migration da
         total: 2500,
         servicesCatalog: SERVICES,
       },
-      postBookingId,
+      postJobId,
+      ACTOR,
     );
-    const postInvoice: Invoice = { ...legacyInvoice("INV-post", 2500), bookingId: postBookingId };
+    const postInvoice: Invoice = { ...legacyInvoice("INV-post", 2500), jobId: postJobId };
 
-    // Pre-migration invoices: no bookingId at all, as if written before the fix.
+    // Pre-migration invoices: neither bookingId nor jobId at all, as if
+    // written before either field existed.
     const legacyA = legacyInvoice("INV-legacy-a", 4000);
     const legacyB = legacyInvoice("INV-legacy-b", 1500);
 
-    const allInvoicesBeforeBackfill = [postInvoice, legacyA, legacyB];
+    const allInvoicesBeforeMigration = [postInvoice, legacyA, legacyB];
 
-    // Confirm the invariant is actually BROKEN before the backfill — this
-    // is the bug CHANGE 2 exists to fix, not a tautology.
+    // Confirm the invariant is actually BROKEN before any migration runs —
+    // this is the bug CHANGE 2 exists to fix, not a tautology.
     const beforeMetrics = computeDashboardMetrics(
-      allInvoicesBeforeBackfill,
-      [postBooking],
+      allInvoicesBeforeMigration,
+      [postJob],
       BUSINESS_DATE,
     );
     const beforeTimelineRevenue = timelineRevenueTotal(
-      allInvoicesBeforeBackfill,
-      [postBooking],
+      allInvoicesBeforeMigration,
+      [postJob],
       BUSINESS_DATE,
     );
     expect(beforeMetrics.revenueToday).toBe(8000); // 2500 + 4000 + 1500
     expect(beforeTimelineRevenue).toBe(2500); // only the already-linked invoice
     expect(beforeTimelineRevenue).not.toBe(beforeMetrics.revenueToday);
 
-    // Run the backfill.
+    // Stage 1: bookingId backfill (invoice-booking-backfill.ts / this module).
     const { bookings: legacyBookings, invoiceBookingIds } = buildInvoiceBookingBackfill(
-      allInvoicesBeforeBackfill,
+      allInvoicesBeforeMigration,
       SERVICES,
       sequentialIdGenerator("B-legacy-"),
     );
-    const migratedInvoices = applyInvoiceBookingBackfill(
-      allInvoicesBeforeBackfill,
+    const invoicesWithBookingId = applyInvoiceBookingBackfill(
+      allInvoicesBeforeMigration,
       invoiceBookingIds,
     );
-    const allBookings = [postBooking, ...legacyBookings];
 
-    // The invariant now holds across the full mixed set.
-    const afterMetrics = computeDashboardMetrics(migratedInvoices, allBookings, BUSINESS_DATE);
-    const afterTimelineRevenue = timelineRevenueTotal(migratedInvoices, allBookings, BUSINESS_DATE);
+    // Stage 2: Booking/Job split (booking-job-migration.ts), run over the
+    // bookings stage 1 just created.
+    const { jobs: legacyJobs } = buildBookingJobMigration(
+      legacyBookings,
+      ACTOR,
+      sequentialIdGenerator("J-legacy-"),
+    );
+    const bookingIdToJobId = new Map(legacyJobs.map((j) => [j.bookingId, j.id]));
+    const fullyMigratedInvoices = invoicesWithBookingId.map((inv) =>
+      inv.bookingId && bookingIdToJobId.has(inv.bookingId)
+        ? { ...inv, jobId: bookingIdToJobId.get(inv.bookingId) }
+        : inv,
+    );
+    const allJobs = [postJob, ...legacyJobs];
+
+    // The invariant now holds across the full mixed set, on the live
+    // (Job-based) dashboard computation.
+    const afterMetrics = computeDashboardMetrics(fullyMigratedInvoices, allJobs, BUSINESS_DATE);
+    const afterTimelineRevenue = timelineRevenueTotal(
+      fullyMigratedInvoices,
+      allJobs,
+      BUSINESS_DATE,
+    );
 
     expect(afterMetrics.revenueToday).toBe(8000);
     expect(afterTimelineRevenue).toBe(afterMetrics.revenueToday);

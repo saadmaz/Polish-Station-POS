@@ -27,3 +27,19 @@ export function requireEmulatorOrExplicitProduction(): void {
   );
   process.exit(1);
 }
+
+/**
+ * For destructive scripts (wipe-all-data, purge-staff) that must never be
+ * given an escape hatch to the real project, deliberately unlike
+ * requireEmulatorOrExplicitProduction() above: there is no --production
+ * override here, on purpose. Emulator or nothing.
+ */
+export function requireEmulatorOnly(): void {
+  if (process.env.FIRESTORE_EMULATOR_HOST) return;
+  console.error(
+    "❌ Refusing to run: this script is destructive and emulator-only, with no override flag.\n" +
+      "   Start the emulator and set FIRESTORE_EMULATOR_HOST (e.g. 127.0.0.1:8080), or run this " +
+      "under `firebase emulators:exec`.",
+  );
+  process.exit(1);
+}

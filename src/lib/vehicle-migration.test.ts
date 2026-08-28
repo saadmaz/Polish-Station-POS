@@ -55,7 +55,10 @@ describe("buildVehicleMigration", () => {
       customer({
         id: "c1",
         name: "Roshan Karu",
-        vehicles: [{ plate: "CAR-2210", model: "Toyota Prius 2016", color: "Silver" }],
+        // "Rover Metro" is deliberately not in the size-class lookup table,
+        // so this exercises the no-signal fallback path, not the derivation
+        // path (covered separately below).
+        vehicles: [{ plate: "CAR-2210", model: "Rover Metro 1995", color: "Silver" }],
       }),
     ];
     const result = buildVehicleMigration(customers, [], NOW, fakeIdGenerator());
@@ -66,9 +69,9 @@ describe("buildVehicleMigration", () => {
     expect(v.id).not.toBe(v.plate); // doc id must not be derived from the plate
     expect(v.plate).toBe("CAR2210");
     expect(v.plateDisplay).toBe("CAR-2210");
-    expect(v.make).toBe("Toyota");
-    expect(v.model).toBe("Prius");
-    expect(v.year).toBe(2016);
+    expect(v.make).toBe("Rover");
+    expect(v.model).toBe("Metro");
+    expect(v.year).toBe(1995);
     expect(v.colour).toBe("Silver");
     expect(v.sizeClass).toBe("other");
     expect(v.needsSizeClassReview).toBe(true);
@@ -84,6 +87,19 @@ describe("buildVehicleMigration", () => {
     });
     expect(result.report.vehiclesCreated).toBe(1);
     expect(result.report.collisions).toHaveLength(0);
+  });
+
+  it("pre-selects sizeClass from the lookup table when the make+model is recognized, no review flag", () => {
+    const customers = [
+      customer({
+        id: "c1",
+        vehicles: [{ plate: "CAR-4521", model: "Toyota Aqua 2018", color: "Pearl White" }],
+      }),
+    ];
+    const result = buildVehicleMigration(customers, [], NOW, fakeIdGenerator());
+
+    expect(result.vehicles[0].sizeClass).toBe("hatchback");
+    expect(result.vehicles[0].needsSizeClassReview).toBe(false);
   });
 
   it("dedupes the same plate seen on both a Customer and a Booking into one vehicle and one index entry", () => {

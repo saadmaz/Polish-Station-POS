@@ -1,18 +1,30 @@
-// Keeps revenue and the bookings timeline from ever disagreeing.
+// Keeps revenue and the work timeline from ever disagreeing.
 //
 // Root cause of the original "Revenue Today: LKR 7,080 / Today's Timeline:
-// no bookings" defect: Invoice had no relationship to Booking at all, so a
-// walk-in POS sale could produce revenue with nothing on the timeline. This
-// module is the one place that revenue-without-a-job gap gets closed: given
-// a checkout with no pre-existing booking, it synthesizes a same-day,
-// already-finished Booking so the sale always has a timeline entry, dated by
-// the exact same business-day rule the dashboard queries use.
+// no bookings" defect: Invoice had no relationship to any work record at
+// all, so a walk-in POS sale could produce revenue with nothing on the
+// timeline. Two synthesis functions live here, for two different purposes:
+//
+// - synthesizeWalkInJob: the LIVE path. A new walk-in POS sale (no
+//   pre-existing booking) gets a Job created directly — bookingId: null,
+//   since nothing was ever promised — with a full synthesized JobEvent
+//   chain to "delivered" (the work is already done and paid for by the
+//   time checkout happens). This is what store.tsx's addInvoice() calls
+//   for a new sale with no job/booking passed in.
+//
+// - synthesizeWalkInBooking: the HISTORICAL path, kept for
+//   invoice-booking-backfill.ts, which backfills Invoice.bookingId for
+//   invoices written before that field (or Job) existed at all. It still
+//   produces a Booking, not a Job, because the Booking/Job split migration
+//   (booking-job-migration.ts) already knows how to turn any Booking —
+//   including one synthesized this way — into a Job, so there's no reason
+//   for this one-time historical tool to duplicate that logic.
 import { businessDateOf, businessTimeOf } from "./business-day";
 import type { Booking, BookingStatus, InvoiceLine, Service } from "./db";
+import type { Job, JobEvent, JobStatus } from "./job";
 
-export interface WalkInBookingInput {
-  invoiceId: string;
-  createdAt: string; // ISO instant the invoice was created at
+export interface WalkInInput {
+  createdAt: string;
   customerId: string | null;
   customerName: string;
   plate: string;
@@ -22,22 +34,16 @@ export interface WalkInBookingInput {
   servicesCatalog: Service[];
 }
 
-const FALLBACK_CATEGORY: Booking["category"] = "Exterior";
+const FALLBACK_CATEGORY: Service["category"] = "Exterior";
 
-/**
- * Builds (but does not write) a Booking representing a walk-in POS sale
- * that has no booking of its own. Callers are responsible for allocating
- * `bookingId` (the normal sequential-id counter, same as any other booking)
- * and persisting the result.
- *
- * Best-effort only for service/category/duration: InvoiceLine doesn't carry
- * a serviceId (a custom/ad-hoc line has none to carry), so this matches by
- * line name against the services catalog and falls back to a generic
- * category for anything it can't match. That's an acceptable approximation
- * for "does a job record exist for this day's revenue", not a claim that
- * the synthesized booking perfectly describes the work performed.
- */
-export function synthesizeWalkInBooking(input: WalkInBookingInput, bookingId: string): Booking {
+interface MatchedServiceInfo {
+  serviceId: string;
+  serviceName: string;
+  category: Service["category"];
+  durationMin: number;
+}
+
+function matchServiceInfo(input: WalkInInput): MatchedServiceInfo {
   const findService = (lineName: string) => input.servicesCatalog.find((s) => s.name === lineName);
 
   const firstLine = input.lines[0];
@@ -53,16 +59,34 @@ export function synthesizeWalkInBooking(input: WalkInBookingInput, bookingId: st
       : (firstLine?.name ?? "Walk-in sale");
 
   return {
+    serviceId: matchedFirst?.id ?? "",
+    serviceName,
+    category: matchedFirst?.category ?? FALLBACK_CATEGORY,
+    durationMin,
+  };
+}
+
+export interface WalkInBookingInput extends WalkInInput {
+  invoiceId: string;
+}
+
+/**
+ * Best-effort only for service/category/duration: InvoiceLine doesn't carry
+ * a serviceId (a custom/ad-hoc line has none to carry), so this matches by
+ * line name against the services catalog and falls back to a generic
+ * category for anything it can't match.
+ */
+export function synthesizeWalkInBooking(input: WalkInBookingInput, bookingId: string): Booking {
+  const matched = matchServiceInfo(input);
+
+  return {
     id: bookingId,
     customerId: input.customerId,
     customerName: input.customerName,
     phone: "",
     plate: input.plate,
     vehicleModel: input.vehicleModel,
-    serviceId: matchedFirst?.id ?? "",
-    serviceName,
-    category: matchedFirst?.category ?? FALLBACK_CATEGORY,
-    durationMin,
+    ...matched,
     price: input.total,
     date: businessDateOf(input.createdAt),
     time: businessTimeOf(input.createdAt),
@@ -72,4 +96,71 @@ export function synthesizeWalkInBooking(input: WalkInBookingInput, bookingId: st
     notes: `Auto-created from POS walk-in sale ${input.invoiceId}`,
     createdAt: input.createdAt,
   };
+}
+
+export interface SynthesizedWalkInJob {
+  job: Job;
+  events: JobEvent[];
+}
+
+const WALK_IN_CHAIN: readonly JobStatus[] = [
+  "booked",
+  "arrived",
+  "checked_in",
+  "in_progress",
+  "qc",
+  "ready",
+  "delivered",
+];
+
+/**
+ * Builds a Job already at "delivered" for a walk-in POS sale with no
+ * pre-existing booking/job, plus the full JobEvent chain leading to it — a
+ * "delivered" job's history must contain that chain to stay consistent with
+ * job.ts's transition graph (delivered is only legally reachable by walking
+ * every step), so this collapses all of them to the sale's own instant
+ * rather than skip straight to the end state.
+ */
+export function synthesizeWalkInJob(
+  input: WalkInInput,
+  jobId: string,
+  actor: { id: string; name: string },
+): SynthesizedWalkInJob {
+  const matched = matchServiceInfo(input);
+
+  const job: Job = {
+    id: jobId,
+    bookingId: null,
+    vehicleId: null, // Vehicle cutover not wired into Job in this stage
+    customerId: input.customerId,
+    customerName: input.customerName,
+    ...matched,
+    price: input.total,
+    date: businessDateOf(input.createdAt),
+    time: businessTimeOf(input.createdAt),
+    tech: "",
+    bay: "",
+    status: "delivered",
+    notes: "Walk-in POS sale — no pre-existing booking.",
+    createdAt: input.createdAt,
+    updatedAt: input.createdAt,
+  };
+
+  let prev: JobStatus | null = null;
+  const events: JobEvent[] = WALK_IN_CHAIN.map((step) => {
+    const event: JobEvent = {
+      id: crypto.randomUUID(),
+      jobId,
+      fromStatus: prev,
+      toStatus: step,
+      actorId: actor.id,
+      actorName: actor.name,
+      at: input.createdAt,
+      note: "Walk-in sale: service completed and paid for in one visit, intermediate stages collapsed to the sale instant.",
+    };
+    prev = step;
+    return event;
+  });
+
+  return { job, events };
 }

@@ -115,6 +115,29 @@ service cloud.firestore {
       allow delete: if isManagerOrAbove();
     }
 
+    // ── Jobs ──────────────────────────────────────────────────────────────
+    // The work record (see src/lib/job.ts) — Booking above is still just
+    // "the promise". Only POS checkout writes these today: a walk-in sale
+    // synthesizes one, or transitions an existing job to delivered.
+    // Check-in/technician-facing transitions are a later stage, so this
+    // stays scoped to what's actually used rather than opened up ahead of
+    // need.
+    match /jobs/{jobId} {
+      allow read:   if isAuth();
+      allow create, update: if hasModule("pos") && (isManagerOrAbove() || role() in ["Cashier", "Advisor"]);
+      allow delete: if isManagerOrAbove();
+    }
+
+    // Append-only transition log — same pattern as `audit`: no update or
+    // delete, ever, and a create must be attributed to the caller's own uid
+    // so no staff member can forge an event in a colleague's name.
+    match /jobEvents/{eventId} {
+      allow read:   if isAuth();
+      allow create: if hasModule("pos") && (isManagerOrAbove() || role() in ["Cashier", "Advisor"])
+                    && request.resource.data.actorId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
     // ── Customers ─────────────────────────────────────────────────────────
     match /customers/{customerId} {
       allow read:   if isAuth();
@@ -131,20 +154,25 @@ service cloud.firestore {
     // be re-registered/corrected, and Firestore doc ids are immutable, so
     // every reference (Job, Booking, StockMovement, ...) points at this id,
     // never at the plate itself.
+    //
+    // Read is gated on the "customers" module for all three collections
+    // below (vehicles, plates, vehicleOwnerships), not bare isAuth(): the
+    // doc id on `plates` *is* the plate, so isAuth() there would let any
+    // authenticated account enumerate every plate on file, and
+    // vehicleOwnerships directly links a plate to a customer — an equally
+    // real exposure gated the same way for the same reason.
     match /vehicles/{vehicleId} {
-      allow read:   if isAuth();
+      allow read:   if hasModule("customers");
       allow create, update: if hasModule("customers");
       allow delete: if hasModule("customers") && isManagerOrAbove();
     }
 
     // plates/{normalizedPlate} -> { vehicleId } index, mirroring the
-    // usernames/{username} -> staffId pattern above — same structural idea
-    // (a human-readable key resolved to an internal id), but *not* the same
-    // access rule: usernames is server-only because it's part of login
-    // security, while a plate needs to be resolvable client-side for the
-    // global-search plate lookup, so read is open to any signed-in user.
+    // usernames/{username} -> staffId pattern above structurally (a
+    // human-readable key resolved to an internal id), same module gating as
+    // vehicles itself — see the note above.
     match /plates/{plate} {
-      allow read:   if isAuth();
+      allow read:   if hasModule("customers");
       allow create, update: if hasModule("customers");
       allow delete: if hasModule("customers") && isManagerOrAbove();
     }
@@ -152,7 +180,7 @@ service cloud.firestore {
     // Ownership history: many-to-many between vehicles and customers over
     // time. Same module gating as vehicles itself.
     match /vehicleOwnerships/{ownershipId} {
-      allow read:   if isAuth();
+      allow read:   if hasModule("customers");
       allow create, update: if hasModule("customers");
       allow delete: if hasModule("customers") && isManagerOrAbove();
     }
