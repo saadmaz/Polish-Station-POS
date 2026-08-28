@@ -55,7 +55,7 @@ export const Route = createFileRoute("/healthz")({
           // and is only pulled in server-side. The first call is what pays
           // init, which is the whole point of calling it from a warm-up.
           const { adminDb, adminAuth } = await import("@/server/firebase-admin");
-          const { warmStaffCache } = await import("@/server/auth");
+          const { warmStaffCache } = await import("@/server/staff-cache");
           // Kick the staff-cache background load loop (fire-and-forget): this is
           // what makes login read from memory with no per-request I/O.
           warmStaffCache();

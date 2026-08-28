@@ -3,7 +3,16 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { adminAuth, adminDb } from "./firebase-admin";
-import { sanitizePermissions, type ModuleKey, type StaffRole } from "@/lib/permissions";
+import { withTimeout } from "./retry";
+import { lookupStaffForLogin, rehashIfLegacyCost } from "./staff-cache";
+
+// Deliberately NOT re-exported from here, even though staff.ts/bookings.ts/
+// healthz.ts used to import them via this file: a `export {x} from "y"` is a
+// static re-export, which the browser must fetch and evaluate as part of
+// linking this module *regardless of whether the importer ever touches x* --
+// so re-exporting anything from staff-cache.ts here would drag adminDb/
+// bcrypt straight back into the client bundle that imports loginFn. Import
+// warmStaffCache/invalidateStaffCache from "./staff-cache" directly instead.
 
 // ── Shared vocabulary ─────────────────────────────────────────────────────────
 
@@ -53,177 +62,6 @@ export type LoginResult =
   | { success: false; error: "locked"; remainingSec: number }
   | { success: false; error: "inactive" };
 
-// Fail fast instead of letting a stalled Firestore connection hold the login
-// request until the web server's own timeout (LiteSpeed 408s at ~60s+, and
-// the user just sees a frozen PIN pad the whole time).
-export function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`${what} timed out after ${ms}ms`)), ms),
-    ),
-  ]);
-}
-
-/** Retry a flaky-network operation instead of letting a stall hang the request.
- *  This host's outbound route to Firestore goes bad for seconds at a time; a
- *  single stalled call is what left the "Create user" button spinning forever.
- *  A stalled attempt is abandoned and re-issued, which usually lands once the
- *  bad window passes.
- *
- *  ONLY wrap operations that are safe to re-issue: reads, and writes that are
- *  idempotent (set/delete, NOT `create`, which is single-shot by design; see
- *  claimUsername in staff.ts for that case). */
-export async function withRetry<T>(
-  fn: () => Promise<T>,
-  what: string,
-  attempts = 4,
-  timeoutMs = 6_000,
-): Promise<T> {
-  let lastErr: unknown;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await withTimeout(fn(), timeoutMs, what);
-    } catch (err) {
-      lastErr = err;
-      if (i < attempts - 1) await new Promise((r) => setTimeout(r, 400));
-    }
-  }
-  throw lastErr instanceof Error ? lastErr : new Error(`${what} failed`);
-}
-
-// ── In-memory staff cache ───────────────────────────────────────────────────
-// Login must NOT depend on a live Firestore read. This shared host
-// intermittently stalls the outbound route to firestore.googleapis.com for
-// seconds at a time. Proven in production, and proven NOT to be a stale-socket
-// issue (brand-new connections stall too). A stalled read hung login. So keep
-// the whole (tiny) staff collection in process memory, refreshed in the
-// background; login does an in-memory lookup + bcrypt + local token mint with
-// ZERO per-request network I/O. A network stall then only delays the background
-// refresh (serving slightly stale staff data), never a login.
-
-interface CachedStaff {
-  id: string;
-  username: string;
-  pinHash: string;
-  role: StaffRole;
-  name: string;
-  permissions: ModuleKey[];
-  active: boolean;
-  mustChangePin: boolean;
-  pinRounds: number;
-}
-
-let staffById = new Map<string, CachedStaff>();
-let staffIdByUsername = new Map<string, string>();
-let cacheLoadedAt = 0;
-let refreshInFlight: Promise<void> | null = null;
-
-const STAFF_CACHE_TTL_MS = 60 * 1000;
-
-function toCached(id: string, d: Record<string, unknown>): CachedStaff {
-  const pinHash = (d.pinHash as string) ?? "";
-  return {
-    id,
-    username: (d.username as string) ?? "",
-    pinHash,
-    role: d.role as StaffRole,
-    name: (d.name as string) ?? "Staff",
-    permissions: sanitizePermissions(d.permissions),
-    active: d.active !== false,
-    mustChangePin: d.mustChangePin === true,
-    pinRounds: pinHash ? bcrypt.getRounds(pinHash) : 10,
-  };
-}
-
-/** Reload the whole staff collection into memory. De-duped so concurrent
- *  callers share one in-flight read; time-boxed so a stall can't wedge it. */
-function refreshStaffCache(): Promise<void> {
-  if (refreshInFlight) return refreshInFlight;
-  refreshInFlight = (async () => {
-    try {
-      const snap = await withTimeout(adminDb.collection("staff").get(), 6_000, "staff cache load");
-      const byId = new Map<string, CachedStaff>();
-      const byName = new Map<string, string>();
-      for (const doc of snap.docs) {
-        const rec = toCached(doc.id, doc.data());
-        byId.set(doc.id, rec);
-        if (rec.username) byName.set(usernameKey(rec.username), doc.id);
-      }
-      staffById = byId;
-      staffIdByUsername = byName;
-      cacheLoadedAt = Date.now();
-    } finally {
-      refreshInFlight = null;
-    }
-  })();
-  return refreshInFlight;
-}
-
-/** Keep the cache fresh without ever blocking a login on the flaky network:
- *  a stale cache refreshes in the background. The first load is handled by the
- *  boot-warm loop below, not here, so login never waits 40s on a cold worker. */
-function ensureStaffCache(): void {
-  if (cacheLoadedAt !== 0 && Date.now() - cacheLoadedAt > STAFF_CACHE_TTL_MS) {
-    void refreshStaffCache().catch(() => {});
-  }
-}
-
-let warmLoopActive = false;
-
-/** Called by /healthz (boot self-warm + keep-warm cron). If the cache is cold,
- *  kick off a background loop (once) that keeps retrying the load until it
- *  succeeds, so a freshly-spawned worker becomes login-ready within a couple of
- *  seconds instead of only when the first (40s-stalling) login forces the load.
- *  Returns immediately; never blocks the caller. Deliberately NOT a top-level
- *  side effect: this is a "use server" module, so module-load code would leak
- *  into / break the client bundle; it runs only when invoked server-side. */
-export function warmStaffCache(): void {
-  if (cacheLoadedAt !== 0) {
-    void refreshStaffCache().catch(() => {}); // already warm, just refresh
-    return;
-  }
-  if (warmLoopActive) return; // a load loop is already running
-  warmLoopActive = true;
-  void (async () => {
-    for (let i = 0; i < 30 && cacheLoadedAt === 0; i++) {
-      await refreshStaffCache().catch(() => {});
-      if (cacheLoadedAt === 0) await new Promise((r) => setTimeout(r, 2000));
-    }
-    warmLoopActive = false;
-  })();
-}
-
-/** Called by staff mutations so a create/edit/reset/deactivate/delete is
- *  reflected immediately rather than only after the TTL. Best-effort. */
-export function invalidateStaffCache(): Promise<void> {
-  return refreshStaffCache().catch(() => {});
-}
-
-/** Fallback for a login on a worker whose cache hasn't loaded yet: read just
- *  this one user (username index → staff doc) instead of the whole collection.
- *  Two small reads, each retried. Plain reads are reliable from this host, so
- *  a cold worker still serves a working login instead of rejecting it. */
-async function readStaffDirect(key: string): Promise<CachedStaff | undefined> {
-  const idx = await withRetry(
-    () => adminDb.collection("usernames").doc(key).get(),
-    "username lookup",
-    3,
-    5_000,
-  );
-  const staffId = idx.exists ? idx.data()?.staffId : undefined;
-  if (typeof staffId !== "string") return undefined;
-
-  const snap = await withRetry(
-    () => adminDb.collection("staff").doc(staffId).get(),
-    "staff lookup",
-    3,
-    5_000,
-  );
-  if (!snap.exists) return undefined;
-  return toCached(staffId, snap.data()!);
-}
-
 // ── In-memory login lockout ─────────────────────────────────────────────────
 // Brute-force guard for the 4-digit PIN, kept in memory (per worker) instead of
 // Firestore-persisted so a failed login writes nothing over the network. 5
@@ -242,31 +80,8 @@ export const loginFn = createServerFn({ method: "POST" })
   .validator((raw: unknown) => LoginSchema.parse(raw))
   .handler(async ({ data }): Promise<LoginResult> => {
     const { username, pin } = data;
-    const key = usernameKey(username);
 
-    ensureStaffCache(); // background refresh if stale; never blocks
-
-    let staff: CachedStaff | undefined;
-
-    if (cacheLoadedAt !== 0) {
-      // Warm cache: the fast path, no network at all.
-      let staffId = staffIdByUsername.get(key);
-      // A just-created user may not be in the cache yet; one forced refresh
-      // covers that (and genuinely-unknown usernames, which are rare).
-      if (!staffId) {
-        await refreshStaffCache().catch(() => {});
-        staffId = staffIdByUsername.get(key);
-      }
-      staff = staffId ? staffById.get(staffId) : undefined;
-    } else {
-      // Cold worker (freshly spawned; its cache is still loading). Do NOT fail
-      // the login: plain Firestore READS are reliable from this host, it is
-      // only the cache's whole-collection load that can lag. Read this one
-      // user directly so a login on a cold worker still works, and nudge the
-      // background load along for the next request.
-      warmStaffCache();
-      staff = await readStaffDirect(key).catch(() => undefined);
-    }
+    const staff = await lookupStaffForLogin(username);
 
     // An unknown username must be indistinguishable from a wrong PIN.
     if (!staff) {
@@ -300,18 +115,8 @@ export const loginFn = createServerFn({ method: "POST" })
 
     lockouts.delete(staff.id); // successful login clears the fail counter
 
-    // Rehash legacy cost-12 hashes down to cost 10 transparently (fire-and-
-    // forget; updates the cache entry so we don't rehash on every login).
-    if (staff.pinRounds > 10) {
-      void bcrypt
-        .hash(pin, 10)
-        .then((h) => {
-          staff.pinHash = h;
-          staff.pinRounds = 10;
-          return adminDb.collection("staff").doc(staff.id).update({ pinHash: h });
-        })
-        .catch(() => {});
-    }
+    // Rehash legacy cost-12 hashes down to cost 10 transparently (fire-and-forget).
+    rehashIfLegacyCost(staff, pin);
 
     // Local RSA signing (no network), but time-boxed as belt-and-suspenders.
     const customToken = await withTimeout(

@@ -2,7 +2,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { adminDb } from "./firebase-admin";
-import { withTimeout } from "./auth";
+import { withTimeout } from "./retry";
+import { activeBookingsOnDate } from "./bookings-data";
 import { todayBusinessDate } from "@/lib/business-day";
 
 // Public, unauthenticated surface for the /book widget. firestore.rules
@@ -41,17 +42,7 @@ export const getBookableServicesFn = createServerFn({ method: "GET" }).handler(
 
 // ── Slot availability ────────────────────────────────────────────────────────
 
-const CLOSED_STATUSES = new Set(["Cancelled", "No-Show"]);
 const MAX_PER_SLOT = 5;
-
-async function activeBookingsOnDate(date: string) {
-  const snap = await withTimeout(
-    adminDb.collection("bookings").where("date", "==", date).get(),
-    10_000,
-    "bookings for date",
-  );
-  return snap.docs.map((d) => d.data()).filter((b) => !CLOSED_STATUSES.has(b.status as string));
-}
 
 const DateSchema = z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) });
 

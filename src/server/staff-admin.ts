@@ -1,0 +1,124 @@
+// Split out of staff.ts for the same reason server/staff-cache.ts was split
+// out of auth.ts: staff.ts is a "use server" file imported by the client
+// (src/components/access-panel.tsx). Its createServerFn handlers get their
+// bodies swapped for an RPC stub in the client bundle, but these plain
+// top-level helpers -- called BY those handlers but not nested inside them --
+// don't get stripped, which kept adminDb/adminAuth's imports (and
+// firebase-admin's Node-only dependency graph) alive in the client bundle.
+import { adminAuth, adminDb } from "./firebase-admin";
+import { withRetry, withTimeout } from "./retry";
+import { isAdmin, isManagerOrAbove, type StaffRole } from "@/lib/permissions";
+
+export interface Caller {
+  uid: string;
+  role: StaffRole;
+}
+
+/**
+ * Verify the caller's ID token and read their role from the *staff document*,
+ * not from the token claim. A claim can be up to an hour stale; the document is
+ * authoritative, which is also why `checkRevoked` is deliberately NOT used:
+ * it adds a blocking identitytoolkit round trip that this shared host tends to
+ * stall (the same class of hang that broke login before preferRest), and a
+ * demoted/deactivated caller is already rejected by the fresh doc read below.
+ * Every await is time-boxed so a stalled upstream fails in seconds instead of
+ * hanging the request into LiteSpeed's 408.
+ */
+export async function requireCaller(idToken: string): Promise<Caller | null> {
+  let uid: string;
+  try {
+    // Retried: the cert fetch behind verifyIdToken is an outbound call this
+    // host stalls, and a stall here spun the admin's button forever.
+    uid = (await withRetry(() => adminAuth.verifyIdToken(idToken), "token verify")).uid;
+  } catch {
+    return null;
+  }
+
+  const snap = await withRetry(() => adminDb.collection("staff").doc(uid).get(), "caller lookup");
+  if (!snap.exists) return null;
+
+  const staff = snap.data()!;
+  if (staff.active === false) return null;
+
+  return { uid, role: staff.role as StaffRole };
+}
+
+/**
+ * Revoking refresh tokens is what makes a role change bite before the target
+ * logs out, but it's an identitytoolkit call this host can stall. Attempt it
+ * with a hard deadline and never block the response on failure: the staff doc
+ * (checked server-side on every sensitive call) is already updated, so the
+ * stale claims only linger for client-side rule checks until logout.
+ */
+export function revokeBestEffort(staffId: string) {
+  void withTimeout(adminAuth.revokeRefreshTokens(staffId), 8_000, "token revoke").catch((err) =>
+    console.error(`[staff] revokeRefreshTokens(${staffId}) failed:`, err),
+  );
+}
+
+/** Managing users (create / edit / deactivate) is Admin+. */
+export async function requireAdmin(idToken: string): Promise<Caller | null> {
+  const caller = await requireCaller(idToken);
+  return caller && isAdmin(caller.role) ? caller : null;
+}
+
+/** Resetting a subordinate's PIN stays available to Managers, as before. */
+export async function requireManager(idToken: string): Promise<Caller | null> {
+  const caller = await requireCaller(idToken);
+  return caller && isManagerOrAbove(caller.role) ? caller : null;
+}
+
+/** Count active SuperAdmins, optionally ignoring one staffId (the one being
+ *  changed). Equality-only query, no composite index required. */
+export async function otherActiveSuperAdmins(excludeStaffId: string): Promise<number> {
+  const snap = await withRetry(
+    () => adminDb.collection("staff").where("role", "==", "SuperAdmin").get(),
+    "superadmin count",
+  );
+  return snap.docs.filter((d) => d.id !== excludeStaffId && d.data().active !== false).length;
+}
+
+/** Display names must be unique: firestore.rules authorizes a technician's job
+ *  edit with `resource.data.tech == request.auth.token.name`, so two staff
+ *  sharing a name could edit each other's jobs.
+ *
+ *  This is a read-then-write check, so two simultaneous creates of the same
+ *  name could both pass. Closing that needs a `staffNames/{lower}` index doc
+ *  the way usernames works; worth doing when jobs move to `techId`. */
+export async function nameTaken(name: string, excludeStaffId?: string): Promise<boolean> {
+  const snap = await withRetry(
+    () => adminDb.collection("staff").where("name", "==", name).get(),
+    "name uniqueness check",
+  );
+  return snap.docs.some((d) => d.id !== excludeStaffId);
+}
+
+/** Claim the username index doc. `.create()` is single-shot (it throws if the
+ *  doc exists); that atomicity is what guarantees uniqueness, but it also
+ *  means a naive retry after a STALLED create would see "already exists" and
+ *  wrongly report username_taken for a claim we actually won. So on a timeout,
+ *  re-read the doc: if it now holds OUR staffId the create did land (success);
+ *  if it holds someone else's it's genuinely taken; if it's absent, retry. */
+export async function claimUsername(key: string, staffId: string): Promise<boolean> {
+  for (let i = 0; i < 4; i++) {
+    try {
+      await withTimeout(
+        adminDb.collection("usernames").doc(key).create({ staffId }),
+        6_000,
+        "username claim",
+      );
+      return true;
+    } catch (err) {
+      const timedOut = err instanceof Error && err.message.includes("timed out");
+      if (!timedOut) return false; // already exists → genuinely taken
+
+      const snap = await withRetry(
+        () => adminDb.collection("usernames").doc(key).get(),
+        "username re-check",
+      ).catch(() => null);
+      if (snap?.exists) return snap.data()?.staffId === staffId;
+      // Not created: the stall killed it before it landed. Try again.
+    }
+  }
+  throw new Error("username claim failed after retries");
+}
