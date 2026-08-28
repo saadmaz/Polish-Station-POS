@@ -225,7 +225,12 @@ function buildDoc(opts: DocOptions): jsPDF {
   doc.text("DISCOUNT", C4, y, { align: "right" });
   doc.text("TOTAL", C5, y, { align: "right" });
 
-  y += 4.5;
+  // The header bar's bottom edge sits 3mm below this y (rect drawn at y-5,
+  // height 8), so the gap to the first row's baseline must clear that plus
+  // the row text's own cap-height (~2.3mm at 8.5pt) or the header background
+  // clips the tops of the first row's glyphs — most visible as a dark sliver
+  // through light-colored cells like the unit price column.
+  y += 7;
 
   // Rows
   opts.lines.forEach((line, idx) => {
@@ -563,7 +568,9 @@ export function downloadPOPDF(po: PurchaseOrder) {
   doc.text("UNIT COST", C4, y, { align: "right" });
   doc.text("LINE TOTAL", C5, y, { align: "right" });
 
-  y += 4.5;
+  // See the matching comment in buildDoc(): the header bar's bottom edge
+  // clips the first row's text if this gap is under ~7mm.
+  y += 7;
 
   let grandTotal = 0;
   po.lines.forEach((line, idx) => {
