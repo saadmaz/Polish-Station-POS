@@ -71,10 +71,22 @@ jobs:
       #
       # --ignore-time on dist/: CI builds stamp fresh mtimes every run, so
       # date-based comparison (lftp's default) would re-upload everything;
-      # size-based comparison skips unchanged files (safe here because built
-      # assets have content-hashed names). tmp/ deliberately does NOT use it:
-      # restart.txt's fresh mtime is what tells Passenger to restart the app,
-      # so it must always re-upload rather than get skipped on a size match.
+      # size-based comparison skips unchanged files (safe for client assets —
+      # they're content-hashed by name, so a same-size false match would
+      # require an actual hash collision). dist/server/server.js is the one
+      # exception: it inlines every dependency into a single ~15MB file whose
+      # BYTE SIZE barely moves between builds that don't touch app source —
+      # e.g. two deploys of the same commit differ only in the embedded
+      # __BUILD_ID__ literal, a same-length timestamp string — so the mirror's
+      # size comparison silently skipped re-uploading it while still
+      # correctly uploading the (differently-named) client chunks, producing
+      # a live server bundle out of sync with the assets it referenced. Root
+      # cause of the 2026-08-28 outage (mismatched client/server bundles on
+      # disk, not just a stale Passenger process). Force it every deploy with
+      # its own unconditional `put`, same as start.mjs/package.json below.
+      # tmp/ also deliberately does NOT use --ignore-time: restart.txt's
+      # fresh mtime is what tells Passenger to restart the app, so it must
+      # always re-upload rather than get skipped on a size match.
       # The host's FTP brute-force/anti-abuse protection occasionally refuses
       # the connection outright ("Connection refused") for a few minutes at a
       # time, independent of anything this workflow does wrong — observed on
@@ -107,6 +119,7 @@ jobs:
               set mirror:parallel-transfer-count 4;
               open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
               mirror -R --delete --ignore-time --parallel=4 ./deploy/dist/ $REMOTE_DIR/dist/;
+              put ./deploy/dist/server/server.js -o $REMOTE_DIR/dist/server/server.js;
               put ./deploy/start.mjs -o $REMOTE_DIR/start.mjs;
               put ./deploy/package.json -o $REMOTE_DIR/package.json;
               put ./htaccess -o $REMOTE_DIR/.htaccess;
