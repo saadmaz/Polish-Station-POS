@@ -302,7 +302,7 @@ export const DEFAULT_BUSINESS_INFO: BusinessInfo = {
   vat: "VAT-184220985-7000",
   phone: "+94 11 250 8821",
   email: "hello@polishstation.lk",
-  address: "No. 142, Havelock Rd, Colombo 05",
+  address: "No. 22C, Sri Saranankara Road, Dehiwala",
   hours: "Mon–Sat · 08:00–18:00",
   vatRate: 18,
 };

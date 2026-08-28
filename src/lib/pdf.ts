@@ -213,9 +213,9 @@ function buildDoc(opts: DocOptions): jsPDF {
   doc.setTextColor(...WHITE);
 
   const C1 = ML + 3; // description start
-  const C2 = ML + 90; // qty
-  const C3 = ML + 111; // unit price
-  const C4 = ML + 136; // discount
+  const C2 = ML + 94; // qty
+  const C3 = ML + 124; // unit price
+  const C4 = ML + 150; // discount
   const C5 = MR; // total (right-aligned)
 
   doc.text("#", ML + 1, y);
@@ -243,8 +243,8 @@ function buildDoc(opts: DocOptions): jsPDF {
     doc.setTextColor(...CHARCOAL);
     doc.text(String(idx + 1), ML + 2, y, { align: "left" });
 
-    // Wrap long description
-    const descLines = doc.splitTextToSize(line.name, 75);
+    // Wrap long description (kept clear of the QTY column that starts at C2)
+    const descLines = doc.splitTextToSize(line.name, 68);
     doc.text(descLines[0], C1 + 6, y);
     if (descLines[1]) {
       doc.setFontSize(7.5);
