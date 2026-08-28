@@ -123,6 +123,40 @@ service cloud.firestore {
       allow delete: if isManagerOrAbove();
     }
 
+    // ── Vehicles ──────────────────────────────────────────────────────────
+    // First-class vehicle entity (plate/make/model/year/colour/size class),
+    // superseding the embedded Customer.vehicles[] array. Piggybacks on the
+    // "customers" module rather than a new one, same as coupons below — not
+    // worth its own nav entry. Doc id is random, NOT the plate: plates can
+    // be re-registered/corrected, and Firestore doc ids are immutable, so
+    // every reference (Job, Booking, StockMovement, ...) points at this id,
+    // never at the plate itself.
+    match /vehicles/{vehicleId} {
+      allow read:   if isAuth();
+      allow create, update: if hasModule("customers");
+      allow delete: if hasModule("customers") && isManagerOrAbove();
+    }
+
+    // plates/{normalizedPlate} -> { vehicleId } index, mirroring the
+    // usernames/{username} -> staffId pattern above — same structural idea
+    // (a human-readable key resolved to an internal id), but *not* the same
+    // access rule: usernames is server-only because it's part of login
+    // security, while a plate needs to be resolvable client-side for the
+    // global-search plate lookup, so read is open to any signed-in user.
+    match /plates/{plate} {
+      allow read:   if isAuth();
+      allow create, update: if hasModule("customers");
+      allow delete: if hasModule("customers") && isManagerOrAbove();
+    }
+
+    // Ownership history: many-to-many between vehicles and customers over
+    // time. Same module gating as vehicles itself.
+    match /vehicleOwnerships/{ownershipId} {
+      allow read:   if isAuth();
+      allow create, update: if hasModule("customers");
+      allow delete: if hasModule("customers") && isManagerOrAbove();
+    }
+
     // ── Coupons ───────────────────────────────────────────────────────────
     // Read is open to any signed-in user so POS checkout (Cashier/Advisor)
     // can validate a code. Creating/deleting coupon terms is a Manager+

@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { requireEmulatorOrExplicitProduction } from "./_require-emulator";
 
 // Deletes every document in every collection this app uses: a full reset
 // before loading real data. Unlike purge-staff.ts, this does NOT preserve
@@ -28,6 +29,9 @@ const COLLECTIONS = [
   "expenses",
   "bookings",
   "customers",
+  "vehicles",
+  "plates",
+  "vehicleOwnerships",
   "coupons",
   "services",
   "inventory",
@@ -39,6 +43,8 @@ const COLLECTIONS = [
 ];
 
 const BATCH_SIZE = 400; // stay under Firestore's 500-write batch limit
+
+requireEmulatorOrExplicitProduction();
 
 if (getApps().length === 0) {
   const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");

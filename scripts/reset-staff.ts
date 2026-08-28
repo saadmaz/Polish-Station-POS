@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { requireEmulatorOrExplicitProduction } from "./_require-emulator";
 
 // Deactivates the original seeded staff (s1..s9) so only the super admin can
 // sign in, per the migration decision. Deactivation is deliberate rather than
@@ -9,6 +10,8 @@ import { getFirestore } from "firebase-admin/firestore";
 // entries are removed so the names are freed for reuse.
 //
 // After this runs, the super admin recreates real users from Settings.
+
+requireEmulatorOrExplicitProduction();
 
 if (getApps().length === 0) {
   initializeApp({

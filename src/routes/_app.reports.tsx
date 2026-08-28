@@ -5,6 +5,13 @@ import { Download } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { getPayments, describePaymentMethods, type Invoice } from "@/lib/db";
 import {
+  todayBusinessDate,
+  addBusinessDays,
+  businessDateOf,
+  businessDayBoundsUtc,
+  isInBusinessDay,
+} from "@/lib/business-day";
+import {
   AreaChart,
   Area,
   XAxis,
@@ -22,17 +29,16 @@ export const Route = createFileRoute("/_app/reports")({
 
 type Period = "today" | "7d" | "30d" | "all";
 
-function dateFrom(period: Period): string {
-  const d = new Date();
-  if (period === "today") return d.toISOString().slice(0, 10);
-  if (period === "7d") {
-    d.setDate(d.getDate() - 7);
-    return d.toISOString();
-  }
-  if (period === "30d") {
-    d.setDate(d.getDate() - 30);
-    return d.toISOString();
-  }
+// The business-date (YYYY-MM-DD) a period starts on — comparable against
+// Booking.date directly. "7d"/"30d" are calendar-aligned business days
+// counting today as day 1 (so "7d" is today + the 6 days before it), not a
+// rolling 168-hour window: that keeps every period boundary defined the
+// same way "today" is everywhere else in the app.
+function periodStartBusinessDate(period: Period): string {
+  const today = todayBusinessDate();
+  if (period === "today") return today;
+  if (period === "7d") return addBusinessDays(today, -6);
+  if (period === "30d") return addBusinessDays(today, -29);
   return "1970-01-01";
 }
 
@@ -44,9 +50,10 @@ function buildDailyData(
   days: number,
 ): { date: string; cash: number; card: number }[] {
   const result: { date: string; cash: number; card: number }[] = [];
+  const today = todayBusinessDate();
   for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
-    const dayInvs = invoices.filter((inv) => inv.createdAt.startsWith(d));
+    const d = addBusinessDays(today, -i);
+    const dayInvs = invoices.filter((inv) => isInBusinessDay(inv.createdAt, d));
     let cash = 0;
     let card = 0;
     for (const inv of dayInvs) {
@@ -64,9 +71,10 @@ function Reports() {
   const { invoices, bookings, customers, inventory, shifts, expenses } = useStore();
   const [period, setPeriod] = useState<Period>("30d");
 
-  const since = dateFrom(period);
+  const sinceBusinessDate = periodStartBusinessDate(period);
+  const since = businessDayBoundsUtc(sinceBusinessDate).startUtc.toISOString();
   const filteredInvoices = invoices.filter((i) => i.createdAt >= since && i.status !== "Void");
-  const filteredBookings = bookings.filter((b) => b.date + "T00:00:00" >= since);
+  const filteredBookings = bookings.filter((b) => b.date >= sinceBusinessDate);
 
   // Revenue stats. Cash/card split is per-payment (a split-tender invoice
   // contributes to both buckets), not per-invoice.
@@ -93,12 +101,12 @@ function Reports() {
   // (falling back to the typed name for walk-ins with no matched record).
   const returningCustomers = new Set<string>();
   const newCustomers = new Set<string>();
-  const sinceDate = since.slice(0, 10);
   filteredInvoices.forEach((inv) => {
     const key = inv.customerId ?? inv.customerName;
     if (!key) return;
     const hadPriorInvoice = invoices.some(
-      (x) => (x.customerId ?? x.customerName) === key && x.createdAt.slice(0, 10) < sinceDate,
+      (x) =>
+        (x.customerId ?? x.customerName) === key && businessDateOf(x.createdAt) < sinceBusinessDate,
     );
     if (hadPriorInvoice) returningCustomers.add(key);
     else newCustomers.add(key);

@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { TrendingUp, TrendingDown, RefreshCw, AlertTriangle, Activity } from "lucide-react";
+import { RefreshCw, AlertTriangle, Activity } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { computeDashboardMetrics } from "@/lib/dashboard-metrics";
 import { StatusChip, statusVariant } from "@/components/status-chip";
 import { PageHeader } from "@/components/page-header";
 import { ShiftModal } from "@/components/shift-modal";
@@ -12,51 +13,20 @@ export const Route = createFileRoute("/_app/dashboard")({
   component: Dashboard,
 });
 
-function Sparkline({ up }: { up: boolean }) {
-  const pts = up
-    ? "0,18 10,14 20,16 30,10 40,12 50,6 60,8 70,3"
-    : "0,4 10,8 20,6 30,12 40,10 50,15 60,13 70,18";
-  return (
-    <svg viewBox="0 0 70 22" className="h-6 w-20">
-      <polyline
-        points={pts}
-        fill="none"
-        stroke={up ? "var(--success)" : "var(--primary)"}
-        strokeWidth="1.5"
-      />
-    </svg>
-  );
-}
-
 function Dashboard() {
-  const { bookings, invoices, openShift, todayRevenue, lowStockItems, refreshAll } = useStore();
+  const { invoices, bookings, openShift, lowStockItems, refreshAll } = useStore();
   const [shiftOpen, setShiftOpen] = useState(false);
 
-  const today = new Date().toISOString().slice(0, 10);
-  const todayBookings = bookings.filter((b) => b.date === today);
-
-  const upcoming4h = todayBookings.filter(
-    (b) => b.status === "Confirmed" || b.status === "Pending",
-  ).length;
-
-  const outstanding = invoices
-    .filter((i) => i.status === "Issued" || i.status === "Partially Paid")
-    .reduce((s, i) => s + i.total, 0);
+  // The one computation every KPI card and the timeline both read from —
+  // see src/lib/dashboard-metrics.ts for why this replaced four separate
+  // ad-hoc "today" filters that used to drift out of sync with each other.
+  const metrics = computeDashboardMetrics(invoices, bookings);
+  const todayBookings = metrics.timelineBookings;
 
   const kpis = [
-    {
-      label: "Revenue Today",
-      value: `LKR ${todayRevenue.toLocaleString()}`,
-      delta: todayRevenue > 0 ? 12.4 : 0,
-      up: true,
-    },
-    { label: "Upcoming (today)", value: String(upcoming4h), delta: upcoming4h, up: true },
-    {
-      label: "Outstanding",
-      value: `LKR ${outstanding.toLocaleString()}`,
-      delta: outstanding > 0 ? 2 : 0,
-      up: false,
-    },
+    { label: "Revenue Today", value: `LKR ${metrics.revenueToday.toLocaleString()}` },
+    { label: "Upcoming (today)", value: String(metrics.upcomingToday) },
+    { label: "Outstanding", value: `LKR ${metrics.outstanding.toLocaleString()}` },
   ];
 
   return (
@@ -89,6 +59,10 @@ function Dashboard() {
       />
 
       {/* KPIs */}
+      {/* No trend delta or sparkline here: neither has a real day-over-day
+          series behind it yet (see audit finding on fabricated deltas). Add
+          one back only once there's an actual prior-period comparison to
+          plot — a fixed/fake number is worse than no number. */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
         {kpis.map((k) => (
           <div key={k.label} className="rounded-xl border border-border bg-card p-4 shadow-card">
@@ -96,18 +70,6 @@ function Dashboard() {
               {k.label}
             </div>
             <div className="mt-1.5 font-display text-xl font-bold">{k.value}</div>
-            <div className="mt-2 flex items-center justify-between">
-              <div
-                className={cn(
-                  "flex items-center gap-1 text-xs font-semibold",
-                  k.up ? "text-success" : "text-primary",
-                )}
-              >
-                {k.up ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                {k.delta > 0 ? `${k.delta}` : "—"}
-              </div>
-              <Sparkline up={k.up} />
-            </div>
           </div>
         ))}
       </div>

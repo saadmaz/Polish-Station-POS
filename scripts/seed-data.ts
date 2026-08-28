@@ -5,6 +5,9 @@
 import "dotenv/config";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore, WriteBatch } from "firebase-admin/firestore";
+import { requireEmulatorOrExplicitProduction } from "./_require-emulator";
+
+requireEmulatorOrExplicitProduction();
 
 if (getApps().length === 0) {
   const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");

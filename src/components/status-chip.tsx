@@ -37,8 +37,8 @@ export function StatusChip({
 export function statusVariant(status: string): Variant {
   const s = status.toLowerCase();
   if (
-    ["paid", "done", "ready", "in stock", "confirmed", "checked-in", "active"].some((k) =>
-      s.includes(k),
+    ["paid", "done", "ready", "completed", "in stock", "confirmed", "checked-in", "active"].some(
+      (k) => s.includes(k),
     )
   )
     return "success";

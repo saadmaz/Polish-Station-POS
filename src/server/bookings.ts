@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { adminDb } from "./firebase-admin";
 import { withTimeout } from "./auth";
+import { todayBusinessDate } from "@/lib/business-day";
 
 // Public, unauthenticated surface for the /book widget. firestore.rules
 // requires isAuth() for both `services` reads and `bookings` writes (by
@@ -108,8 +109,10 @@ export const createBookingFn = createServerFn({ method: "POST" })
     if (isRateLimited(data.phone)) return { success: false, error: "rate_limited" };
 
     // The widget only ever offers today onward, but never trust the client
-    // for something a replayed or hand-crafted request could abuse.
-    const today = new Date().toISOString().slice(0, 10);
+    // for something a replayed or hand-crafted request could abuse. Business
+    // date, not the server host's UTC date: this runs on the Admin SDK,
+    // whose host clock has no reason to be in Asia/Colombo.
+    const today = todayBusinessDate();
     if (data.date < today) return { success: false, error: "invalid_date" };
 
     const serviceSnap = await withTimeout(

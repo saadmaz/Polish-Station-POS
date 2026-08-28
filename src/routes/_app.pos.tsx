@@ -199,56 +199,67 @@ function POS() {
     setCharging(true);
 
     const now = new Date().toISOString();
-    const inv = await addInvoice({
-      customerId,
-      customerName: customerName || "Guest",
-      lines: lines.map(({ key: _k, ...l }) => l),
-      subtotal,
-      tip,
-      total,
-      sessionId: openShift?.id ?? null,
-      // Omit the key entirely rather than setting it to `undefined`:
-      // Firestore's client SDK batch.set() throws on an explicit undefined
-      // field value (this previously broke every checkout with no deposit).
-      ...(appliedCoupon ? { couponCode: appliedCoupon.code, couponDiscount } : {}),
-      ...(pointsRedeemed > 0 ? { pointsRedeemed, pointsRedeemedValue: pointsValue } : {}),
-      payments: validTenders.map((l) => ({
-        method: l.method,
-        amount: l.amount,
-        reference: l.reference,
+    try {
+      const inv = await addInvoice({
+        customerId,
+        customerName: customerName || "Guest",
+        lines: lines.map(({ key: _k, ...l }) => l),
+        subtotal,
+        tip,
+        total,
         sessionId: openShift?.id ?? null,
-        staffName: staff?.name ?? "",
-        at: now,
-      })),
-    });
+        // Omit the key entirely rather than setting it to `undefined`:
+        // Firestore's client SDK batch.set() throws on an explicit undefined
+        // field value (this previously broke every checkout with no deposit).
+        ...(appliedCoupon ? { couponCode: appliedCoupon.code, couponDiscount } : {}),
+        ...(pointsRedeemed > 0 ? { pointsRedeemed, pointsRedeemedValue: pointsValue } : {}),
+        payments: validTenders.map((l) => ({
+          method: l.method,
+          amount: l.amount,
+          reference: l.reference,
+          sessionId: openShift?.id ?? null,
+          staffName: staff?.name ?? "",
+          at: now,
+        })),
+      });
 
-    toast.success(
-      inv.status === "Partially Paid" ? "Partial payment recorded" : "Payment received",
-      {
-        description: `${inv.id} · LKR ${tendered.toLocaleString()} · ${describePaymentMethods(inv)}`,
-      },
-    );
+      toast.success(
+        inv.status === "Partially Paid" ? "Partial payment recorded" : "Payment received",
+        {
+          description: `${inv.id} · LKR ${tendered.toLocaleString()} · ${describePaymentMethods(inv)}`,
+        },
+      );
 
-    setChargedInfo({
-      customerName: customerName || "Guest",
-      phone: selectedCustomer?.phone ?? "",
-      customerId,
-      vehicleModel: selectedCustomer?.vehicles[0]?.model ?? "",
-      plate: selectedCustomer?.vehicles[0]?.plate ?? "",
-      serviceName: lines[0]?.name ?? "",
-      invoiceId: inv.id,
-    });
+      setChargedInfo({
+        customerName: customerName || "Guest",
+        phone: selectedCustomer?.phone ?? "",
+        customerId,
+        vehicleModel: selectedCustomer?.vehicles[0]?.model ?? "",
+        plate: selectedCustomer?.vehicles[0]?.plate ?? "",
+        serviceName: lines[0]?.name ?? "",
+        invoiceId: inv.id,
+      });
 
-    // Reset
-    setLines([]);
-    setSelectedCustomerId(null);
-    setManualCustomer("");
-    setCustomerSearch("");
-    setTip(0);
-    setTenderLines([]);
-    setAppliedCoupon(null);
-    setPointsToRedeem(0);
-    setCharging(false);
+      // Reset — only on success: a failed charge keeps the cart so the
+      // cashier can just retry instead of re-entering everything.
+      setLines([]);
+      setSelectedCustomerId(null);
+      setManualCustomer("");
+      setCustomerSearch("");
+      setTip(0);
+      setTenderLines([]);
+      setAppliedCoupon(null);
+      setPointsToRedeem(0);
+    } catch (err) {
+      // addInvoice() now awaits its Firestore write instead of firing it and
+      // forgetting: a network drop here throws, so the till must show that
+      // instead of a false "payment received" receipt for a sale that never
+      // landed.
+      console.error("[pos] checkout failed:", err);
+      toast.error("Checkout failed, please check your connection and try again");
+    } finally {
+      setCharging(false);
+    }
   }
 
   const filteredCustomers = customerSearch

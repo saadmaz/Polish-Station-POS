@@ -44,6 +44,7 @@ import {
   getAmountPaid,
   type BusinessInfo,
 } from "./db";
+import { synthesizeWalkInBooking } from "./job-linking";
 import type {
   AuditLog,
   Booking,
@@ -134,7 +135,6 @@ interface Store {
   openShift: Shift | undefined;
   lowStockItems: InventoryItem[];
   overdueEquipment: Equipment[];
-  todayRevenue: number;
 
   // mutations
   refreshAll: () => void;
@@ -633,11 +633,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [staffId, permsKey]);
 
   // ── Computed ───────────────────────────────────────────────────────────────
+  // Dashboard KPIs (Revenue Today / Today's Timeline / Upcoming / Outstanding)
+  // are computed by the Dashboard route itself via computeDashboardMetrics(),
+  // not here — a single call site for all four is what keeps them from
+  // drifting out of sync again.
   const openShift = shifts.find((s) => s.status === "OPEN");
-  const today = new Date().toISOString().slice(0, 10);
-  const todayRevenue = invoices
-    .filter((i) => i.createdAt.startsWith(today))
-    .reduce((s, i) => s + i.total, 0);
   const lowStockItems = inventory.filter((i) => i.stock <= i.reorder);
   const overdueEquipment = equipmentList.filter((eq) => {
     if (eq.status === "Retired" || !eq.lastServiceDate) return false;
@@ -821,11 +821,46 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // checkout that only tenders the remaining balance still resolves to
       // "Paid" rather than incorrectly staying "Partially Paid".
       const amountPaid = getAmountPaid(draft);
+
+      // Every invoice must belong to a same-day Booking so the dashboard's
+      // "Revenue Today" and "Today's Timeline" can never disagree (see
+      // job-linking.ts). If checkout was started from an existing booking,
+      // use it and mark it done; otherwise this is a walk-in sale with no
+      // booking at all, so synthesize one on the spot.
+      const batch = writeBatch(fsDb);
+      let bookingId = data.bookingId ?? null;
+      if (bookingId) {
+        const existing = S.current.bookings.find((b) => b.id === bookingId);
+        if (existing && existing.status !== "Completed") {
+          batch.set(fd("bookings", bookingId), { ...existing, status: "Completed" });
+        }
+      } else {
+        bookingId = await nextSeqId("bookings", "B-", S.current.bookings, 200);
+        const customer = data.customerId
+          ? S.current.customers.find((x) => x.id === data.customerId)
+          : undefined;
+        const walkInBooking = synthesizeWalkInBooking(
+          {
+            invoiceId: draft.id,
+            createdAt: draft.createdAt,
+            customerId: data.customerId,
+            customerName: data.customerName,
+            plate: customer?.vehicles[0]?.plate ?? "",
+            vehicleModel: customer?.vehicles[0]?.model ?? "",
+            lines: data.lines,
+            total: data.total,
+            servicesCatalog: services,
+          },
+          bookingId,
+        );
+        batch.set(fd("bookings", bookingId), walkInBooking);
+      }
+
       const inv: Invoice = {
         ...draft,
+        bookingId,
         status: amountPaid >= draft.total ? "Paid" : amountPaid > 0 ? "Partially Paid" : "Issued",
       };
-      const batch = writeBatch(fsDb);
       batch.set(fd("invoices", inv.id), inv);
       // Update customer visit + spend + loyalty points
       if (data.customerId) {
@@ -854,14 +889,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           });
         }
       }
-      batch.commit().catch((err) => console.error("[store] addInvoice:", err));
+      // Awaited (not fire-and-forget): the caller shows a "payment received"
+      // receipt and resets the till off this return, so it must not resolve
+      // until the sale is actually durable. A rejection here propagates to
+      // the caller instead of silently vanishing into a console.error while
+      // the UI reports success for a sale that never landed.
+      await batch.commit();
       // Recalc shift totals after Firestore write settles, for every shift
       // touched by this invoice's tender lines (normally just the open shift).
       const shiftIds = new Set(payments.map((p) => p.sessionId).filter((x): x is string => !!x));
       shiftIds.forEach((id) => setTimeout(() => recalcShift(id), 500));
       return inv;
     },
-    [recalcShift],
+    [recalcShift, services],
   );
 
   const updateInvoice = useCallback((inv: Invoice) => write("invoices", inv), []);
@@ -1170,7 +1210,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     openShift,
     lowStockItems,
     overdueEquipment,
-    todayRevenue,
     refreshAll,
     upsertEquipment,
     deleteEquipment,

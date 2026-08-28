@@ -15,6 +15,7 @@ import {
   Check,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { todayBusinessDate, addBusinessDays } from "@/lib/business-day";
 import { BookingSheet } from "@/components/booking-sheet";
 import { StatusChip, statusVariant } from "@/components/status-chip";
 import { PageHeader } from "@/components/page-header";
@@ -35,12 +36,6 @@ const CAT_COLORS: Record<string, string> = {
   "Paint Protection": "var(--warning)",
   Coating: "var(--charcoal)",
 };
-
-function addDays(dateStr: string, n: number): string {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-}
 
 function formatDate(dateStr: string): string {
   return new Date(dateStr + "T00:00:00").toLocaleDateString([], {
@@ -146,14 +141,16 @@ function BookingCard({
             <LogIn className="h-3.5 w-3.5" /> Check In
           </button>
         )}
-        {booking.status !== "Cancelled" && booking.status !== "Checked-In" && (
-          <button
-            onClick={onCancel}
-            className="w-full rounded-md border border-border py-1.5 text-xs text-muted-foreground hover:text-primary hover:border-primary/40"
-          >
-            Cancel Booking
-          </button>
-        )}
+        {booking.status !== "Cancelled" &&
+          booking.status !== "Checked-In" &&
+          booking.status !== "Completed" && (
+            <button
+              onClick={onCancel}
+              className="w-full rounded-md border border-border py-1.5 text-xs text-muted-foreground hover:text-primary hover:border-primary/40"
+            >
+              Cancel Booking
+            </button>
+          )}
         <button
           onClick={onDelete}
           className="flex items-center justify-center gap-1 w-full rounded-md border border-border py-1.5 text-xs text-muted-foreground hover:text-primary hover:border-primary/40"
@@ -171,7 +168,7 @@ function Bookings() {
   const { bookings, updateBooking, deleteBooking, checkinBooking, markDepositPaid, bays } =
     useStore();
   const [view, setView] = useState<"day" | "week" | "list">("day");
-  const [currentDate, setCurrentDate] = useState(new Date().toISOString().slice(0, 10));
+  const [currentDate, setCurrentDate] = useState(todayBusinessDate());
   const [bookingOpen, setBookingOpen] = useState(false);
   const [activeCard, setActiveCard] = useState<string | null>(null);
   const [widgetOpen, setWidgetOpen] = useState(false);
@@ -194,14 +191,14 @@ function Bookings() {
     .filter((b) => b.date === currentDate)
     .sort((a, b) => a.time.localeCompare(b.time));
 
-  // Week dates
-  const weekDates = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(currentDate + "T00:00:00");
-    const day = d.getDay(); // 0=Sun
-    const monday = new Date(d);
-    monday.setDate(d.getDate() - ((day + 6) % 7) + i);
-    return monday.toISOString().slice(0, 10);
-  });
+  // Week dates. Pure calendar-date arithmetic anchored at UTC noon (via
+  // addBusinessDays) throughout, rather than the local-getDay/UTC-toISOString
+  // round trip this used to do — that mismatch put the whole week one day
+  // behind in Colombo (a positive UTC offset rolls local midnight back to
+  // the previous UTC calendar date).
+  const weekDayIndex = new Date(`${currentDate}T12:00:00.000Z`).getUTCDay(); // 0=Sun
+  const weekMonday = addBusinessDays(currentDate, -((weekDayIndex + 6) % 7));
+  const weekDates = Array.from({ length: 7 }, (_, i) => addBusinessDays(weekMonday, i));
 
   function handleStatusChange(id: string, status: BookingStatus) {
     const b = bookings.find((x) => x.id === id);
@@ -374,20 +371,20 @@ function Bookings() {
         <div className="flex items-center justify-between px-5 py-3 border-b border-border">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setCurrentDate((d) => addDays(d, view === "week" ? -7 : -1))}
+              onClick={() => setCurrentDate((d) => addBusinessDays(d, view === "week" ? -7 : -1))}
               className="rounded-md p-1.5 hover:bg-muted"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
             <div className="font-display font-bold">{formatDate(currentDate)}</div>
             <button
-              onClick={() => setCurrentDate((d) => addDays(d, view === "week" ? 7 : 1))}
+              onClick={() => setCurrentDate((d) => addBusinessDays(d, view === "week" ? 7 : 1))}
               className="rounded-md p-1.5 hover:bg-muted"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
             <button
-              onClick={() => setCurrentDate(new Date().toISOString().slice(0, 10))}
+              onClick={() => setCurrentDate(todayBusinessDate())}
               className="text-xs text-muted-foreground hover:text-foreground border border-input rounded-md px-2 py-1"
             >
               Today
@@ -416,7 +413,7 @@ function Bookings() {
               </div>
               {weekDates.map((date) => {
                 const dayBookings = bookings.filter((b) => b.date === date);
-                const isToday = date === new Date().toISOString().slice(0, 10);
+                const isToday = date === todayBusinessDate();
                 return (
                   <div key={date} className="relative">
                     <div

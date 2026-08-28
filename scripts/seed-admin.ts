@@ -3,6 +3,7 @@ import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import bcrypt from "bcryptjs";
 import { ALL_MODULES } from "../src/lib/permissions";
+import { requireEmulatorOrExplicitProduction } from "./_require-emulator";
 
 // Bootstraps the one account the whole system starts from: the super admin.
 // Idempotent, safe to run repeatedly. It never overwrites an existing PIN, so
@@ -11,6 +12,8 @@ import { ALL_MODULES } from "../src/lib/permissions";
 //   SUPERADMIN_PIN=0011  (exactly 4 digits, from .env, never hardcoded)
 //
 // Username is fixed to ADMIN; change SUPERADMIN_USERNAME to override.
+
+requireEmulatorOrExplicitProduction();
 
 if (getApps().length === 0) {
   initializeApp({

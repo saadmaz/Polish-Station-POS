@@ -2,6 +2,9 @@ import "dotenv/config";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import bcrypt from "bcryptjs";
+import { requireEmulatorOrExplicitProduction } from "./_require-emulator";
+
+requireEmulatorOrExplicitProduction();
 
 if (getApps().length === 0) {
   initializeApp({

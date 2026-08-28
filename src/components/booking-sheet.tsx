@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { useStore } from "@/lib/store";
+import { todayBusinessDate } from "@/lib/business-day";
 import {
   Sheet,
   SheetContent,
@@ -17,7 +18,7 @@ interface BookingSheetProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const today = new Date().toISOString().slice(0, 10);
+const today = todayBusinessDate();
 const HOURS = Array.from({ length: 20 }, (_, i) => {
   const h = 8 + Math.floor(i / 2);
   const m = i % 2 === 0 ? "00" : "30";

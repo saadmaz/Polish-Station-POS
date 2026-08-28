@@ -1,9 +1,12 @@
 import "dotenv/config";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { requireEmulatorOrExplicitProduction } from "./_require-emulator";
 
 // Reads the progress markers diagFn wrote. The LAST marker is the step the
 // server function died on. Also cleans up the _diag collection with --clean.
+
+requireEmulatorOrExplicitProduction();
 
 if (getApps().length === 0) {
   initializeApp({

@@ -2,7 +2,13 @@
 // All writes go through these functions so the store context can invalidate queries.
 import { DEFAULT_TEMPLATES } from "./notifications";
 
-export type BookingStatus = "Pending" | "Confirmed" | "Checked-In" | "No-Show" | "Cancelled";
+// "Completed" was added alongside the POS/timeline consistency fix: a
+// walk-in POS sale with no pre-existing booking now auto-creates one (see
+// job-linking.ts) stamped straight to "Completed", since the work is
+// already finished by the time payment is taken. Before this, there was no
+// status representing finished-but-not-a-future-appointment work at all.
+export type BookingStatus =
+  "Pending" | "Confirmed" | "Checked-In" | "Completed" | "No-Show" | "Cancelled";
 export type InvoiceStatus = "Draft" | "Issued" | "Partially Paid" | "Paid" | "Void" | "Refunded";
 export type PaymentMethod = "Cash" | "Card" | "Transfer";
 export type CustomerTier = "Bronze" | "Silver" | "Gold" | "Platinum";
@@ -138,6 +144,12 @@ export interface Invoice {
   status: InvoiceStatus;
   sessionId: string | null;
   createdAt: string;
+  // The Booking this revenue belongs to. Every invoice created through
+  // addInvoice() now has one: it's stamped to an existing booking if one was
+  // passed in, or to a booking auto-created on the spot for a walk-in sale
+  // (see job-linking.ts). Optional only because invoices written before this
+  // field existed don't have it — there is no backfill for historical rows.
+  bookingId?: string | null;
   depositApplied?: number;
   payments?: PaymentRecord[];
   refunds?: RefundRecord[];
