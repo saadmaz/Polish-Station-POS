@@ -12,19 +12,32 @@ name: Keep app warm
 # of tweaking the cron expression fixes it from this side.
 #
 # So instead of relying on GitHub to trigger *often*, each firing (whenever it
-# actually happens) now loops and pings /healthz every 2 minutes for ~85
-# minutes — longer than the worst gap observed above — so there is always an
-# active loop covering the next, unpredictably-timed firing. This repo is
-# public, so Actions minutes are free; an ~85-minute job every time GitHub
-# gets around to it costs nothing.
+# actually happens) now loops and pings /healthz every 2 minutes for ~350
+# minutes — so there is always an active loop covering the next,
+# unpredictably-timed firing. This repo is public, so Actions minutes are
+# free; a long-running job every time GitHub gets around to it costs nothing.
+#
+# 2026-08-28: observed a ~5h gap in production (00:21-05:24 UTC) that produced
+# a real login failure — the previous run's 85-minute loop had already
+# finished and exited, and the next scheduled trigger simply didn't fire for
+# hours after that (not "late", just skipped), which the concurrency queue
+# below can't paper over since there was nothing left running to queue behind.
+# Widened the loop from 85 to 350 minutes so a single firing's own coverage
+# window is wide enough to absorb a gap of that size outright, rather than
+# depending on GitHub's scheduler to fire again soon after the loop ends.
 #
 # This is a mitigation for a shared-host + free-scheduler limitation, not a
-# full fix: a sustained multi-hour gap between GitHub firings, or a genuine
-# outbound-network stall on the host itself (see loginWithRetry in
-# src/lib/auth.tsx), can still surface as an occasional login error. The
-# cPanel-side cron installed by setup-keepwarm-cron.yml (if its token has the
-# Cron ACL) is a second, independent layer worth confirming in cPanel > Cron
-# Jobs when someone has access to check.
+# full fix: a sustained multi-hour gap between GitHub firings bigger than this
+# job's own window, or a genuine outbound-network stall on the host itself
+# (see loginWithRetry in src/lib/auth.tsx), can still surface as an occasional
+# login error. The cPanel-side cron installed by setup-keepwarm-cron.yml is a
+# second, independent layer that removes this dependency on GitHub's
+# scheduler entirely — as of 2026-08-28 it has never actually been enabled
+# (the cPanel API token lacks the Cron ACL; see that workflow's run log). This
+# is the one remaining action to fully close the gap: cPanel > Security >
+# Manage API Tokens > grant the token the "Cron" feature, then re-run "Install
+# server-side keep-warm cron" — or add the cron line by hand under cPanel >
+# Cron Jobs (see that workflow file for the exact command).
 
 on:
   schedule:
@@ -40,15 +53,15 @@ concurrency:
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 355
     steps:
-      - name: Ping /healthz every 2 minutes for ~85 minutes
+      - name: Ping /healthz every 2 minutes for ~350 minutes
         run: |
           # /healthz (not /) on purpose: it exercises firebase-admin + a
           # Firestore read, the exact machinery a login/change-PIN server call
           # uses. Pinging bare `/` only kept the HTML tier warm and left the
           # login path cold — the cause of the first-login 408s.
-          END=$((SECONDS + 85 * 60))
+          END=$((SECONDS + 350 * 60))
           fails=0
           pings=0
           while [ "$SECONDS" -lt "$END" ]; do

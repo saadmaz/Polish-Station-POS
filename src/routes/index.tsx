@@ -51,6 +51,23 @@ function Login() {
     setLocked(0);
   }
 
+  // Warm the server the instant the login screen loads, before anyone has
+  // signed in. Passenger idles the Node process after ~5 min of no traffic,
+  // and the only other keep-warm layers (open-tab ping in auth.tsx, the
+  // GitHub Actions loop, the cPanel cron) all require either an existing
+  // session or infra outside this app to be running — none of them cover the
+  // very first login of the day, which is exactly when a cold start turns
+  // into a visible "couldn't reach the server" error. Firing here, and again
+  // a few seconds later in case the first hit lands mid-boot, buys the ~20s
+  // cold-start time back while the user is still picking their name/typing
+  // their PIN instead of during the login request itself.
+  useEffect(() => {
+    const ping = () => void fetch("/healthz", { cache: "no-store" }).catch(() => {});
+    ping();
+    const t = setTimeout(ping, 5000);
+    return () => clearTimeout(t);
+  }, []);
+
   // Clock
   useEffect(() => {
     setNow(new Date());
