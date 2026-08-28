@@ -220,7 +220,9 @@ function buildDoc(opts: DocOptions): jsPDF {
   const C4 = ML + 150; // discount
   const C5 = MR; // total (right-aligned)
 
-  doc.text("#", ML + 1, y);
+  const C0 = ML + 2; // row number, shared x with the header "#"
+
+  doc.text("#", C0, y, { align: "left" });
   doc.text("DESCRIPTION", C1 + 6, y);
   doc.text("QTY", C2, y, { align: "right" });
   doc.text("UNIT PRICE", C3, y, { align: "right" });
@@ -234,21 +236,20 @@ function buildDoc(opts: DocOptions): jsPDF {
   // through light-colored cells like the unit price column.
   y += 7;
 
-  // Rows
+  // Rows: a plain bordered table (thin rule under every row) rather than
+  // alternating shading — shading only every other row read as broken on a
+  // 1- or 2-line invoice (a single unshaded row, or one shaded / one not),
+  // and a consistent grid reads as more deliberately "formal invoice" than a
+  // zebra stripe anyway.
+  const ROW_TOP_PAD = 6; // space above the baseline reserved for the row's own text
   opts.lines.forEach((line, idx) => {
-    const rowH = 9;
-    // Alternating row background
-    if (idx % 2 === 1) {
-      doc.setFillColor(...ROW_ALT);
-      doc.rect(ML, y - 5.5, CW, rowH, "F");
-    }
-
+    const rowH = 10;
     const lineTotal = line.unitPrice * line.qty - line.discount;
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
     doc.setTextColor(...CHARCOAL);
-    doc.text(String(idx + 1), ML + 2, y, { align: "left" });
+    doc.text(String(idx + 1), C0, y, { align: "left" });
 
     // Wrap long description (kept clear of the QTY column that starts at C2)
     const descLines = doc.splitTextToSize(line.name, 68);
@@ -276,10 +277,14 @@ function buildDoc(opts: DocOptions): jsPDF {
     doc.setTextColor(...CHARCOAL);
     doc.text(fmt(lineTotal), C5, y, { align: "right" });
 
-    y += descLines.length > 1 ? rowH + 2 : rowH;
+    const thisRowH = descLines.length > 1 ? rowH + 4 : rowH;
+    rule(doc, y - ROW_TOP_PAD + thisRowH);
+    y += thisRowH;
   });
 
-  y += 2;
+  // A heavier rule right under the last row's light one marks the definitive
+  // end of the table, rather than reading as just another row divider.
+  y += 1;
   rule(doc, y, CHARCOAL);
   y += 8;
 
@@ -561,7 +566,9 @@ export function downloadPOPDF(po: PurchaseOrder) {
   const C4 = ML + 135;
   const C5 = MR;
 
-  doc.text("#", ML + 1, y);
+  const C0 = ML + 2;
+
+  doc.text("#", C0, y, { align: "left" });
   doc.text("DESCRIPTION / SKU", C1 + 6, y);
   doc.text("UNIT", C2, y, { align: "right" });
   doc.text("QTY", C3, y, { align: "right" });
@@ -572,13 +579,12 @@ export function downloadPOPDF(po: PurchaseOrder) {
   // clips the first row's text if this gap is under ~7mm.
   y += 7;
 
+  // Plain bordered table (thin rule under every row), matching buildDoc() —
+  // see the comment there on why this replaced alternating row shading.
+  const ROW_TOP_PAD = 6;
   let grandTotal = 0;
   po.lines.forEach((line, idx) => {
-    const rowH = 9;
-    if (idx % 2 === 1) {
-      doc.setFillColor(...ROW_ALT);
-      doc.rect(ML, y - 5.5, CW, rowH, "F");
-    }
+    const rowH = 12; // every PO row carries a second SKU line, so it's always tall
 
     const lineTotal = line.unitCost * line.qtyOrdered;
     grandTotal += lineTotal;
@@ -586,7 +592,7 @@ export function downloadPOPDF(po: PurchaseOrder) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
     doc.setTextColor(...CHARCOAL);
-    doc.text(String(idx + 1), ML + 2, y);
+    doc.text(String(idx + 1), C0, y);
     doc.text(line.itemName, C1 + 6, y);
 
     doc.setFontSize(7);
@@ -605,10 +611,11 @@ export function downloadPOPDF(po: PurchaseOrder) {
     doc.setTextColor(...CHARCOAL);
     doc.text(fmt(lineTotal), C5, y, { align: "right" });
 
-    y += rowH + 2;
+    rule(doc, y - ROW_TOP_PAD + rowH);
+    y += rowH;
   });
 
-  y += 2;
+  y += 1;
   rule(doc, y, CHARCOAL);
   y += 8;
 
