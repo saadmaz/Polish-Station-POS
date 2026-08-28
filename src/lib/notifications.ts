@@ -26,8 +26,6 @@ export const TEMPLATE_VARS = [
 ];
 
 export const DEFAULT_TEMPLATES = {
-  jobReady:
-    "Hi {customerName}! 🚗✨ Your {vehicle} ({plate}) is ready for pickup at Polish Station. Come collect whenever you're ready. Thank you for choosing us! 🙏",
   serviceReminder:
     "Hi {customerName}! 👋 It's been {daysSinceVisit} days since your last visit at Polish Station. Your {vehicle} deserves some TLC. Book your next detail today! Give us a call or reply to this message. 🚗",
   reviewRequest:

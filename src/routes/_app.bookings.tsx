@@ -143,7 +143,7 @@ function BookingCard({
             onClick={onCheckin}
             className="flex items-center justify-center gap-1.5 w-full rounded-md bg-success/10 border border-success/30 text-success py-1.5 text-xs font-semibold hover:bg-success/20"
           >
-            <LogIn className="h-3.5 w-3.5" /> Check In → Create Job
+            <LogIn className="h-3.5 w-3.5" /> Check In
           </button>
         )}
         {booking.status !== "Cancelled" && booking.status !== "Checked-In" && (
@@ -214,7 +214,7 @@ function Bookings() {
   async function handleCheckin(id: string) {
     try {
       await checkinBooking(id);
-      toast.success("Checked in, job added to queue");
+      toast.success("Checked in");
     } catch {
       toast.error("Check-in failed, please try again");
     }

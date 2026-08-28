@@ -48,8 +48,6 @@ export function outranks(actor: StaffRole, target: StaffRole): boolean {
 export const MODULES = [
   { key: "dashboard", label: "Dashboard", route: "/dashboard" },
   { key: "bookings", label: "Bookings", route: "/bookings" },
-  { key: "jobs", label: "Active Jobs", route: "/jobs" },
-  { key: "bay-board", label: "Bay Board", route: "/bay-board" },
   { key: "customers", label: "Customers", route: "/customers" },
   { key: "leads", label: "Leads", route: "/leads" },
   { key: "inventory", label: "Inventory", route: "/inventory" },
@@ -73,12 +71,10 @@ export const isModuleKey = (v: unknown): v is ModuleKey =>
 
 /** Starting permission set when a SuperAdmin creates a user with this role. */
 export const ROLE_DEFAULT_PERMISSIONS: Record<StaffRole, ModuleKey[]> = {
-  Technician: ["dashboard", "jobs", "bay-board"],
-  Cashier: ["dashboard", "jobs", "bay-board", "bookings", "customers", "pos"],
+  Technician: ["dashboard"],
+  Cashier: ["dashboard", "bookings", "customers", "pos"],
   Advisor: [
     "dashboard",
-    "jobs",
-    "bay-board",
     "bookings",
     "customers",
     "leads",

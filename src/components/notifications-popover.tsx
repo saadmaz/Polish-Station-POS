@@ -16,7 +16,7 @@ const ICON = { warning: AlertTriangle, info: Clock, success: CheckCircle2 };
 const ICON_CLASS = { warning: "text-amber-500", info: "text-primary", success: "text-emerald-500" };
 
 function useNotifications(): Notification[] {
-  const { inventory, jobs, bookings } = useStore();
+  const { inventory, bookings } = useStore();
   const now = new Date();
   const todayStr = now.toISOString().slice(0, 10);
   const nowMin = now.getHours() * 60 + now.getMinutes();
@@ -43,33 +43,6 @@ function useNotifications(): Notification[] {
       });
     }
   });
-
-  // Jobs awaiting QC
-  jobs
-    .filter((j) => j.status === "Awaiting QC")
-    .forEach((j) => {
-      notes.push({
-        id: `qc-${j.id}`,
-        type: "info",
-        title: "Awaiting QC",
-        description: `${j.id} · ${j.customerName} · ${j.serviceName} ready for inspection`,
-        read: false,
-      });
-    });
-
-  // Overdue in-bay jobs
-  jobs
-    .filter((j) => j.status === "In Bay" && j.elapsedMin > j.estimateMin)
-    .forEach((j) => {
-      const over = j.elapsedMin - j.estimateMin;
-      notes.push({
-        id: `ovr-${j.id}`,
-        type: "warning",
-        title: "Overdue job",
-        description: `${j.id} · ${j.customerName}, ${over}m over estimate (${j.serviceName})`,
-        read: false,
-      });
-    });
 
   // Bookings due in next 30 min
   bookings

@@ -43,7 +43,6 @@ interface ChargedInfo {
   customerName: string;
   phone: string;
   customerId: string | null;
-  jobId: string | null;
   vehicleModel: string;
   plate: string;
   serviceName: string;
@@ -55,20 +54,18 @@ function POS() {
     services,
     customers,
     coupons,
-    jobs,
     invoices,
     openShift,
     addInvoice,
-    moveJob,
     voidInvoice,
     notificationSettingsData,
     recordNotification,
   } = useStore();
   const { staff } = useAuth();
 
-  // Customer / job selection
+  // Customer selection
   const [customerSearch, setCustomerSearch] = useState("");
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [manualCustomer, setManualCustomer] = useState("");
 
   // Line items
@@ -91,26 +88,18 @@ function POS() {
   } | null>(null);
   const [mobilePaymentOpen, setMobilePaymentOpen] = useState(false);
 
-  const selectedJob = jobs.find((j) => j.id === selectedJobId);
-  const customerName = selectedJob?.customerName ?? manualCustomer;
+  const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);
+  const customerName = selectedCustomer?.name ?? manualCustomer;
   const customerId =
-    selectedJob?.customerId ??
+    selectedCustomerId ??
     customers.find((c) => c.name.toLowerCase() === customerName.toLowerCase())?.id ??
     null;
   const customerRecord = customers.find((c) => c.id === customerId);
 
-  // Auto-populate line items when a job is selected
-  function selectJob(jobId: string) {
-    const j = jobs.find((x) => x.id === jobId);
-    if (!j) return;
-    setSelectedJobId(jobId);
-    const key = lineCounter + 1;
-    setLineCounter(key);
-    setLines([{ key, name: j.serviceName, qty: 1, unitPrice: j.price, discount: 0 }]);
+  function selectCustomer(id: string) {
+    setSelectedCustomerId(id);
     setCustomerSearch("");
-    setTenderLines([]);
-    setAppliedCoupon(null);
-    setPointsToRedeem(0);
+    setManualCustomer("");
   }
 
   function addLine(serviceId?: string) {
@@ -145,8 +134,6 @@ function POS() {
     setLines((ls) => ls.filter((l) => l.key !== key));
   }
 
-  const depositPaid = selectedJob?.depositPaid ?? 0;
-
   const subtotal = lines.reduce((s, l) => s + l.unitPrice * l.qty - l.discount, 0);
   const couponDiscount = appliedCoupon ? calcCouponDiscount(appliedCoupon, subtotal) : 0;
   const discountedSubtotal = Math.max(0, subtotal - couponDiscount);
@@ -157,7 +144,6 @@ function POS() {
   const pointsRedeemed = Math.min(pointsToRedeem, pointsBalance);
   const pointsValue = calcPointsValue(pointsRedeemed, grossTotal);
   const total = Math.max(0, grossTotal - pointsValue);
-  const balanceDue = Math.max(0, total - depositPaid);
   const tendered = tenderLines.reduce((s, l) => s + l.amount, 0);
 
   function applyCoupon() {
@@ -190,9 +176,9 @@ function POS() {
     downloadQuotationPDF({
       id: quoteId,
       customerName: customerName || "Guest",
-      phone: selectedJob?.phone,
-      plate: selectedJob?.plate,
-      vehicleModel: selectedJob?.vehicleModel,
+      phone: selectedCustomer?.phone,
+      plate: selectedCustomer?.vehicles[0]?.plate,
+      vehicleModel: selectedCustomer?.vehicles[0]?.model,
       lines: lines.map(({ key: _k, ...l }) => l),
     });
     toast.success(`Quotation ${quoteId} downloaded`);
@@ -214,7 +200,6 @@ function POS() {
 
     const now = new Date().toISOString();
     const inv = await addInvoice({
-      jobId: selectedJobId,
       customerId,
       customerName: customerName || "Guest",
       lines: lines.map(({ key: _k, ...l }) => l),
@@ -225,7 +210,6 @@ function POS() {
       // Omit the key entirely rather than setting it to `undefined`:
       // Firestore's client SDK batch.set() throws on an explicit undefined
       // field value (this previously broke every checkout with no deposit).
-      ...(depositPaid > 0 ? { depositApplied: depositPaid } : {}),
       ...(appliedCoupon ? { couponCode: appliedCoupon.code, couponDiscount } : {}),
       ...(pointsRedeemed > 0 ? { pointsRedeemed, pointsRedeemedValue: pointsValue } : {}),
       payments: validTenders.map((l) => ({
@@ -238,11 +222,6 @@ function POS() {
       })),
     });
 
-    // Mark the job Done Today
-    if (selectedJobId) {
-      moveJob(selectedJobId, "Done Today");
-    }
-
     toast.success(
       inv.status === "Partially Paid" ? "Partial payment recorded" : "Payment received",
       {
@@ -252,18 +231,17 @@ function POS() {
 
     setChargedInfo({
       customerName: customerName || "Guest",
-      phone: selectedJob?.phone ?? "",
+      phone: selectedCustomer?.phone ?? "",
       customerId,
-      jobId: selectedJobId,
-      vehicleModel: selectedJob?.vehicleModel ?? "",
-      plate: selectedJob?.plate ?? "",
-      serviceName: selectedJob?.serviceName ?? lines[0]?.name ?? "",
+      vehicleModel: selectedCustomer?.vehicles[0]?.model ?? "",
+      plate: selectedCustomer?.vehicles[0]?.plate ?? "",
+      serviceName: lines[0]?.name ?? "",
       invoiceId: inv.id,
     });
 
     // Reset
     setLines([]);
-    setSelectedJobId(null);
+    setSelectedCustomerId(null);
     setManualCustomer("");
     setCustomerSearch("");
     setTip(0);
@@ -273,16 +251,16 @@ function POS() {
     setCharging(false);
   }
 
-  const readyJobs = jobs.filter(
-    (j) => j.status === "Ready" || j.status === "Awaiting QC" || j.status === "Done Today",
-  );
-  const filteredJobs = customerSearch
-    ? readyJobs.filter(
-        (j) =>
-          j.customerName.toLowerCase().includes(customerSearch.toLowerCase()) ||
-          j.plate.toLowerCase().includes(customerSearch.toLowerCase()),
-      )
-    : readyJobs.slice(0, 8);
+  const filteredCustomers = customerSearch
+    ? customers
+        .filter(
+          (c) =>
+            c.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+            c.phone.toLowerCase().includes(customerSearch.toLowerCase()) ||
+            c.vehicles.some((v) => v.plate.toLowerCase().includes(customerSearch.toLowerCase())),
+        )
+        .slice(0, 8)
+    : [];
 
   // Derived once and shared by both the desktop table and the mobile card
   // list so the Collect/Refund/Void eligibility logic isn't duplicated.
@@ -308,10 +286,7 @@ function POS() {
     return (
       <div className="flex flex-wrap items-center gap-1.5">
         <button
-          onClick={() => {
-            const job = i.jobId ? jobs.find((j) => j.id === i.jobId) : undefined;
-            downloadInvoicePDF(i, job);
-          }}
+          onClick={() => downloadInvoicePDF(i)}
           title="Download PDF"
           aria-label="Download PDF"
           className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-primary"
@@ -448,30 +423,13 @@ function POS() {
               tone="success"
             />
           )}
-          {depositPaid > 0 && (
-            <div className="flex justify-between text-success font-medium pt-1 border-t border-border">
-              <span className="flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-success inline-block" />
-                Deposit Received
-              </span>
-              <span className="font-mono">− LKR {depositPaid.toLocaleString()}</span>
-            </div>
-          )}
         </div>
         <div className="flex items-baseline justify-between py-4">
-          <span className="text-sm font-semibold uppercase tracking-wider">
-            {depositPaid > 0 ? "Balance Due" : "Total"}
-          </span>
+          <span className="text-sm font-semibold uppercase tracking-wider">Total</span>
           <span className="font-display text-2xl font-extrabold text-primary">
-            LKR {(depositPaid > 0 ? balanceDue : total).toLocaleString()}
+            LKR {total.toLocaleString()}
           </span>
         </div>
-        {depositPaid > 0 && (
-          <div className="text-xs text-muted-foreground text-center -mt-2 mb-2">
-            Full total LKR {total.toLocaleString()} · deposit LKR {depositPaid.toLocaleString()}{" "}
-            already paid
-          </div>
-        )}
 
         <div className="grid grid-cols-3 gap-2 mb-3">
           {[150, 300, 500].map((amt) => (
@@ -494,11 +452,7 @@ function POS() {
           Payment
         </div>
         <div className="mb-4">
-          <TenderLineEditor
-            lines={tenderLines}
-            onChange={setTenderLines}
-            remaining={depositPaid > 0 ? balanceDue : total}
-          />
+          <TenderLineEditor lines={tenderLines} onChange={setTenderLines} remaining={total} />
         </div>
 
         {chargedInfo && (
@@ -537,7 +491,6 @@ function POS() {
                   recordNotification({
                     type: "review_request",
                     customerId: chargedInfo.customerId,
-                    jobId: chargedInfo.jobId,
                     customerName: chargedInfo.customerName,
                     phone: chargedInfo.phone,
                   });
@@ -564,11 +517,9 @@ function POS() {
             ? "Processing…"
             : total <= 0
               ? "Complete: Covered by Points"
-              : tendered > 0 && tendered < (depositPaid > 0 ? balanceDue : total)
-                ? `Collect LKR ${tendered.toLocaleString()} of LKR ${(depositPaid > 0 ? balanceDue : total).toLocaleString()}`
-                : depositPaid > 0
-                  ? `Collect LKR ${balanceDue.toLocaleString()} Balance`
-                  : `Charge LKR ${total.toLocaleString()}`}
+              : tendered > 0 && tendered < total
+                ? `Collect LKR ${tendered.toLocaleString()} of LKR ${total.toLocaleString()}`
+                : `Charge LKR ${total.toLocaleString()}`}
         </button>
 
         <button
@@ -596,50 +547,47 @@ function POS() {
           subtitle={openShift ? `Shift active · ${openShift.staffName}` : "No active shift"}
         />
 
-        {/* Job selector */}
+        {/* Customer selector */}
         <div className="rounded-xl border border-border bg-card shadow-card p-4">
-          <h2 className="font-display font-bold mb-3">Select Job / Customer</h2>
+          <h2 className="font-display font-bold mb-3">Select Customer</h2>
           <div className="relative mb-3">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               className="w-full rounded-md border border-input bg-background pl-9 pr-3 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              placeholder="Search by name or plate…"
+              placeholder="Search by name, phone, or plate…"
               value={customerSearch}
               onChange={(e) => setCustomerSearch(e.target.value)}
             />
           </div>
           <div className="space-y-1.5 max-h-64 overflow-y-auto sm:max-h-48">
-            {filteredJobs.map((j) => (
+            {filteredCustomers.map((c) => (
               <button
-                key={j.id}
-                onClick={() => selectJob(j.id)}
+                key={c.id}
+                onClick={() => selectCustomer(c.id)}
                 className={cn(
                   "flex min-h-11 w-full items-center gap-3 rounded-lg border px-3 py-2 text-sm text-left transition-colors",
-                  selectedJobId === j.id
+                  selectedCustomerId === c.id
                     ? "border-primary bg-primary/5"
                     : "border-border hover:bg-muted/40",
                 )}
               >
-                <span className="hidden font-mono text-[11px] text-muted-foreground w-16 sm:inline">
-                  {j.id}
-                </span>
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold truncate">{j.customerName}</div>
+                  <div className="font-semibold truncate">{c.name}</div>
                   <div className="text-[11px] text-muted-foreground truncate">
-                    {j.plate} · {j.serviceName}
+                    {c.phone}
+                    {c.vehicles[0] ? ` · ${c.vehicles[0].plate}` : ""}
                   </div>
                 </div>
-                <span className="font-mono text-xs shrink-0">LKR {j.price.toLocaleString()}</span>
-                <StatusChip variant={statusVariant(j.status)}>{j.status}</StatusChip>
+                <span className="text-[11px] text-muted-foreground shrink-0">{c.tier}</span>
               </button>
             ))}
-            {filteredJobs.length === 0 && (
+            {customerSearch && filteredCustomers.length === 0 && (
               <div className="text-sm text-muted-foreground text-center py-4">
-                No jobs found. Enter customer name below for manual billing
+                No customers found. Enter a name below for manual billing
               </div>
             )}
           </div>
-          {!selectedJobId && (
+          {!selectedCustomerId && (
             <div className="mt-3">
               <input
                 className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
@@ -649,18 +597,15 @@ function POS() {
               />
             </div>
           )}
-          {selectedJob && (
+          {selectedCustomer && (
             <div className="mt-3 flex items-center justify-between gap-2 text-sm rounded-md bg-primary/5 border border-primary/20 px-3 py-2">
               <span className="min-w-0 truncate">
-                <strong>{selectedJob.customerName}</strong> · {selectedJob.plate}
+                <strong>{selectedCustomer.name}</strong>
+                {selectedCustomer.vehicles[0] ? ` · ${selectedCustomer.vehicles[0].plate}` : ""}
               </span>
               <button
-                onClick={() => {
-                  setSelectedJobId(null);
-                  setLines([]);
-                  setTenderLines([]);
-                }}
-                aria-label="Clear selected job"
+                onClick={() => setSelectedCustomerId(null)}
+                aria-label="Clear selected customer"
                 className="shrink-0 rounded-md p-2 text-muted-foreground hover:text-foreground"
               >
                 <X className="h-4 w-4" />
@@ -828,7 +773,7 @@ function POS() {
             </>
           ) : (
             <div className="text-center text-sm text-muted-foreground py-10">
-              Select a job above or add line items manually
+              Select a customer above or add line items manually
             </div>
           )}
         </div>
@@ -961,11 +906,9 @@ function POS() {
       {/* Payment panel, mobile: totals bar pinned above the viewport bottom, full panel in a sheet */}
       <div className="fixed inset-x-0 bottom-0 z-40 flex items-center gap-3 border-t border-border bg-card p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-elevated lg:hidden">
         <div className="min-w-0 flex-1">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
-            {depositPaid > 0 ? "Balance Due" : "Total"}
-          </div>
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Total</div>
           <div className="font-display text-lg font-extrabold text-primary truncate">
-            LKR {(depositPaid > 0 ? balanceDue : total).toLocaleString()}
+            LKR {total.toLocaleString()}
           </div>
         </div>
         <button

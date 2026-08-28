@@ -34,7 +34,6 @@ import { hasModule, isManagerOrAbove, type ModuleKey } from "./permissions";
 import {
   calcTier,
   calcLoyaltyPointsEarned,
-  getQCTemplate,
   DEFAULT_NOTIFICATION_SETTINGS,
   DEFAULT_BUSINESS_INFO,
   DEFAULT_BAYS,
@@ -54,9 +53,6 @@ import type {
   Expense,
   InventoryItem,
   Invoice,
-  Job,
-  JobPhoto,
-  JobStatus,
   Lead,
   MaintenanceLog,
   NotificationSettings,
@@ -65,7 +61,6 @@ import type {
   POLine,
   POStatus,
   PurchaseOrder,
-  QCItem,
   RefundRecord,
   RotaShift,
   SentNotification,
@@ -123,7 +118,6 @@ interface Store {
   services: Service[];
   customers: Customer[];
   coupons: Coupon[];
-  jobs: Job[];
   bookings: Booking[];
   invoices: Invoice[];
   inventory: InventoryItem[];
@@ -141,7 +135,6 @@ interface Store {
   lowStockItems: InventoryItem[];
   overdueEquipment: Equipment[];
   todayRevenue: number;
-  todayJobs: number;
 
   // mutations
   refreshAll: () => void;
@@ -167,20 +160,8 @@ interface Store {
   notificationSettingsData: NotificationSettings;
   sentNotificationsList: SentNotification[];
   customersNeedingReminder: Customer[];
-  jobsNeedingReview: Job[];
   saveNotificationSettings: (s: NotificationSettings) => void;
   recordNotification: (n: Omit<SentNotification, "id" | "sentAt">) => SentNotification;
-
-  // Jobs
-  addJob: (
-    j: Omit<Job, "id" | "createdAt" | "startedAt" | "completedAt" | "elapsedMin">,
-  ) => Promise<Job>;
-  updateJob: (j: Job) => void;
-  deleteJob: (id: string) => void;
-  moveJob: (id: string, status: JobStatus, tech?: string, bay?: string) => void;
-  addJobPhoto: (jobId: string, photo: Omit<JobPhoto, "id">) => void;
-  removeJobPhoto: (jobId: string, photoId: string) => void;
-  updateQCItems: (jobId: string, items: QCItem[]) => void;
 
   // Customers
   addCustomer: (
@@ -325,7 +306,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [services, setServices] = useState<Service[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
-  const [jobs, setJobs] = useState<Job[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
@@ -351,7 +331,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // Ref always holds latest state, safe to use in async mutations without stale closures
   const S = useRef({
-    jobs,
     customers,
     coupons,
     bookings,
@@ -367,7 +346,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   });
   useEffect(() => {
     S.current = {
-      jobs,
       customers,
       coupons,
       bookings,
@@ -382,7 +360,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       notificationSettingsData,
     };
   }, [
-    jobs,
     customers,
     coupons,
     bookings,
@@ -466,16 +443,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           done();
         },
         fail("rotaShifts"),
-      ),
-    );
-    add(() =>
-      onSnapshot(
-        newestFirst("jobs", "createdAt", 1000),
-        (s) => {
-          setJobs(s.docs.map((d) => ({ id: d.id, ...d.data() }) as Job).reverse());
-          done();
-        },
-        fail("jobs"),
       ),
     );
     add(() =>
@@ -641,7 +608,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // Bind `done` to the real subscription count, not a hardcoded 13. A
     // stale constant here is what produces an infinite loading spinner.
     // Unblock the UI on a quorum rather than every listener: the first few
-    // snapshots (services/customers/jobs/bookings lead the multiplexed
+    // snapshots (services/customers/bookings lead the multiplexed
     // channel) are what the landing pages render, and the rest keep
     // streaming into state after the spinner clears. Waiting for all 13
     // held the dashboard hostage ~4s for collections it doesn't show.
@@ -671,15 +638,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const todayRevenue = invoices
     .filter((i) => i.createdAt.startsWith(today))
     .reduce((s, i) => s + i.total, 0);
-  const todayJobs = jobs.filter(
-    (j) => j.status === "Done Today" || j.completedAt?.startsWith(today),
-  ).length;
   const lowStockItems = inventory.filter((i) => i.stock <= i.reorder);
   const overdueEquipment = equipmentList.filter((eq) => {
     if (eq.status === "Retired" || !eq.lastServiceDate) return false;
     return new Date(eq.lastServiceDate).getTime() + eq.serviceIntervalDays * 86400000 < Date.now();
   });
-  const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
   const customersNeedingReminder = customers.filter((c) => {
     if (!c.lastVisit) return false;
     const daysSince = Math.floor((Date.now() - new Date(c.lastVisit).getTime()) / 86400000);
@@ -691,11 +654,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         Date.now() - new Date(n.sentAt).getTime() <
           notificationSettingsData.reminderIntervalDays * 86400000,
     );
-  });
-  const jobsNeedingReview = jobs.filter((j) => {
-    if (j.status !== "Done Today" && !j.completedAt) return false;
-    if (j.completedAt && j.completedAt < sevenDaysAgo) return false;
-    return !sentNotificationsList.find((n) => n.type === "review_request" && n.jobId === j.id);
   });
 
   // ── Shift total recalculation ──────────────────────────────────────────────
@@ -733,79 +691,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         .filter((e) => e.type === "DEPOSIT")
         .reduce((s, e) => s + e.amount, 0),
     });
-  }, []);
-
-  // ── Job mutations ──────────────────────────────────────────────────────────
-  const addJob = useCallback(
-    async (
-      data: Omit<Job, "id" | "createdAt" | "startedAt" | "completedAt" | "elapsedMin">,
-    ): Promise<Job> => {
-      const j: Job = {
-        ...data,
-        id: await nextSeqId("jobs", "J-", S.current.jobs, 1041),
-        createdAt: new Date().toISOString(),
-        startedAt: null,
-        completedAt: null,
-        elapsedMin: 0,
-      };
-      write("jobs", j);
-      logAudit(actorRef.current, {
-        action: "ADD_JOB",
-        entity: "Job",
-        entityId: j.id,
-        before: null,
-        after: j,
-      });
-      return j;
-    },
-    [],
-  );
-
-  const updateJob = useCallback((j: Job) => write("jobs", j), []);
-
-  const deleteJob = useCallback((id: string) => remove("jobs", id), []);
-
-  const moveJob = useCallback((id: string, status: JobStatus, tech?: string, bay?: string) => {
-    const j = S.current.jobs.find((x) => x.id === id);
-    if (!j) return;
-    const now = new Date().toISOString();
-    const autoQC =
-      status === "Awaiting QC" && !j.qcItems?.length
-        ? getQCTemplate(j.category).map((label, i) => ({
-            id: `qc-${id}-${i}`,
-            label,
-            checked: false,
-          }))
-        : j.qcItems;
-    write("jobs", {
-      ...j,
-      status,
-      tech: tech ?? j.tech,
-      bay: bay ?? j.bay,
-      startedAt: status === "In Bay" && !j.startedAt ? now : j.startedAt,
-      completedAt: status === "Done Today" ? now : j.completedAt,
-      qcItems: autoQC,
-      qcCompletedBy: status === "Ready" ? (j.qcCompletedBy ?? "") : j.qcCompletedBy,
-      qcCompletedAt: status === "Ready" ? (j.qcCompletedAt ?? now) : j.qcCompletedAt,
-    });
-  }, []);
-
-  const addJobPhoto = useCallback((jobId: string, photo: Omit<JobPhoto, "id">) => {
-    const j = S.current.jobs.find((x) => x.id === jobId);
-    if (!j) return;
-    write("jobs", { ...j, photos: [...(j.photos ?? []), { ...photo, id: newId() }] });
-  }, []);
-
-  const removeJobPhoto = useCallback((jobId: string, photoId: string) => {
-    const j = S.current.jobs.find((x) => x.id === jobId);
-    if (!j) return;
-    write("jobs", { ...j, photos: (j.photos ?? []).filter((p) => p.id !== photoId) });
-  }, []);
-
-  const updateQCItems = useCallback((jobId: string, items: QCItem[]) => {
-    const j = S.current.jobs.find((x) => x.id === jobId);
-    if (!j) return;
-    write("jobs", { ...j, qcItems: items });
   }, []);
 
   // ── Customer mutations ─────────────────────────────────────────────────────
@@ -890,34 +775,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const checkinBooking = useCallback(async (id: string) => {
     const b = S.current.bookings.find((x) => x.id === id);
     if (!b) return;
-    const j: Job = {
-      id: await nextSeqId("jobs", "J-", S.current.jobs, 1041),
-      customerId: b.customerId,
-      customerName: b.customerName,
-      phone: b.phone,
-      plate: b.plate,
-      vehicleModel: b.vehicleModel,
-      vehicleColor: "",
-      serviceId: b.serviceId,
-      serviceName: b.serviceName,
-      category: b.category,
-      price: b.price,
-      tech: b.tech,
-      bay: b.bay,
-      status: "Queue",
-      elapsedMin: 0,
-      estimateMin: b.durationMin,
-      sessionId: S.current.shifts.find((s) => s.status === "OPEN")?.id ?? null,
-      notes: b.notes,
-      createdAt: new Date().toISOString(),
-      startedAt: null,
-      completedAt: null,
-      depositPaid: b.depositStatus === "paid" ? (b.depositAmount ?? 0) : 0,
-    };
-    const batch = writeBatch(fsDb);
-    batch.set(fd("bookings", b.id), { ...b, status: "Checked-In" });
-    batch.set(fd("jobs", j.id), j);
-    await batch.commit();
+    write("bookings", { ...b, status: "Checked-In" });
   }, []);
 
   const markDepositPaid = useCallback((bookingId: string) => {
@@ -1298,7 +1156,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     services,
     customers,
     coupons,
-    jobs,
     bookings,
     invoices,
     inventory,
@@ -1314,7 +1171,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     lowStockItems,
     overdueEquipment,
     todayRevenue,
-    todayJobs,
     refreshAll,
     upsertEquipment,
     deleteEquipment,
@@ -1327,20 +1183,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     notificationSettingsData,
     sentNotificationsList,
     customersNeedingReminder,
-    jobsNeedingReview,
     saveNotificationSettings,
     recordNotification,
     businessInfo,
     saveBusinessInfo,
     bays,
     saveBays,
-    addJob,
-    updateJob,
-    deleteJob,
-    moveJob,
-    addJobPhoto,
-    removeJobPhoto,
-    updateQCItems,
     addCustomer,
     updateCustomer,
     deleteCustomer,

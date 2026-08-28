@@ -40,8 +40,6 @@ async function main() {
     permissions: [
       "dashboard",
       "bookings",
-      "jobs",
-      "bay-board",
       "customers",
       "inventory",
       "equipment",

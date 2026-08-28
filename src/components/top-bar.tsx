@@ -1,7 +1,6 @@
 import { Search, Plus, MapPin, Activity, Banknote, Menu } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SearchPalette } from "@/components/search-palette";
-import { WalkInSheet } from "@/components/walk-in-sheet";
 import { BookingSheet } from "@/components/booking-sheet";
 import { NotificationsPopover } from "@/components/notifications-popover";
 import { ShiftModal } from "@/components/shift-modal";
@@ -13,7 +12,6 @@ import { cn } from "@/lib/utils";
 export function TopBar() {
   const [now, setNow] = useState<Date | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [walkInOpen, setWalkInOpen] = useState(false);
   const [bookingOpen, setBookingOpen] = useState(false);
   const [shiftOpen, setShiftOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
@@ -100,21 +98,6 @@ export function TopBar() {
             </span>
           )}
 
-          {/* Small tablets get an icon-only affordance instead of losing the action entirely */}
-          <button
-            onClick={() => setWalkInOpen(true)}
-            aria-label="New walk-in"
-            title="New walk-in"
-            className="hidden sm:inline-flex md:hidden items-center justify-center rounded-md border border-input bg-background p-2 hover:bg-accent"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
-          <button
-            onClick={() => setWalkInOpen(true)}
-            className="hidden md:inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent"
-          >
-            <Plus className="h-4 w-4" /> Walk-In
-          </button>
           <button
             onClick={() => setBookingOpen(true)}
             className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90"
@@ -141,7 +124,6 @@ export function TopBar() {
       </header>
 
       <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
-      <WalkInSheet open={walkInOpen} onOpenChange={setWalkInOpen} />
       <BookingSheet open={bookingOpen} onOpenChange={setBookingOpen} />
       <ShiftModal open={shiftOpen} onOpenChange={setShiftOpen} />
       <ExpenseModal open={expenseOpen} onClose={() => setExpenseOpen(false)} />

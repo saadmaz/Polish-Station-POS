@@ -2,7 +2,6 @@ import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import {
   LayoutDashboard,
   Calendar,
-  Wrench,
   Users,
   Boxes,
   CreditCard,
@@ -12,7 +11,6 @@ import {
   Lock,
   ChevronsLeft,
   ChevronsRight,
-  MonitorPlay,
   Hammer,
   ShoppingCart,
   Bell,
@@ -31,8 +29,6 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 const ICONS: Record<ModuleKey, React.ComponentType<{ className?: string }>> = {
   dashboard: LayoutDashboard,
   bookings: Calendar,
-  jobs: Wrench,
-  "bay-board": MonitorPlay,
   customers: Users,
   leads: Inbox,
   inventory: Boxes,
@@ -55,9 +51,9 @@ function NavLinks({
 }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { can } = useAuth();
-  const { customersNeedingReminder, jobsNeedingReview } = useStore();
+  const { customersNeedingReminder } = useStore();
 
-  const notificationCount = customersNeedingReminder.length + jobsNeedingReview.length;
+  const notificationCount = customersNeedingReminder.length;
 
   const visibleNav = MODULES.filter((m) => can(m.key)).map((m) => ({
     to: m.route,

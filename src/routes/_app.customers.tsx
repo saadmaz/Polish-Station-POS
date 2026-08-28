@@ -208,19 +208,17 @@ function CustomerForm({
 // Shared by the desktop table row and the mobile card so the invoice/job
 // lookup and the data-subject export aren't implemented twice.
 function useCustomerHistory(customer: Customer) {
-  const { invoices, jobs } = useStore();
+  const { invoices } = useStore();
   const customerInvoices = invoices.filter((i) => i.customerId === customer.id).reverse();
-  const customerJobs = jobs.filter((j) => j.customerId === customer.id).reverse();
   const history = customerInvoices.slice(0, 5);
 
   // A data-subject export: everything this business holds on one customer
-  // (profile, vehicles, loyalty balance, and full job/invoice history), not
+  // (profile, vehicles, loyalty balance, and full invoice history), not
   // just the 5-row preview shown in the expanded panel.
   function exportCustomerData() {
     const payload = {
       exportedAt: new Date().toISOString(),
       customer,
-      jobs: customerJobs,
       invoices: customerInvoices,
     };
     const json = JSON.stringify(payload, null, 2);
@@ -364,7 +362,7 @@ function CustomerRow({
               }}
               aria-label="Export customer data"
               className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-              title="Export this customer's data (profile, vehicles, jobs, invoices)"
+              title="Export this customer's data (profile, vehicles, invoices)"
             >
               <FileDown className="h-3.5 w-3.5" />
             </button>

@@ -2,7 +2,6 @@
 // All writes go through these functions so the store context can invalidate queries.
 import { DEFAULT_TEMPLATES } from "./notifications";
 
-export type JobStatus = "Queue" | "In Bay" | "On Hold" | "Awaiting QC" | "Ready" | "Done Today";
 export type BookingStatus = "Pending" | "Confirmed" | "Checked-In" | "No-Show" | "Cancelled";
 export type InvoiceStatus = "Draft" | "Issued" | "Partially Paid" | "Paid" | "Void" | "Refunded";
 export type PaymentMethod = "Cash" | "Card" | "Transfer";
@@ -25,89 +24,6 @@ export interface Vehicle {
   color: string;
 }
 
-export interface JobPhoto {
-  id: string;
-  stage: "before" | "during" | "after";
-  url: string; // base64 compressed JPEG data URL
-  takenAt: string;
-  note: string;
-}
-
-export interface QCItem {
-  id: string;
-  label: string;
-  checked: boolean;
-}
-
-const QC_TEMPLATES: Record<ServiceCategory, string[]> = {
-  Exterior: [
-    "Pre-rinse completed",
-    "Snow foam applied & dwelled",
-    "Contact wash (two-bucket method)",
-    "Wheels & arches cleaned",
-    "Final rinse & blow-dry",
-    "Glass cleaned (streak-free)",
-    "Tyres dressed",
-    "Door jambs wiped",
-    "Final walk-around inspection",
-  ],
-  Interior: [
-    "Floor mats removed & cleaned",
-    "Vacuum: seats, carpets, boot",
-    "Dashboard & console wiped",
-    "Door panels & pockets cleaned",
-    "Interior glass cleaned",
-    "Leather/fabric treatment applied",
-    "Air vents & cup holders cleaned",
-    "Fragrance applied",
-    "Mats reinstalled & inspected",
-  ],
-  "Full Detail": [
-    "Pre-rinse completed",
-    "Snow foam applied & dwelled",
-    "Contact wash (two-bucket method)",
-    "Wheels & arches cleaned",
-    "Final rinse & blow-dry",
-    "Glass cleaned (streak-free)",
-    "Tyres dressed",
-    "Floor mats removed & cleaned",
-    "Vacuum: seats, carpets, boot",
-    "Dashboard & console wiped",
-    "Door panels & pockets cleaned",
-    "Interior glass cleaned",
-    "Fragrance applied",
-    "Final exterior walk-around",
-  ],
-  "Paint Protection": [
-    "Decontamination wash completed",
-    "Clay bar treatment done",
-    "Paint thickness measured & recorded",
-    "Compound stage completed",
-    "Polish stage completed",
-    "IPA wipe-down done",
-    "Sealant / PPF applied",
-    "Cure time observed",
-    "Panel reflection check (no swirls/haze)",
-    "Final inspection sign-off",
-  ],
-  Coating: [
-    "Decontamination wash completed",
-    "Paint correction completed",
-    "IPA wipe-down done",
-    "Coating applied to all panels",
-    "Coating levelled & inspected",
-    "Flash time observed",
-    "Second coat applied (if required)",
-    "Infra-red cure completed (if applicable)",
-    "Final inspection in controlled lighting",
-    "Care card & instructions given to customer",
-  ],
-};
-
-export function getQCTemplate(category: ServiceCategory): string[] {
-  return QC_TEMPLATES[category] ?? QC_TEMPLATES["Exterior"];
-}
-
 export interface Customer {
   id: string;
   name: string;
@@ -120,35 +36,6 @@ export interface Customer {
   tier: CustomerTier;
   loyaltyPoints: number;
   createdAt: string;
-}
-
-export interface Job {
-  id: string;
-  customerName: string;
-  customerId: string | null;
-  phone: string;
-  plate: string;
-  vehicleModel: string;
-  vehicleColor: string;
-  serviceId: string;
-  serviceName: string;
-  category: ServiceCategory;
-  price: number;
-  tech: string;
-  bay: string;
-  status: JobStatus;
-  elapsedMin: number;
-  estimateMin: number;
-  sessionId: string | null;
-  notes: string;
-  createdAt: string;
-  startedAt: string | null;
-  completedAt: string | null;
-  photos?: JobPhoto[];
-  qcItems?: QCItem[];
-  qcCompletedBy?: string;
-  qcCompletedAt?: string;
-  depositPaid?: number;
 }
 
 export type DepositStatus = "none" | "required" | "paid";
@@ -241,7 +128,6 @@ export interface RefundRecord {
 
 export interface Invoice {
   id: string;
-  jobId: string | null;
   customerId: string | null;
   customerName: string;
   lines: InvoiceLine[];
@@ -328,10 +214,9 @@ export function getBusinessInfo(): BusinessInfo {
 
 // ─── Bays (settings/bays Firestore doc) ──────────────────────────────────────
 // The set of physical service bays. Polish Station currently operates one
-// bay, but every screen that assigns/displays a bay (Jobs, Bay Board,
-// Bookings, Walk-In, Settings) reads this single list rather than hardcoding
-// bay names, so adding a second bay later is a Settings → Bays edit, not a
-// code change.
+// bay, but every screen that assigns/displays a bay (Bookings, Settings)
+// reads this single list rather than hardcoding bay names, so adding a
+// second bay later is a Settings → Bays edit, not a code change.
 
 export const DEFAULT_BAYS: string[] = ["Bay 1"];
 
@@ -548,18 +433,16 @@ export interface PurchaseOrder {
 export interface NotificationSettings {
   googleReviewLink: string;
   reminderIntervalDays: number;
-  jobReadyTemplate: string;
   serviceReminderTemplate: string;
   reviewRequestTemplate: string;
 }
 
-export type SentNotificationType = "job_ready" | "service_reminder" | "review_request";
+export type SentNotificationType = "service_reminder" | "review_request";
 
 export interface SentNotification {
   id: string;
   type: SentNotificationType;
   customerId: string | null;
-  jobId: string | null;
   customerName: string;
   phone: string;
   sentAt: string;
@@ -570,7 +453,6 @@ export interface SentNotification {
 const KEYS = {
   services: "ps_services",
   customers: "ps_customers",
-  jobs: "ps_jobs",
   bookings: "ps_bookings",
   invoices: "ps_invoices",
   inventory: "ps_inventory",
@@ -924,170 +806,6 @@ const SEED_BOOKINGS: Booking[] = [
   },
 ];
 
-const SEED_JOBS: Job[] = [
-  {
-    id: "J-1042",
-    customerId: "c1",
-    customerName: "Hasini Wijesuriya",
-    phone: "+94 77 412 8821",
-    plate: "CAR-4521",
-    vehicleModel: "Toyota Aqua 2018",
-    vehicleColor: "Pearl White",
-    serviceId: "sv2",
-    serviceName: "Premium Hand Wash",
-    category: "Exterior",
-    price: 4500,
-    tech: "Imran S.",
-    bay: "Bay 2",
-    status: "In Bay",
-    elapsedMin: 32,
-    estimateMin: 60,
-    sessionId: null,
-    notes: "",
-    createdAt: new Date().toISOString(),
-    startedAt: new Date(Date.now() - 32 * 60000).toISOString(),
-    completedAt: null,
-  },
-  {
-    id: "J-1043",
-    customerId: "c2",
-    customerName: "Marcus Fernando",
-    phone: "+94 71 905 4421",
-    plate: "WP CAR-8821",
-    vehicleModel: "BMW 320i 2021",
-    vehicleColor: "Alpine White",
-    serviceId: "sv5",
-    serviceName: "Ceramic Coating",
-    category: "Coating",
-    price: 75000,
-    tech: "Dilshan H.",
-    bay: "Bay 4",
-    status: "In Bay",
-    elapsedMin: 210,
-    estimateMin: 480,
-    sessionId: null,
-    notes: "",
-    createdAt: new Date().toISOString(),
-    startedAt: new Date(Date.now() - 210 * 60000).toISOString(),
-    completedAt: null,
-  },
-  {
-    id: "J-1044",
-    customerId: "c3",
-    customerName: "Priya Jayasinghe",
-    phone: "+94 76 221 9087",
-    plate: "CAR-1145",
-    vehicleModel: "Honda Vezel 2019",
-    vehicleColor: "Crystal Black",
-    serviceId: "sv4",
-    serviceName: "Full Detail Package",
-    category: "Full Detail",
-    price: 18500,
-    tech: "Imran S.",
-    bay: "Bay 1",
-    status: "Awaiting QC",
-    elapsedMin: 245,
-    estimateMin: 240,
-    sessionId: null,
-    notes: "",
-    createdAt: new Date().toISOString(),
-    startedAt: new Date(Date.now() - 245 * 60000).toISOString(),
-    completedAt: null,
-  },
-  {
-    id: "J-1045",
-    customerId: "c4",
-    customerName: "Sahan De Silva",
-    phone: "+94 70 884 1102",
-    plate: "CAR-3398",
-    vehicleModel: "Suzuki Swift 2020",
-    vehicleColor: "Solid Red",
-    serviceId: "sv3",
-    serviceName: "Interior Deep Clean",
-    category: "Interior",
-    price: 6500,
-    tech: "—",
-    bay: "—",
-    status: "Queue",
-    elapsedMin: 0,
-    estimateMin: 90,
-    sessionId: null,
-    notes: "",
-    createdAt: new Date().toISOString(),
-    startedAt: null,
-    completedAt: null,
-  },
-  {
-    id: "J-1046",
-    customerId: "c5",
-    customerName: "Lakmal Perera",
-    phone: "+94 77 100 5523",
-    plate: "WP CAB-2204",
-    vehicleModel: "Nissan X-Trail 2017",
-    vehicleColor: "Gunmetal",
-    serviceId: "sv6",
-    serviceName: "Paint Correction",
-    category: "Paint Protection",
-    price: 28000,
-    tech: "Imran S.",
-    bay: "Bay 3",
-    status: "On Hold",
-    elapsedMin: 75,
-    estimateMin: 300,
-    sessionId: null,
-    notes: "",
-    createdAt: new Date().toISOString(),
-    startedAt: new Date(Date.now() - 75 * 60000).toISOString(),
-    completedAt: null,
-  },
-  {
-    id: "J-1047",
-    customerId: "c6",
-    customerName: "Anjali Mendis",
-    phone: "+94 78 442 1100",
-    plate: "CAR-9087",
-    vehicleModel: "Mazda CX-5 2022",
-    vehicleColor: "Soul Red",
-    serviceId: "sv1",
-    serviceName: "Express Exterior Wash",
-    category: "Exterior",
-    price: 2500,
-    tech: "Dilshan H.",
-    bay: "Bay 5",
-    status: "Ready",
-    elapsedMin: 28,
-    estimateMin: 30,
-    sessionId: null,
-    notes: "",
-    createdAt: new Date().toISOString(),
-    startedAt: new Date(Date.now() - 28 * 60000).toISOString(),
-    completedAt: null,
-  },
-  {
-    id: "J-1041",
-    customerId: "c7",
-    customerName: "Roshan Karu",
-    phone: "+94 75 220 9981",
-    plate: "CAR-2210",
-    vehicleModel: "Toyota Prius 2016",
-    vehicleColor: "Silver",
-    serviceId: "sv2",
-    serviceName: "Premium Hand Wash",
-    category: "Exterior",
-    price: 4500,
-    tech: "Imran S.",
-    bay: "Bay 2",
-    status: "Done Today",
-    elapsedMin: 55,
-    estimateMin: 60,
-    sessionId: null,
-    notes: "",
-    createdAt: new Date().toISOString(),
-    startedAt: new Date(Date.now() - 120 * 60000).toISOString(),
-    completedAt: new Date(Date.now() - 65 * 60000).toISOString(),
-  },
-];
-
 const SEED_EQUIPMENT: Equipment[] = [
   {
     id: "eq1",
@@ -1255,7 +973,6 @@ export function seedIfNeeded(): void {
   save(KEYS.customers, SEED_CUSTOMERS);
   save(KEYS.inventory, SEED_INVENTORY);
   save(KEYS.bookings, SEED_BOOKINGS);
-  save(KEYS.jobs, SEED_JOBS);
   save(KEYS.invoices, []);
   save(KEYS.expenses, []);
   save(KEYS.shifts, []);
@@ -1316,42 +1033,6 @@ export const customers = {
       tier: calcTier(spend),
       lastVisit: new Date().toISOString(),
     });
-  },
-};
-
-// ─── Jobs ────────────────────────────────────────────────────────────────────
-
-export const jobs = {
-  list: (): Job[] => load<Job>(KEYS.jobs, SEED_JOBS),
-  get: (id: string): Job | undefined => jobs.list().find((j) => j.id === id),
-  upsert: (j: Job): void => {
-    const all = jobs.list();
-    const idx = all.findIndex((x) => x.id === j.id);
-    if (idx >= 0) all[idx] = j;
-    else all.push(j);
-    save(KEYS.jobs, all);
-  },
-  delete: (id: string): void =>
-    save(
-      KEYS.jobs,
-      jobs.list().filter((j) => j.id !== id),
-    ),
-  updateStatus: (id: string, status: JobStatus): void => {
-    const j = jobs.get(id);
-    if (!j) return;
-    const now = new Date().toISOString();
-    jobs.upsert({
-      ...j,
-      status,
-      startedAt: status === "In Bay" && !j.startedAt ? now : j.startedAt,
-      completedAt: status === "Done Today" ? now : j.completedAt,
-    });
-  },
-  nextId: (): string => {
-    const all = jobs.list();
-    const nums = all.map((j) => parseInt(j.id.replace("J-", ""), 10)).filter((n) => !isNaN(n));
-    const max = nums.length > 0 ? Math.max(...nums) : 1040;
-    return `J-${max + 1}`;
   },
 };
 
@@ -1572,7 +1253,6 @@ export const purchaseOrders = {
 export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   googleReviewLink: "",
   reminderIntervalDays: 30,
-  jobReadyTemplate: DEFAULT_TEMPLATES.jobReady,
   serviceReminderTemplate: DEFAULT_TEMPLATES.serviceReminder,
   reviewRequestTemplate: DEFAULT_TEMPLATES.reviewRequest,
 };

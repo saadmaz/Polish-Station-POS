@@ -23,13 +23,11 @@ import { Route as AppPurchaseOrdersRouteImport } from './routes/_app.purchase-or
 import { Route as AppPosRouteImport } from './routes/_app.pos'
 import { Route as AppNotificationsRouteImport } from './routes/_app.notifications'
 import { Route as AppLeadsRouteImport } from './routes/_app.leads'
-import { Route as AppJobsRouteImport } from './routes/_app.jobs'
 import { Route as AppInventoryRouteImport } from './routes/_app.inventory'
 import { Route as AppEquipmentRouteImport } from './routes/_app.equipment'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppCustomersRouteImport } from './routes/_app.customers'
 import { Route as AppBookingsRouteImport } from './routes/_app.bookings'
-import { Route as AppBayBoardRouteImport } from './routes/_app.bay-board'
 import { Route as ApiPublicNewsletterRouteImport } from './routes/api.public.newsletter'
 import { Route as ApiPublicContactRouteImport } from './routes/api.public.contact'
 import { Route as ApiPublicBookingRouteImport } from './routes/api.public.booking'
@@ -103,11 +101,6 @@ const AppLeadsRoute = AppLeadsRouteImport.update({
   path: '/leads',
   getParentRoute: () => AppRoute,
 } as any)
-const AppJobsRoute = AppJobsRouteImport.update({
-  id: '/jobs',
-  path: '/jobs',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppInventoryRoute = AppInventoryRouteImport.update({
   id: '/inventory',
   path: '/inventory',
@@ -133,11 +126,6 @@ const AppBookingsRoute = AppBookingsRouteImport.update({
   path: '/bookings',
   getParentRoute: () => AppRoute,
 } as any)
-const AppBayBoardRoute = AppBayBoardRouteImport.update({
-  id: '/bay-board',
-  path: '/bay-board',
-  getParentRoute: () => AppRoute,
-} as any)
 const ApiPublicNewsletterRoute = ApiPublicNewsletterRouteImport.update({
   id: '/api/public/newsletter',
   path: '/api/public/newsletter',
@@ -161,13 +149,11 @@ export interface FileRoutesByFullPath {
   '/diag': typeof DiagRoute
   '/healthz': typeof HealthzRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/bay-board': typeof AppBayBoardRoute
   '/bookings': typeof AppBookingsRoute
   '/customers': typeof AppCustomersRoute
   '/dashboard': typeof AppDashboardRoute
   '/equipment': typeof AppEquipmentRoute
   '/inventory': typeof AppInventoryRoute
-  '/jobs': typeof AppJobsRoute
   '/leads': typeof AppLeadsRoute
   '/notifications': typeof AppNotificationsRoute
   '/pos': typeof AppPosRoute
@@ -186,13 +172,11 @@ export interface FileRoutesByTo {
   '/diag': typeof DiagRoute
   '/healthz': typeof HealthzRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/bay-board': typeof AppBayBoardRoute
   '/bookings': typeof AppBookingsRoute
   '/customers': typeof AppCustomersRoute
   '/dashboard': typeof AppDashboardRoute
   '/equipment': typeof AppEquipmentRoute
   '/inventory': typeof AppInventoryRoute
-  '/jobs': typeof AppJobsRoute
   '/leads': typeof AppLeadsRoute
   '/notifications': typeof AppNotificationsRoute
   '/pos': typeof AppPosRoute
@@ -213,13 +197,11 @@ export interface FileRoutesById {
   '/diag': typeof DiagRoute
   '/healthz': typeof HealthzRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
-  '/_app/bay-board': typeof AppBayBoardRoute
   '/_app/bookings': typeof AppBookingsRoute
   '/_app/customers': typeof AppCustomersRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/equipment': typeof AppEquipmentRoute
   '/_app/inventory': typeof AppInventoryRoute
-  '/_app/jobs': typeof AppJobsRoute
   '/_app/leads': typeof AppLeadsRoute
   '/_app/notifications': typeof AppNotificationsRoute
   '/_app/pos': typeof AppPosRoute
@@ -240,13 +222,11 @@ export interface FileRouteTypes {
     | '/diag'
     | '/healthz'
     | '/sitemap.xml'
-    | '/bay-board'
     | '/bookings'
     | '/customers'
     | '/dashboard'
     | '/equipment'
     | '/inventory'
-    | '/jobs'
     | '/leads'
     | '/notifications'
     | '/pos'
@@ -265,13 +245,11 @@ export interface FileRouteTypes {
     | '/diag'
     | '/healthz'
     | '/sitemap.xml'
-    | '/bay-board'
     | '/bookings'
     | '/customers'
     | '/dashboard'
     | '/equipment'
     | '/inventory'
-    | '/jobs'
     | '/leads'
     | '/notifications'
     | '/pos'
@@ -291,13 +269,11 @@ export interface FileRouteTypes {
     | '/diag'
     | '/healthz'
     | '/sitemap.xml'
-    | '/_app/bay-board'
     | '/_app/bookings'
     | '/_app/customers'
     | '/_app/dashboard'
     | '/_app/equipment'
     | '/_app/inventory'
-    | '/_app/jobs'
     | '/_app/leads'
     | '/_app/notifications'
     | '/_app/pos'
@@ -423,13 +399,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppLeadsRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/jobs': {
-      id: '/_app/jobs'
-      path: '/jobs'
-      fullPath: '/jobs'
-      preLoaderRoute: typeof AppJobsRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/inventory': {
       id: '/_app/inventory'
       path: '/inventory'
@@ -465,13 +434,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppBookingsRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/bay-board': {
-      id: '/_app/bay-board'
-      path: '/bay-board'
-      fullPath: '/bay-board'
-      preLoaderRoute: typeof AppBayBoardRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/api/public/newsletter': {
       id: '/api/public/newsletter'
       path: '/api/public/newsletter'
@@ -497,13 +459,11 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
-  AppBayBoardRoute: typeof AppBayBoardRoute
   AppBookingsRoute: typeof AppBookingsRoute
   AppCustomersRoute: typeof AppCustomersRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppEquipmentRoute: typeof AppEquipmentRoute
   AppInventoryRoute: typeof AppInventoryRoute
-  AppJobsRoute: typeof AppJobsRoute
   AppLeadsRoute: typeof AppLeadsRoute
   AppNotificationsRoute: typeof AppNotificationsRoute
   AppPosRoute: typeof AppPosRoute
@@ -514,13 +474,11 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
-  AppBayBoardRoute: AppBayBoardRoute,
   AppBookingsRoute: AppBookingsRoute,
   AppCustomersRoute: AppCustomersRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppEquipmentRoute: AppEquipmentRoute,
   AppInventoryRoute: AppInventoryRoute,
-  AppJobsRoute: AppJobsRoute,
   AppLeadsRoute: AppLeadsRoute,
   AppNotificationsRoute: AppNotificationsRoute,
   AppPosRoute: AppPosRoute,

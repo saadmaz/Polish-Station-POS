@@ -1,5 +1,5 @@
 import jsPDF from "jspdf";
-import type { Invoice, InvoiceLine, Job, PurchaseOrder } from "./db";
+import type { Invoice, InvoiceLine, PurchaseOrder } from "./db";
 import { getPayments, getAmountRefunded, getBusinessInfo } from "./db";
 import { LOGO_PNG_BASE64 } from "./logo-asset";
 
@@ -447,15 +447,12 @@ function buildDoc(opts: DocOptions): jsPDF {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-export function downloadInvoicePDF(invoice: Invoice, job?: Job) {
+export function downloadInvoicePDF(invoice: Invoice) {
   const doc = buildDoc({
     docType: "INVOICE",
     docId: invoice.id,
     docDate: invoice.createdAt,
     customerName: invoice.customerName,
-    phone: job?.phone,
-    plate: job?.plate,
-    vehicleModel: job?.vehicleModel,
     lines: invoice.lines,
     subtotal: invoice.subtotal,
     couponCode: invoice.couponCode,

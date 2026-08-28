@@ -452,7 +452,7 @@ function BaysPanel() {
     <>
       <SectionTitle
         title="Bays & Capacity"
-        desc="The physical service bays jobs and bookings get assigned to. Currently just the one. Add a row here the day a second bay opens, and it shows up everywhere (Jobs, Bay Board, Bookings, Walk-In) immediately."
+        desc="The physical service bays bookings get assigned to. Currently just the one. Add a row here the day a second bay opens, and it shows up everywhere (Bookings, Settings) immediately."
       />
       <div className="space-y-2">
         {form.map((b, i) => (

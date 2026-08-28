@@ -3,7 +3,6 @@ import { useState } from "react";
 import {
   Bell,
   MessageCircle,
-  Star,
   Settings2,
   Send,
   CheckCircle2,
@@ -22,7 +21,7 @@ export const Route = createFileRoute("/_app/notifications")({
   component: NotificationsPage,
 });
 
-type Tab = "reminders" | "reviews" | "templates";
+type Tab = "reminders" | "templates";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -99,7 +98,7 @@ function RemindersTab() {
   const [preview, setPreview] = useState<string | null>(null);
 
   function handleSent(customerId: string, customerName: string, phone: string) {
-    recordNotification({ type: "service_reminder", customerId, jobId: null, customerName, phone });
+    recordNotification({ type: "service_reminder", customerId, customerName, phone });
     setSent((s) => new Set(s).add(customerId));
   }
 
@@ -232,152 +231,6 @@ function RemindersTab() {
   );
 }
 
-// ─── Review Requests Tab ──────────────────────────────────────────────────────
-
-function ReviewsTab() {
-  const { jobsNeedingReview, notificationSettingsData, recordNotification } = useStore();
-  const [sent, setSent] = useState<Set<string>>(new Set());
-  const [preview, setPreview] = useState<string | null>(null);
-
-  function handleSent(j: {
-    id: string;
-    customerId: string | null;
-    customerName: string;
-    phone: string;
-  }) {
-    recordNotification({
-      type: "review_request",
-      customerId: j.customerId,
-      jobId: j.id,
-      customerName: j.customerName,
-      phone: j.phone,
-    });
-    setSent((s) => new Set(s).add(j.id));
-  }
-
-  if (jobsNeedingReview.length === 0) {
-    return (
-      <div className="text-center py-16 text-muted-foreground">
-        <Star className="mx-auto mb-3 h-10 w-10 text-amber-400 opacity-60" />
-        <p className="font-medium">No pending review requests</p>
-        <p className="text-sm mt-1">
-          Review requests for recently completed jobs will appear here.
-        </p>
-      </div>
-    );
-  }
-
-  const reviewLink = notificationSettingsData.googleReviewLink;
-  if (!reviewLink) {
-    return (
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800/40 dark:bg-amber-900/20">
-        <p className="text-sm font-medium text-amber-700 dark:text-amber-400 flex items-center gap-2">
-          <Info className="h-4 w-4" /> Set your Google Review link in the{" "}
-          <strong>Templates & Settings</strong> tab first.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-card">
-      <table className="w-full">
-        <thead className="bg-muted/50">
-          <tr>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Customer
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Vehicle
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Service
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Completed
-            </th>
-            <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Notify
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {jobsNeedingReview.map((j) => {
-            const isSent = sent.has(j.id);
-            const msg = fillTemplate(notificationSettingsData.reviewRequestTemplate, {
-              customerName: j.customerName.split(" ")[0],
-              vehicle: j.vehicleModel,
-              plate: j.plate,
-              serviceName: j.serviceName,
-              daysSinceVisit: "",
-              reviewLink,
-            });
-            return (
-              <tr key={j.id} className={cn("border-t border-border", isSent && "opacity-50")}>
-                <td className="px-4 py-3">
-                  <div className="font-medium">{j.customerName}</div>
-                  <div className="text-xs text-muted-foreground">{j.phone}</div>
-                </td>
-                <td className="px-4 py-3 text-sm">
-                  <div>{j.vehicleModel}</div>
-                  <div className="font-mono text-xs text-muted-foreground">{j.plate}</div>
-                </td>
-                <td className="px-4 py-3 text-sm text-muted-foreground">{j.serviceName}</td>
-                <td className="px-4 py-3 text-sm text-muted-foreground">
-                  {j.completedAt ? fmtDate(j.completedAt) : "Today"}
-                </td>
-                <td className="px-4 py-3">
-                  {isSent ? (
-                    <span className="flex items-center gap-1.5 text-xs text-green-600 font-medium">
-                      <CheckCircle2 className="h-3.5 w-3.5" /> Sent
-                    </span>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <WAButton
-                        phone={j.phone}
-                        message={msg}
-                        label="Open in WhatsApp"
-                        onSent={() => handleSent(j)}
-                      />
-                      <button
-                        onClick={() => setPreview(preview === j.id ? null : j.id)}
-                        className="rounded p-1 text-muted-foreground hover:text-foreground"
-                        title="Preview"
-                      >
-                        {preview === j.id ? (
-                          <ChevronDown className="h-3.5 w-3.5" />
-                        ) : (
-                          <ChevronRight className="h-3.5 w-3.5" />
-                        )}
-                      </button>
-                    </div>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      {jobsNeedingReview.map((j) => {
-        if (preview !== j.id) return null;
-        const msg = fillTemplate(notificationSettingsData.reviewRequestTemplate, {
-          customerName: j.customerName.split(" ")[0],
-          vehicle: j.vehicleModel,
-          plate: j.plate,
-          serviceName: j.serviceName,
-          daysSinceVisit: "",
-          reviewLink,
-        });
-        return (
-          <div key={`preview-${j.id}`} className="border-t border-border bg-muted/10 px-6 py-3">
-            <PreviewBubble message={msg} />
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 // ─── Templates Tab ────────────────────────────────────────────────────────────
 
 function TemplatesTab() {
@@ -473,7 +326,6 @@ function TemplatesTab() {
 
       {/* Templates */}
       {[
-        { key: "jobReadyTemplate" as const, label: "Job Ready Notification", icon: "🚗" },
         { key: "serviceReminderTemplate" as const, label: "Service Reminder", icon: "📅" },
         { key: "reviewRequestTemplate" as const, label: "Google Review Request", icon: "⭐" },
       ].map(({ key, label, icon }) => (
@@ -522,7 +374,7 @@ function TemplatesTab() {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function NotificationsPage() {
-  const { customersNeedingReminder, jobsNeedingReview } = useStore();
+  const { customersNeedingReminder } = useStore();
   const [tab, setTab] = useState<Tab>("reminders");
 
   const tabs: {
@@ -537,12 +389,6 @@ function NotificationsPage() {
       icon: Clock3,
       badge: customersNeedingReminder.length || undefined,
     },
-    {
-      id: "reviews",
-      label: "Review Requests",
-      icon: Star,
-      badge: jobsNeedingReview.length || undefined,
-    },
     { id: "templates", label: "Templates & Settings", icon: Settings2 },
   ];
 
@@ -554,8 +400,7 @@ function NotificationsPage() {
           <Bell className="h-6 w-6 text-primary" /> Notifications & Reminders
         </h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Send service reminders and review requests via WhatsApp: one-click deep links, no backend
-          required
+          Send service reminders via WhatsApp: one-click deep links, no backend required
         </p>
       </div>
 
@@ -572,18 +417,11 @@ function NotificationsPage() {
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
           <div className="flex items-center gap-2">
-            <Star className="h-4 w-4 text-amber-400" />
-            <span className="text-xs text-muted-foreground">Review Requests</span>
-          </div>
-          <p className="mt-1 text-2xl font-bold text-amber-500">{jobsNeedingReview.length}</p>
-        </div>
-        <div className="col-span-2 sm:col-span-1 rounded-lg border border-border bg-card p-4">
-          <div className="flex items-center gap-2">
             <MessageCircle className="h-4 w-4 text-green-500" />
             <span className="text-xs text-muted-foreground">Total Pending</span>
           </div>
           <p className="mt-1 text-2xl font-bold text-green-600">
-            {customersNeedingReminder.length + jobsNeedingReview.length}
+            {customersNeedingReminder.length}
           </p>
         </div>
       </div>
@@ -614,7 +452,6 @@ function NotificationsPage() {
 
       {/* Tab content */}
       {tab === "reminders" && <RemindersTab />}
-      {tab === "reviews" && <ReviewsTab />}
       {tab === "templates" && <TemplatesTab />}
     </div>
   );

@@ -23,7 +23,6 @@ const COLLECTIONS = [
   "audit",
   "counters",
   "settings",
-  "jobs",
   "invoices",
   "shifts",
   "expenses",

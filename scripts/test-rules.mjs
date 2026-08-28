@@ -30,8 +30,6 @@ const ctx = (uid, role, perms, name = uid) =>
 const ALL = [
   "dashboard",
   "bookings",
-  "jobs",
-  "bay-board",
   "customers",
   "inventory",
   "equipment",

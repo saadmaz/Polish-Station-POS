@@ -7,8 +7,6 @@ import { getPayments, describePaymentMethods, type Invoice } from "@/lib/db";
 import {
   AreaChart,
   Area,
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -38,19 +36,17 @@ function dateFrom(period: Period): string {
   return "1970-01-01";
 }
 
-// Build daily revenue/jobs data from invoice + job arrays.
+// Build daily revenue data from the invoice array.
 // Cash/card split is computed per-payment, not per-invoice: a split-tender
 // invoice (part cash, part card) must contribute to both buckets correctly.
 function buildDailyData(
   invoices: Invoice[],
-  completedJobs: { completedAt?: string | null }[],
   days: number,
-): { date: string; cash: number; card: number; jobs: number }[] {
-  const result: { date: string; cash: number; card: number; jobs: number }[] = [];
+): { date: string; cash: number; card: number }[] {
+  const result: { date: string; cash: number; card: number }[] = [];
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
     const dayInvs = invoices.filter((inv) => inv.createdAt.startsWith(d));
-    const dayJobs = completedJobs.filter((j) => j.completedAt?.startsWith(d)).length;
     let cash = 0;
     let card = 0;
     for (const inv of dayInvs) {
@@ -59,18 +55,17 @@ function buildDailyData(
         else card += p.amount;
       }
     }
-    result.push({ date: d.slice(5), cash, card, jobs: dayJobs }); // MM-DD
+    result.push({ date: d.slice(5), cash, card }); // MM-DD
   }
   return result;
 }
 
 function Reports() {
-  const { invoices, jobs, bookings, customers, inventory, shifts, expenses } = useStore();
+  const { invoices, bookings, customers, inventory, shifts, expenses } = useStore();
   const [period, setPeriod] = useState<Period>("30d");
 
   const since = dateFrom(period);
   const filteredInvoices = invoices.filter((i) => i.createdAt >= since && i.status !== "Void");
-  const filteredJobs = jobs.filter((j) => j.createdAt >= since);
   const filteredBookings = bookings.filter((b) => b.date + "T00:00:00" >= since);
 
   // Revenue stats. Cash/card split is per-payment (a split-tender invoice
@@ -87,37 +82,30 @@ function Reports() {
   const avgInvoice =
     filteredInvoices.length > 0 ? Math.round(totalRevenue / filteredInvoices.length) : 0;
 
-  // Job stats
-  const completedJobs = filteredJobs.filter((j) => j.status === "Done Today" || j.completedAt);
-  const onTimeJobs = completedJobs.filter((j) => j.elapsedMin <= j.estimateMin);
-  const onTimePct =
-    completedJobs.length > 0 ? Math.round((onTimeJobs.length / completedJobs.length) * 100) : 0;
-  const avgDuration =
-    completedJobs.length > 0
-      ? Math.round(completedJobs.reduce((s, j) => s + j.elapsedMin, 0) / completedJobs.length)
-      : 0;
-
   // Booking stats
   const noShows = filteredBookings.filter((b) => b.status === "No-Show").length;
   const noShowPct =
     filteredBookings.length > 0 ? Math.round((noShows / filteredBookings.length) * 100) : 0;
   const checkedIn = filteredBookings.filter((b) => b.status === "Checked-In").length;
 
-  // Customer stats
-  const returningPlates = new Set<string>();
-  const newPlates = new Set<string>();
+  // Customer stats: split customers billed in this period into returning
+  // (had an invoice before the period started) vs new, keyed by customerId
+  // (falling back to the typed name for walk-ins with no matched record).
+  const returningCustomers = new Set<string>();
+  const newCustomers = new Set<string>();
   const sinceDate = since.slice(0, 10);
-  filteredJobs.forEach((j) => {
-    if (!j.plate) return;
-    const hadPriorJob = jobs.some(
-      (x) => x.plate === j.plate && x.createdAt.slice(0, 10) < sinceDate,
+  filteredInvoices.forEach((inv) => {
+    const key = inv.customerId ?? inv.customerName;
+    if (!key) return;
+    const hadPriorInvoice = invoices.some(
+      (x) => (x.customerId ?? x.customerName) === key && x.createdAt.slice(0, 10) < sinceDate,
     );
-    if (hadPriorJob) returningPlates.add(j.plate);
-    else newPlates.add(j.plate);
+    if (hadPriorInvoice) returningCustomers.add(key);
+    else newCustomers.add(key);
   });
   const retentionPct =
-    returningPlates.size + newPlates.size > 0
-      ? Math.round((returningPlates.size / (returningPlates.size + newPlates.size)) * 100)
+    returningCustomers.size + newCustomers.size > 0
+      ? Math.round((returningCustomers.size / (returningCustomers.size + newCustomers.size)) * 100)
       : 0;
 
   // Inventory stats
@@ -134,39 +122,6 @@ function Reports() {
         )
       : 0;
 
-  // Technician performance: jobs/revenue/on-time rate attributed to each tech
-  // over the period. Revenue is joined through the job a paid invoice came
-  // from, same join `_app.staff.tsx` already uses for its per-tech stats.
-  const techNames = Array.from(new Set(filteredJobs.map((j) => j.tech).filter(Boolean)));
-  const techStats = techNames
-    .map((tech) => {
-      const techJobs = filteredJobs.filter((j) => j.tech === tech);
-      const techDone = techJobs.filter((j) => j.status === "Done Today" || j.completedAt);
-      const techRevenue = filteredInvoices
-        .filter((i) => jobs.find((j) => j.id === i.jobId)?.tech === tech)
-        .reduce((s, i) => s + i.total, 0);
-      const onTime =
-        techDone.length > 0
-          ? Math.round(
-              (techDone.filter((j) => j.elapsedMin <= j.estimateMin).length / techDone.length) *
-                100,
-            )
-          : 0;
-      const avgDur =
-        techDone.length > 0
-          ? Math.round(techDone.reduce((s, j) => s + j.elapsedMin, 0) / techDone.length)
-          : 0;
-      return {
-        tech,
-        jobsCompleted: techDone.length,
-        revenue: techRevenue,
-        onTime,
-        avgDuration: avgDur,
-      };
-    })
-    .sort((a, b) => b.revenue - a.revenue);
-  const topTech = techStats[0];
-
   // Customer lifetime value: ranked by total spend, with average order
   // value (spend / visits) so a customer with one big-ticket visit reads
   // differently from a customer with many small repeat visits.
@@ -182,7 +137,7 @@ function Reports() {
 
   // Profit & loss: real revenue (invoices) minus real cash-out (expenses),
   // not a fabricated per-service margin: there's no cost-of-goods link from
-  // a job/service to the inventory it consumed, so a per-service "profit"
+  // a service to the inventory it consumed, so a per-service "profit"
   // number would just be invented. This is the honest number available.
   const filteredExpenses = expenses.filter((e) => e.createdAt >= since && e.type === "EXPENSE");
   const totalExpenseAmt = filteredExpenses.reduce((s, e) => s + e.amount, 0);
@@ -196,7 +151,7 @@ function Reports() {
 
   // Chart data: last 14 days for "today"/"7d", last 30 for "30d", last 60 for "all"
   const chartDays = period === "today" ? 14 : period === "7d" ? 14 : period === "30d" ? 30 : 60;
-  const dailyData = buildDailyData(filteredInvoices, completedJobs, chartDays);
+  const dailyData = buildDailyData(filteredInvoices, chartDays);
 
   const reports = [
     {
@@ -233,42 +188,6 @@ function Reports() {
         ),
     },
     {
-      name: "Job Performance",
-      desc: `${completedJobs.length} completed · ${avgDuration}m avg duration`,
-      metric: `${filteredJobs.length} jobs`,
-      delta: `${onTimePct}% on-time`,
-      color: "text-info",
-      exportFn: () =>
-        exportCSV(
-          ["Job ID", "Customer", "Service", "Tech", "Status", "Elapsed", "Estimate"],
-          filteredJobs.map((j) => [
-            j.id,
-            j.customerName,
-            j.serviceName,
-            j.tech,
-            j.status,
-            j.elapsedMin,
-            j.estimateMin,
-          ]),
-          "job-performance",
-        ),
-    },
-    {
-      name: "Technician Performance",
-      desc: topTech
-        ? `Top: ${topTech.tech} · LKR ${topTech.revenue.toLocaleString()}`
-        : "No jobs in this period",
-      metric: `${techStats.length} techs`,
-      delta: topTech ? `${topTech.onTime}% on-time` : "—",
-      color: "text-info",
-      exportFn: () =>
-        exportCSV(
-          ["Technician", "Jobs Completed", "Revenue", "On-Time %", "Avg Duration (min)"],
-          techStats.map((t) => [t.tech, t.jobsCompleted, t.revenue, t.onTime, t.avgDuration]),
-          "technician-performance",
-        ),
-    },
-    {
       name: "Booking Analytics",
       desc: `${checkedIn} checked in · ${noShows} no-shows`,
       metric: `${filteredBookings.length} bookings`,
@@ -290,7 +209,7 @@ function Reports() {
     },
     {
       name: "Customer Report",
-      desc: `${returningPlates.size} returning · ${newPlates.size} new vehicles`,
+      desc: `${returningCustomers.size} returning · ${newCustomers.size} new customers`,
       metric: `${retentionPct}% retention`,
       delta: `${customers.length} total customers`,
       color: "text-primary",
@@ -505,98 +424,6 @@ function Reports() {
             />
           </AreaChart>
         </ResponsiveContainer>
-      </div>
-
-      {/* Jobs per day chart */}
-      <div className="mt-4 rounded-xl border border-border bg-card p-5 shadow-card">
-        <h2 className="font-display font-bold mb-4">Completed Jobs per Day</h2>
-        <ResponsiveContainer width="100%" height={160}>
-          <BarChart data={dailyData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-            <XAxis
-              dataKey="date"
-              tick={{ fontSize: 11 }}
-              tickLine={false}
-              interval="preserveStartEnd"
-              minTickGap={24}
-            />
-            <YAxis
-              allowDecimals={false}
-              tick={{ fontSize: 11 }}
-              tickLine={false}
-              axisLine={false}
-            />
-            <Tooltip
-              formatter={(val: number) => [val, "Jobs"]}
-              contentStyle={{ fontSize: 12, borderRadius: 8 }}
-            />
-            <Bar dataKey="jobs" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Technician performance breakdown */}
-      <div className="mt-4 rounded-xl border border-border bg-card shadow-card">
-        <div className="px-5 py-3 border-b border-border">
-          <h2 className="font-display font-bold">Technician Performance</h2>
-        </div>
-
-        {/* Mobile: stacked cards */}
-        <div className="divide-y divide-border md:hidden">
-          {techStats.map((t) => (
-            <div key={t.tech} className="flex items-center justify-between gap-3 px-5 py-3">
-              <div className="min-w-0">
-                <div className="font-medium truncate">{t.tech}</div>
-                <div className="text-xs text-muted-foreground">
-                  {t.jobsCompleted} jobs · {t.onTime}% on-time · {t.avgDuration}m avg
-                </div>
-              </div>
-              <span className="shrink-0 font-mono font-semibold">
-                LKR {t.revenue.toLocaleString()}
-              </span>
-            </div>
-          ))}
-          {techStats.length === 0 && (
-            <div className="px-5 py-6 text-center text-sm text-muted-foreground">
-              No jobs in this period
-            </div>
-          )}
-        </div>
-
-        {/* Tablet/desktop: table */}
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full text-sm">
-            <thead className="bg-charcoal text-charcoal-foreground text-[11px] uppercase tracking-wider">
-              <tr>
-                <th className="text-left px-5 py-2.5">Technician</th>
-                <th className="text-right px-3 py-2.5">Jobs Completed</th>
-                <th className="text-right px-3 py-2.5">Revenue</th>
-                <th className="text-right px-3 py-2.5">On-Time</th>
-                <th className="text-right px-3 py-2.5">Avg Duration</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {techStats.map((t) => (
-                <tr key={t.tech}>
-                  <td className="px-5 py-2.5 font-medium">{t.tech}</td>
-                  <td className="px-3 py-2.5 text-right font-mono">{t.jobsCompleted}</td>
-                  <td className="px-3 py-2.5 text-right font-mono font-semibold">
-                    LKR {t.revenue.toLocaleString()}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono">{t.onTime}%</td>
-                  <td className="px-3 py-2.5 text-right font-mono">{t.avgDuration}m</td>
-                </tr>
-              ))}
-              {techStats.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-5 py-6 text-center text-muted-foreground">
-                    No jobs in this period
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
       </div>
 
       {/* Top customers by lifetime value */}

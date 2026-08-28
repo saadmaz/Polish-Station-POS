@@ -88,7 +88,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:title", content: "Polish Station OS" },
       {
         property: "og:description",
-        content: "POS, bookings, jobs, inventory and reports for detailing operations.",
+        content: "POS, bookings, inventory and reports for detailing operations.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
