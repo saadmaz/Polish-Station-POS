@@ -75,6 +75,16 @@ jobs:
       # assets have content-hashed names). tmp/ deliberately does NOT use it:
       # restart.txt's fresh mtime is what tells Passenger to restart the app,
       # so it must always re-upload rather than get skipped on a size match.
+      # The host's FTP brute-force/anti-abuse protection occasionally refuses
+      # the connection outright ("Connection refused") for a few minutes at a
+      # time, independent of anything this workflow does wrong — observed on
+      # ~1 in 3 recent deploys. lftp's own net:max-retries exhausts in well
+      # under a minute, which isn't long enough to ride that out, so the whole
+      # attempt (fresh `open` included, in case the block is IP- or
+      # session-scoped) is retried with a growing backoff. This never risks a
+      # half-deployed site: a connection-refused failure happens before
+      # `mirror` transfers anything, so a retry either starts clean or picks
+      # up an already-consistent remote state.
       - name: Deploy over FTPS with lftp
         timeout-minutes: 15
         env:
@@ -84,24 +94,40 @@ jobs:
         run: |
           sudo apt-get update -y && sudo apt-get install -y lftp
           REMOTE_DIR=/home/polishst/pos.polishstation.lk
-          lftp -c "
-            set cmd:fail-exit yes;
-            set ssl:verify-certificate no;
-            set ftp:ssl-force true;
-            set ftp:ssl-protect-data true;
-            set net:timeout 20;
-            set net:max-retries 2;
-            set net:reconnect-interval-base 5;
-            set mirror:parallel-transfer-count 4;
-            open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
-            mirror -R --delete --ignore-time --parallel=4 ./deploy/dist/ $REMOTE_DIR/dist/;
-            put ./deploy/start.mjs -o $REMOTE_DIR/start.mjs;
-            put ./deploy/package.json -o $REMOTE_DIR/package.json;
-            put ./htaccess -o $REMOTE_DIR/.htaccess;
-            mirror -R ./deploy/tmp/ $REMOTE_DIR/tmp/;
-          "
-          # --delete on dist/: built assets are content-hashed, so without it
-          # every deploy leaves the previous build's files behind forever.
+
+          deploy_once() {
+            lftp -c "
+              set cmd:fail-exit yes;
+              set ssl:verify-certificate no;
+              set ftp:ssl-force true;
+              set ftp:ssl-protect-data true;
+              set net:timeout 20;
+              set net:max-retries 2;
+              set net:reconnect-interval-base 5;
+              set mirror:parallel-transfer-count 4;
+              open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
+              mirror -R --delete --ignore-time --parallel=4 ./deploy/dist/ $REMOTE_DIR/dist/;
+              put ./deploy/start.mjs -o $REMOTE_DIR/start.mjs;
+              put ./deploy/package.json -o $REMOTE_DIR/package.json;
+              put ./htaccess -o $REMOTE_DIR/.htaccess;
+              mirror -R ./deploy/tmp/ $REMOTE_DIR/tmp/;
+            "
+            # --delete on dist/: built assets are content-hashed, so without it
+            # every deploy leaves the previous build's files behind forever.
+          }
+
+          max_attempts=4
+          attempt=1
+          until deploy_once; do
+            if [ "$attempt" -ge "$max_attempts" ]; then
+              echo "lftp deploy failed after $attempt attempts, giving up."
+              exit 1
+            fi
+            wait=$((45 * attempt))
+            echo "lftp deploy attempt $attempt failed (likely the host's FTP protection), retrying in ${wait}s..."
+            sleep "$wait"
+            attempt=$((attempt + 1))
+          done
 
       # restart.txt above makes Passenger tear down and respawn the Node
       # process. Without this step, the FIRST real request after a deploy —
@@ -146,6 +172,28 @@ jobs:
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
         run: |
           REMOTE_DIR=/home/polishst/pos.polishstation.lk
+
+          # This step is purely informational (if: always(), and the main
+          # session below is || true'd), but a still-active FTP block from
+          # the deploy step above previously made every command in the big
+          # lftp session retry-and-fail one by one until the step's own
+          # 5-minute timeout killed it — which marks the *step* (and so the
+          # whole run) as failed even when the actual deploy succeeded. Probe
+          # with a single, cheap, no-retry connection first and skip the rest
+          # outright if the host is still refusing it.
+          if ! lftp -c "
+            set ssl:verify-certificate no;
+            set ftp:ssl-force true;
+            set ftp:ssl-protect-data true;
+            set net:timeout 15;
+            set net:max-retries 1;
+            open -u \"$FTP_USERNAME\",\"$FTP_PASSWORD\" ftp://$FTP_HOST:21;
+            pwd;
+          " > /dev/null 2>&1; then
+            echo "FTP host still unreachable/refusing connections — skipping diagnostics (non-fatal)."
+            exit 0
+          fi
+
           # Single lftp session for everything: the host's brute-force
           # protection counts FTP logins, and multiple sessions per run got the
           # CI temporarily blocked with "530 Login authentication failed".

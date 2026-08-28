@@ -62,7 +62,7 @@ const MUST_CHANGE_KEY = "ps_must_change_pin";
 
 // ── Resilient login ─────────────────────────────────────────────────────────
 
-function withClientTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+export function withClientTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   return Promise.race([
     p,
     new Promise<never>((_, reject) =>
@@ -73,34 +73,41 @@ function withClientTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<
 
 /**
  * The app runs on shared hosting whose outbound network intermittently stalls a
- * single Firestore call inside loginFn: the request reaches the server and
- * simply never returns (observed hanging 45s+), even on a warm worker, roughly
- * 1 attempt in 4. A keep-warm can't fix a per-request stall, so the client
- * time-boxes each attempt and retries: with ~75% per-attempt success, three
- * tries make login succeed ~98% of the time and cap the worst case at ~30s
- * instead of an indefinite hang.
+ * single server-function call: the request reaches the server and simply
+ * never returns (observed hanging 45s+), even on a warm worker. The same
+ * stall shows up for minutes at a time right after a deploy, while Passenger
+ * respawns the Node process and CI's own warm-up loop (up to ~60s, see
+ * .github/workflows/deploy.yml) is still chasing /healthz. A keep-warm can't
+ * fix either case, so the client time-boxes each attempt and retries: 8
+ * attempts at 10s plus a 1.5s pause between them budgets ~91s total, enough
+ * to ride out a typical deploy-restart window as a longer spinner instead of
+ * a hard "couldn't reach the server" that makes someone re-enter their PIN.
  *
- * Retrying is safe: a correct PIN never increments the fail counter, and a
- * wrong PIN / locked / inactive account returns a *result* in well under the
- * per-attempt timeout, so those answers are returned immediately and never
- * trigger a retry; only a genuine timeout/network error does.
+ * Retrying is safe here because a *logical* result (wrong PIN, locked,
+ * inactive, wrong current PIN, etc.) always comes back well under the
+ * per-attempt timeout and is returned immediately without retrying; only a
+ * genuine timeout/network error triggers another attempt.
  */
-async function loginWithRetry(
-  username: string,
-  pin: string,
-  attempts = 5,
+export async function retryTransient<T>(
+  attempt: () => Promise<T>,
+  what: string,
+  attempts = 8,
   perAttemptMs = 10_000,
-): Promise<LoginResult> {
+): Promise<T> {
   let lastErr: unknown;
   for (let i = 0; i < attempts; i++) {
     try {
-      return await withClientTimeout(loginFn({ data: { username, pin } }), perAttemptMs, "login");
+      return await withClientTimeout(attempt(), perAttemptMs, what);
     } catch (err) {
-      lastErr = err; // transient stall / cache-warming, so pause and try again
+      lastErr = err; // transient stall / cold start, so pause and try again
       if (i < attempts - 1) await new Promise((r) => setTimeout(r, 1500));
     }
   }
-  throw lastErr instanceof Error ? lastErr : new Error("Login failed");
+  throw lastErr instanceof Error ? lastErr : new Error(`${what} failed`);
+}
+
+async function loginWithRetry(username: string, pin: string): Promise<LoginResult> {
+  return retryTransient(() => loginFn({ data: { username, pin } }), "login");
 }
 
 const AuthContext = createContext<AuthState | null>(null);

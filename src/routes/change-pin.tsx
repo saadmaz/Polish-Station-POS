@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate, Navigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { KeyRound, Loader2, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
-import { useAuth } from "@/lib/auth";
+import { useAuth, retryTransient } from "@/lib/auth";
 import { auth as firebaseAuth } from "@/lib/firebase";
 import { changeOwnPinFn } from "@/server/auth";
 
@@ -57,7 +57,14 @@ function ChangePin() {
         return;
       }
 
-      const result = await changeOwnPinFn({ data: { idToken, currentPin, newPin } });
+      // Same retry/timeout treatment as login: a stalled request here would
+      // otherwise hang the "busy" state forever instead of ever surfacing an
+      // error, and this screen is exactly where a just-reset PIN forces
+      // someone through right after a deploy's cold start.
+      const result = await retryTransient(
+        () => changeOwnPinFn({ data: { idToken, currentPin, newPin } }),
+        "change-pin",
+      );
 
       if (result.success) {
         clearMustChangePin();
