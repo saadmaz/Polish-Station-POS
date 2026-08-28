@@ -51,11 +51,10 @@ function rule(doc: jsPDF, y: number, color = RULE) {
 }
 
 function drawLogo(doc: jsPDF, x: number, y: number, box: number) {
-  doc.setFillColor(...WHITE);
-  doc.roundedRect(x, y, box, box, 1.5, 1.5, "F");
-  const pad = box * 0.12;
-  const inner = box - pad * 2;
-  doc.addImage(LOGO_PNG_BASE64, "PNG", x + pad, y + pad, inner, inner);
+  // No background plate: the source PNG is already transparent outside the
+  // circular badge, so it sits directly on the (now black) header without
+  // needing a white placeholder square behind it.
+  doc.addImage(LOGO_PNG_BASE64, "PNG", x, y, box, box);
 }
 
 function badge(
@@ -107,11 +106,11 @@ function buildDoc(opts: DocOptions): jsPDF {
   let y = 0;
 
   // ── Header bar ───────────────────────────────────────────────────────────────
-  // Flat fill on purpose: a hard-edged two-tone block used to sit here and
-  // read as a rendering glitch (a visible seam cutting the header in half,
-  // right where the invoice number/date print) rather than an intentional
-  // design.
-  doc.setFillColor(...RED);
+  // Black, not brand red: lets the logo's own red/silver badge sit directly on
+  // it with no white placeholder plate behind it. Red is used as the accent
+  // for the black structural blocks lower on the page instead (table header,
+  // total box) rather than being spent on the banner.
+  doc.setFillColor(...CHARCOAL);
   doc.rect(0, 0, PW, 42, "F");
 
   // Logo mark
@@ -204,8 +203,8 @@ function buildDoc(opts: DocOptions): jsPDF {
   y += 8;
 
   // ── Line items table ──────────────────────────────────────────────────────────
-  // Table header background
-  doc.setFillColor(...CHARCOAL);
+  // Table header background — brand red, freed up now the top banner is black.
+  doc.setFillColor(...RED);
   doc.rect(ML, y - 5, CW, 8, "F");
 
   doc.setFont("helvetica", "bold");
@@ -321,7 +320,7 @@ function buildDoc(opts: DocOptions): jsPDF {
 
   y += 1;
   // Total box
-  doc.setFillColor(...CHARCOAL);
+  doc.setFillColor(...RED);
   doc.roundedRect(TL - 4, y - 5.5, TV - TL + 8, 10, 1.5, 1.5, "F");
 
   doc.setFont("helvetica", "bold");
@@ -476,8 +475,8 @@ export function downloadPOPDF(po: PurchaseOrder) {
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
   let y = 0;
 
-  // Header bar
-  doc.setFillColor(...RED);
+  // Header bar — black, matching buildDoc(); see the comment there.
+  doc.setFillColor(...CHARCOAL);
   doc.rect(0, 0, PW, 42, "F");
 
   const LOGO_BOX = 15;
@@ -546,7 +545,7 @@ export function downloadPOPDF(po: PurchaseOrder) {
   y += 8;
 
   // Line items table
-  doc.setFillColor(...CHARCOAL);
+  doc.setFillColor(...RED);
   doc.rect(ML, y - 5, CW, 8, "F");
 
   doc.setFont("helvetica", "bold");
@@ -614,7 +613,7 @@ export function downloadPOPDF(po: PurchaseOrder) {
 
   // Total box
   const TL = MR - 78;
-  doc.setFillColor(...CHARCOAL);
+  doc.setFillColor(...RED);
   doc.roundedRect(TL - 4, y - 5.5, MR - TL + 8, 10, 1.5, 1.5, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
