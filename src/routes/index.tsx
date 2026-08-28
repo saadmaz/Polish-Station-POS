@@ -33,6 +33,10 @@ function Login() {
   const [now, setNow] = useState<Date | null>(null);
 
   const trapRef = useRef<HTMLInputElement>(null);
+  // Read by the version-check ping below, which is set up once at mount and
+  // must not re-subscribe every time `busy` changes.
+  const busyRef = useRef(false);
+  busyRef.current = busy;
 
   const ready = username.trim().length >= 3 && locked === 0 && !busy;
 
@@ -67,17 +71,30 @@ function Login() {
   // tab that never reloads to pick it up. If /healthz reports a newer build
   // than this bundle was compiled with, reload; nobody's mid-PIN-entry loses
   // anything meaningful on the login screen, unlike doing this post-login.
+  //
+  // This has to keep checking on an interval, not just once at mount +5s:
+  // the whole point is a tab that's been sitting open on this exact screen
+  // since before the last deploy, so a deploy landing *after* those two
+  // early pings would otherwise never be noticed until someone manually
+  // reloads. Skips a reload while a login attempt is actually in flight so
+  // it doesn't abort someone's retry mid-PIN-entry.
   useEffect(() => {
     const ping = () =>
       void fetch("/healthz", { cache: "no-store" })
         .then((r) => {
           const serverBuild = r.headers.get("X-Build-Id");
-          if (serverBuild && serverBuild !== __BUILD_ID__) window.location.reload();
+          if (serverBuild && serverBuild !== __BUILD_ID__ && !busyRef.current) {
+            window.location.reload();
+          }
         })
         .catch(() => {});
     ping();
     const t = setTimeout(ping, 5000);
-    return () => clearTimeout(t);
+    const i = setInterval(ping, 2 * 60 * 1000);
+    return () => {
+      clearTimeout(t);
+      clearInterval(i);
+    };
   }, []);
 
   // Clock
