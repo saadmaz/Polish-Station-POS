@@ -808,6 +808,11 @@ async function seedUiTestData() {
   await writeAll("purchaseOrders", purchaseOrders);
   await writeAll("leads", leads);
   await writeAll("shifts", shifts);
+  // Bookings above are assigned across all of BAYS, so the settings/bays doc
+  // has to list them all too -- otherwise Day view's grid only renders
+  // columns for whatever `bays` the store falls back to (just "Bay 1"),
+  // and every booking on an unlisted bay silently disappears from view.
+  await db.collection("settings").doc("bays").set({ bays: BAYS });
 
   const staffBatch = db.batch();
   for (const s of UI_STAFF) {

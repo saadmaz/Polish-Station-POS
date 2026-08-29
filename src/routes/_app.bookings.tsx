@@ -18,6 +18,7 @@ import { useStore } from "@/lib/store";
 import { formatCurrency } from "@/lib/currency";
 import { formatDateWithWeekday, formatWeekRange } from "@/lib/date-format";
 import { todayBusinessDate, addBusinessDays } from "@/lib/business-day";
+import { layoutOverlaps } from "@/lib/calendar-layout";
 import { BookingSheet } from "@/components/booking-sheet";
 import { StatusChip, statusVariant } from "@/components/status-chip";
 import { PageHeader } from "@/components/page-header";
@@ -273,17 +274,36 @@ function Bookings() {
               {HOURS.map((h) => (
                 <div key={h} className="h-16 border-b border-border" />
               ))}
-              {byBay[bay]?.map((b) => {
+              {layoutOverlaps(
+                byBay[bay] ?? [],
+                (b) => {
+                  const [h, m] = b.time.split(":").map(Number);
+                  return h * 60 + m;
+                },
+                (b) => {
+                  const [h, m] = b.time.split(":").map(Number);
+                  return h * 60 + m + b.durationMin;
+                },
+              ).map(({ item: b, col, cols }) => {
                 const [h, m] = b.time.split(":").map(Number);
                 const startPx = (h - 8) * 64 + (m / 60) * 64;
                 const heightPx = Math.max(28, (b.durationMin / 60) * 64 - 4);
                 const color = CAT_COLORS[b.category] ?? "var(--primary)";
                 const isActive = activeCard === b.id;
+                // Overlapping bookings (audit B1) sit side by side in their
+                // own column instead of stacked identically; an expanded
+                // card reclaims the full bay width so its detail view isn't
+                // squeezed into a sliver.
+                const widthPct = 100 / cols;
+                const gutter = 6;
+                const gap = 3;
+                const leftInset = col === 0 ? gutter : gap / 2;
+                const rightInset = col === cols - 1 ? gutter : gap / 2;
                 return (
                   <div
                     key={b.id}
                     className={cn(
-                      "absolute left-1.5 right-1.5 rounded-md border-l-[3px] bg-card px-2 py-1.5 cursor-pointer overflow-hidden hover:shadow-card transition-shadow",
+                      "absolute rounded-md border-l-[3px] bg-card px-2 py-1.5 cursor-pointer overflow-hidden hover:shadow-card transition-shadow",
                       b.status === "Cancelled" && "opacity-40",
                     )}
                     style={{
@@ -292,6 +312,10 @@ function Bookings() {
                       minHeight: heightPx,
                       borderLeftColor: color,
                       zIndex: isActive ? 20 : 1,
+                      left: isActive ? gutter : `calc(${col * widthPct}% + ${leftInset}px)`,
+                      right: isActive
+                        ? gutter
+                        : `calc(${100 - (col + 1) * widthPct}% + ${rightInset}px)`,
                     }}
                     onClick={() => setActiveCard(isActive ? null : b.id)}
                   >
@@ -381,7 +405,8 @@ function Bookings() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setCurrentDate((d) => addBusinessDays(d, view === "week" ? -7 : -1))}
-                className="rounded-md p-1.5 hover:bg-muted"
+                className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label={view === "week" ? "Previous week" : "Previous day"}
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
@@ -392,7 +417,8 @@ function Bookings() {
               </div>
               <button
                 onClick={() => setCurrentDate((d) => addBusinessDays(d, view === "week" ? 7 : 1))}
-                className="rounded-md p-1.5 hover:bg-muted"
+                className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label={view === "week" ? "Next week" : "Next day"}
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
@@ -403,7 +429,11 @@ function Bookings() {
                 Today
               </button>
             </div>
-            <div className="text-xs text-muted-foreground">{bookings.length} total bookings</div>
+            <div className="text-xs text-muted-foreground">
+              {view === "week"
+                ? `${weekBookings.length} bookings this week`
+                : `${todayBookings.length} bookings today`}
+            </div>
           </div>
 
           {/* Day view */}
@@ -446,16 +476,38 @@ function Bookings() {
                         {HOURS.map((h) => (
                           <div key={h} className="h-14 border-b border-border" />
                         ))}
-                        {dayBookings.map((b) => {
+                        {layoutOverlaps(
+                          dayBookings,
+                          (b) => {
+                            const [h, m] = b.time.split(":").map(Number);
+                            return h * 60 + m;
+                          },
+                          (b) => {
+                            const [h, m] = b.time.split(":").map(Number);
+                            return h * 60 + m + b.durationMin;
+                          },
+                        ).map(({ item: b, col, cols }) => {
                           const [h, m] = b.time.split(":").map(Number);
                           const startPx = (h - 8) * 56 + (m / 60) * 56;
                           const heightPx = Math.max(24, (b.durationMin / 60) * 56 - 4);
                           const color = CAT_COLORS[b.category] ?? "var(--primary)";
+                          // Same side-by-side overlap layout as Day view (B1).
+                          const widthPct = 100 / cols;
+                          const gutter = 4;
+                          const gap = 2;
+                          const leftInset = col === 0 ? gutter : gap / 2;
+                          const rightInset = col === cols - 1 ? gutter : gap / 2;
                           return (
                             <div
                               key={b.id}
-                              className="absolute left-1 right-1 rounded-md border-l-[3px] bg-card px-1.5 py-1 cursor-pointer overflow-hidden hover:shadow-card"
-                              style={{ top: startPx, height: heightPx, borderLeftColor: color }}
+                              className="absolute rounded-md border-l-[3px] bg-card px-1.5 py-1 cursor-pointer overflow-hidden hover:shadow-card"
+                              style={{
+                                top: startPx,
+                                height: heightPx,
+                                borderLeftColor: color,
+                                left: `calc(${col * widthPct}% + ${leftInset}px)`,
+                                right: `calc(${100 - (col + 1) * widthPct}% + ${rightInset}px)`,
+                              }}
                               title={`${b.customerName} · ${b.serviceName}`}
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -497,76 +549,74 @@ function Bookings() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {bookings
-                    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
-                    .map((b) => (
-                      <tr key={b.id} className="hover:bg-muted/40">
-                        <td className="px-5 py-3 font-mono text-xs">
-                          <div>{b.date}</div>
-                          <div className="text-muted-foreground">{b.time}</div>
-                        </td>
-                        <td className="px-3 py-3 font-medium">{b.customerName}</td>
-                        <td className="px-3 py-3">
-                          <div className="font-mono text-xs">{b.plate}</div>
-                          <div className="text-muted-foreground text-xs">{b.vehicleModel}</div>
-                        </td>
-                        <td className="px-3 py-3">{b.serviceName}</td>
-                        <td className="px-3 py-3 text-muted-foreground">{b.tech}</td>
-                        <td className="px-3 py-3 text-right font-mono font-semibold">
-                          {formatCurrency(b.price)}
-                        </td>
-                        <td className="px-3 py-3">
-                          {b.depositStatus && b.depositStatus !== "none" && (
-                            <span
-                              className={cn(
-                                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                                b.depositStatus === "paid"
-                                  ? "bg-success/10 text-success"
-                                  : "bg-warning/10 text-warning",
-                              )}
-                            >
-                              <Banknote className="h-3 w-3" />
-                              {b.depositStatus === "paid" ? "Dep. Paid" : "Dep. Req."}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-3 py-3">
-                          <StatusChip variant={statusVariant(b.status)}>{b.status}</StatusChip>
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex items-center gap-1">
-                            {b.depositStatus === "required" && (
-                              <button
-                                onClick={() => handleMarkDepositPaid(b.id)}
-                                className="rounded p-1.5 text-warning hover:bg-warning/10"
-                                title="Mark deposit received"
-                              >
-                                <Banknote className="h-3.5 w-3.5" />
-                              </button>
+                  {todayBookings.map((b) => (
+                    <tr key={b.id} className="hover:bg-muted/40">
+                      <td className="px-5 py-3 font-mono text-xs">
+                        <div>{b.date}</div>
+                        <div className="text-muted-foreground">{b.time}</div>
+                      </td>
+                      <td className="px-3 py-3 font-medium">{b.customerName}</td>
+                      <td className="px-3 py-3">
+                        <div className="font-mono text-xs">{b.plate}</div>
+                        <div className="text-muted-foreground text-xs">{b.vehicleModel}</div>
+                      </td>
+                      <td className="px-3 py-3">{b.serviceName}</td>
+                      <td className="px-3 py-3 text-muted-foreground">{b.tech}</td>
+                      <td className="px-3 py-3 text-right font-mono font-semibold">
+                        {formatCurrency(b.price)}
+                      </td>
+                      <td className="px-3 py-3">
+                        {b.depositStatus && b.depositStatus !== "none" && (
+                          <span
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                              b.depositStatus === "paid"
+                                ? "bg-success/10 text-success"
+                                : "bg-warning/10 text-warning",
                             )}
-                            {(b.status === "Confirmed" || b.status === "Pending") && (
-                              <button
-                                onClick={() => handleCheckin(b.id)}
-                                className="inline-flex items-center gap-1 rounded-md bg-success/10 border border-success/30 text-success px-2 py-1 text-xs font-semibold hover:bg-success/20"
-                                title="Check In"
-                              >
-                                <LogIn className="h-3 w-3" /> Check In
-                              </button>
-                            )}
+                          >
+                            <Banknote className="h-3 w-3" />
+                            {b.depositStatus === "paid" ? "Dep. Paid" : "Dep. Req."}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3">
+                        <StatusChip variant={statusVariant(b.status)}>{b.status}</StatusChip>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-1">
+                          {b.depositStatus === "required" && (
                             <button
-                              onClick={() => handleDelete(b.id)}
-                              className="rounded p-1.5 text-muted-foreground hover:text-primary hover:bg-muted"
+                              onClick={() => handleMarkDepositPaid(b.id)}
+                              className="rounded p-1.5 text-warning hover:bg-warning/10"
+                              title="Mark deposit received"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Banknote className="h-3.5 w-3.5" />
                             </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  {bookings.length === 0 && (
+                          )}
+                          {(b.status === "Confirmed" || b.status === "Pending") && (
+                            <button
+                              onClick={() => handleCheckin(b.id)}
+                              className="inline-flex items-center gap-1 rounded-md bg-success/10 border border-success/30 text-success px-2 py-1 text-xs font-semibold hover:bg-success/20"
+                              title="Check In"
+                            >
+                              <LogIn className="h-3 w-3" /> Check In
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDelete(b.id)}
+                            className="rounded p-1.5 text-muted-foreground hover:text-primary hover:bg-muted"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {todayBookings.length === 0 && (
                     <tr>
                       <td colSpan={9} className="text-center py-10 text-muted-foreground">
-                        No bookings yet
+                        No bookings for {formatDate(currentDate)}
                       </td>
                     </tr>
                   )}
