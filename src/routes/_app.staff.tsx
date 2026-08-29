@@ -1,11 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { useStaffList } from "@/lib/use-staff-list";
 import { useAuth } from "@/lib/auth";
-import { isManagerOrAbove } from "@/lib/permissions";
+import { isAdmin, isManagerOrAbove } from "@/lib/permissions";
 import { PageHeader } from "@/components/page-header";
-import { ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Trash2, X, Settings2 } from "lucide-react";
 import type { RotaShift } from "@/lib/db";
 import { formatWeekRange, formatFullDate } from "@/lib/date-format";
 import { cn } from "@/lib/utils";
@@ -17,10 +17,29 @@ export const Route = createFileRoute("/_app/staff")({
 
 function StaffPage() {
   const { staffList } = useStaffList();
+  const { staff } = useAuth();
 
   return (
     <div className="p-4 sm:p-6">
-      <PageHeader title="Staff" subtitle={`${staffList.length} team members`} />
+      <PageHeader
+        title="Staff"
+        subtitle={`${staffList.length} team members`}
+        actions={
+          // This page is read-only (the roster); create/edit/deactivate
+          // lives at Settings → Staff & Access. Surfacing that here is the
+          // fix for audit finding S3 -- there was previously no path from
+          // one to the other at all.
+          isAdmin(staff?.role) && (
+            <Link
+              to="/settings"
+              search={{ tab: "access" }}
+              className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent"
+            >
+              <Settings2 className="h-4 w-4" /> Manage Staff & Access
+            </Link>
+          )
+        }
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
         {staffList.map((s) => (

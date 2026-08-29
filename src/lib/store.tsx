@@ -142,9 +142,6 @@ interface Store {
   lowStockItems: InventoryItem[];
   overdueEquipment: Equipment[];
 
-  // mutations
-  refreshAll: () => void;
-
   // Equipment
   upsertEquipment: (eq: Equipment) => void;
   deleteEquipment: (id: string) => void;
@@ -1225,8 +1222,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const refreshAll = useCallback(() => {}, []); // no-op: onSnapshot handles refresh
-
   // ── Context value ──────────────────────────────────────────────────────────
   const value: Store = {
     storeLoading,
@@ -1249,7 +1244,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     openShift,
     lowStockItems,
     overdueEquipment,
-    refreshAll,
     upsertEquipment,
     deleteEquipment,
     addMaintenanceLog,

@@ -29,6 +29,11 @@ import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/settings")({
   head: () => ({ meta: [{ title: "Settings · Polish Station OS" }] }),
+  // Lets a link from elsewhere (e.g. /staff's "Manage" link) open straight
+  // on a given section instead of always landing on Business.
+  validateSearch: (search: Record<string, unknown>): { tab?: SectionId } => ({
+    tab: SECTIONS.some((s) => s.id === search.tab) ? (search.tab as SectionId) : undefined,
+  }),
   component: Settings,
 });
 
@@ -81,7 +86,8 @@ const SECTIONS = [
 type SectionId = (typeof SECTIONS)[number]["id"];
 
 function Settings() {
-  const [active, setActive] = useState<SectionId>("business");
+  const { tab } = Route.useSearch();
+  const [active, setActive] = useState<SectionId>(tab ?? "business");
   return (
     <div className="p-4 sm:p-6">
       <PageHeader title="Settings" subtitle="Admin-only · shift and payment actions audited" />

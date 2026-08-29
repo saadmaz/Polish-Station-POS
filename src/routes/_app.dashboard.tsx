@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { RefreshCw, AlertTriangle, Activity } from "lucide-react";
+import { AlertTriangle, Activity } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { computeDashboardMetrics } from "@/lib/dashboard-metrics";
 import { StatusChip, statusVariant } from "@/components/status-chip";
@@ -16,8 +16,7 @@ export const Route = createFileRoute("/_app/dashboard")({
 });
 
 function Dashboard() {
-  const { invoices, jobs, listenerErrors, openShift, inventory, lowStockItems, refreshAll } =
-    useStore();
+  const { invoices, jobs, listenerErrors, openShift, inventory, lowStockItems } = useStore();
   const [shiftOpen, setShiftOpen] = useState(false);
 
   // The one computation every KPI card and the timeline both read from —
@@ -69,12 +68,6 @@ function Dashboard() {
             >
               <Activity className="h-3.5 w-3.5" />
               {openShift ? `Shift · ${openShift.staffName.split(" ")[0]}` : "Open Shift"}
-            </button>
-            <button
-              onClick={refreshAll}
-              className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-accent"
-            >
-              <RefreshCw className="h-3.5 w-3.5" /> Refresh
             </button>
           </div>
         }
