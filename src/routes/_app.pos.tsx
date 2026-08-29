@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { isManagerOrAbove } from "@/lib/permissions";
 import { formatCurrency } from "@/lib/currency";
 import { formatDateTime } from "@/lib/date-format";
+import { useConfirm } from "@/hooks/use-confirm";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip, statusVariant } from "@/components/status-chip";
 import {
@@ -89,6 +90,7 @@ function POS() {
     mode: "collect" | "refund";
   } | null>(null);
   const [mobilePaymentOpen, setMobilePaymentOpen] = useState(false);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);
   const customerName = selectedCustomer?.name ?? manualCustomer;
@@ -326,8 +328,8 @@ function POS() {
           <button
             disabled={!row.canVoid}
             title={row.canVoid ? undefined : "Money already collected, use Refund instead"}
-            onClick={() => {
-              if (confirm(`Void ${i.id}?`)) {
+            onClick={async () => {
+              if (await confirm({ title: `Void ${i.id}?` })) {
                 voidInvoice(i.id);
                 toast.success(`${i.id} voided`);
               }
@@ -553,6 +555,7 @@ function POS() {
 
   return (
     <div className="grid grid-cols-1 gap-6 p-4 pb-28 sm:p-6 lg:h-full lg:grid-cols-[1fr_400px] lg:pb-6">
+      {ConfirmDialog}
       <div className="space-y-6">
         <PageHeader
           title="POS / Checkout"

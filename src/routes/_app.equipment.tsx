@@ -19,6 +19,7 @@ import { useStore } from "@/lib/store";
 import type { Equipment, MaintenanceLog, MaintenanceType, EquipmentStatus } from "@/lib/db";
 import { newId } from "@/lib/db";
 import { formatCurrency } from "@/lib/currency";
+import { useConfirm } from "@/hooks/use-confirm";
 import { formatDate } from "@/lib/date-format";
 import { cn } from "@/lib/utils";
 
@@ -358,6 +359,7 @@ function EquipmentRow({ eq }: { eq: Equipment }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [logging, setLogging] = useState(false);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   const logs = maintenanceLogsList
     .filter((m) => m.equipmentId === eq.id)
@@ -391,6 +393,7 @@ function EquipmentRow({ eq }: { eq: Equipment }) {
 
   return (
     <>
+      {ConfirmDialog}
       <tr
         className={cn(
           "border-t border-border transition-colors hover:bg-muted/30 cursor-pointer",
@@ -443,8 +446,9 @@ function EquipmentRow({ eq }: { eq: Equipment }) {
               <Pencil className="h-4 w-4" />
             </button>
             <button
-              onClick={() => {
-                if (confirm("Delete this equipment record?")) deleteEquipment(eq.id);
+              onClick={async () => {
+                if (await confirm({ title: "Delete this equipment record?" }))
+                  deleteEquipment(eq.id);
               }}
               className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
               title="Delete"
@@ -576,8 +580,9 @@ function EquipmentRow({ eq }: { eq: Equipment }) {
                           </td>
                           <td className="px-3 py-2">
                             <button
-                              onClick={() => {
-                                if (confirm("Delete this log entry?")) deleteMaintenanceLog(log.id);
+                              onClick={async () => {
+                                if (await confirm({ title: "Delete this log entry?" }))
+                                  deleteMaintenanceLog(log.id);
                               }}
                               className="rounded p-1 text-muted-foreground hover:text-destructive"
                               title="Delete"

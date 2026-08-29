@@ -9,6 +9,7 @@ import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import { getAmountPaid, getAmountRefunded, type Invoice, type PaymentMethod } from "@/lib/db";
 import { formatCurrency } from "@/lib/currency";
+import { useConfirm } from "@/hooks/use-confirm";
 import { cn } from "@/lib/utils";
 
 export interface TenderLine {
@@ -150,6 +151,7 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
   const [refundMethod, setRefundMethod] = useState<PaymentMethod>("Cash");
   const [refundReason, setRefundReason] = useState("");
   const [saving, setSaving] = useState(false);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   function handleCollect() {
     if (!openShift) {
@@ -179,7 +181,7 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
     onClose();
   }
 
-  function handleRefund() {
+  async function handleRefund() {
     if (!openShift) {
       toast.error("Open a shift first");
       return;
@@ -194,13 +196,14 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
       toast.error("A reason is required for refunds");
       return;
     }
-    // Irreversible money leaving the till — same confirm() gate Void already
-    // has (pos.tsx), which Refund was missing entirely (audit finding P4).
-    if (
-      !confirm(`Refund ${formatCurrency(refundAmount)} on ${invoice.id}? This cannot be undone.`)
-    ) {
-      return;
-    }
+    // Irreversible money leaving the till — same confirmation gate Void
+    // already has (pos.tsx), which Refund was missing entirely (audit
+    // finding P4).
+    const ok = await confirm({
+      title: `Refund ${formatCurrency(refundAmount)} on ${invoice.id}?`,
+      description: "This cannot be undone.",
+    });
+    if (!ok) return;
     setSaving(true);
     refundInvoicePayment(invoice.id, {
       amount: refundAmount,
@@ -217,6 +220,7 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {ConfirmDialog}
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative z-10 w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-card border border-border shadow-elevated p-6 mx-4">
         <div className="flex items-center justify-between mb-5">

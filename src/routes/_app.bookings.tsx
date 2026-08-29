@@ -21,6 +21,7 @@ import { todayBusinessDate, addBusinessDays } from "@/lib/business-day";
 import { BookingSheet } from "@/components/booking-sheet";
 import { StatusChip, statusVariant } from "@/components/status-chip";
 import { PageHeader } from "@/components/page-header";
+import { useConfirm } from "@/hooks/use-confirm";
 import { cn } from "@/lib/utils";
 import type { Booking, BookingStatus } from "@/lib/db";
 
@@ -169,6 +170,7 @@ function Bookings() {
   const [activeCard, setActiveCard] = useState<string | null>(null);
   const [widgetOpen, setWidgetOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   const widgetUrl = typeof window !== "undefined" ? `${window.location.origin}/book` : "/book";
   const embedCode = `<iframe src="${widgetUrl}?embed=true" width="100%" height="720" frameborder="0" style="border-radius:12px;border:1px solid #e5e7eb;"></iframe>`;
@@ -219,8 +221,8 @@ function Bookings() {
     setActiveCard(null);
   }
 
-  function handleDelete(id: string) {
-    if (!confirm("Delete this booking?")) return;
+  async function handleDelete(id: string) {
+    if (!(await confirm({ title: "Delete this booking?" }))) return;
     deleteBooking(id);
     toast.error("Booking deleted");
     setActiveCard(null);
@@ -326,330 +328,333 @@ function Bookings() {
   }
 
   return (
-    <div className="p-6">
-      <PageHeader
-        title="Bookings"
-        subtitle={
-          view === "week"
-            ? `${weekBookings.length} bookings for ${formatWeekRange(weekDates[0], weekDates[6])}`
-            : `${todayBookings.length} bookings for ${formatDate(currentDate)}`
-        }
-        actions={
-          <>
-            <div className="inline-flex rounded-md border border-input bg-background p-0.5 text-xs font-medium">
-              {(["day", "week", "list"] as const).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={cn(
-                    "rounded-md px-3 py-1.5 capitalize",
-                    view === v
-                      ? "bg-charcoal text-charcoal-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {v}
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => setWidgetOpen(true)}
-              className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
-            >
-              <Globe className="h-4 w-4" /> Online Widget
-            </button>
-            <button
-              onClick={() => setBookingOpen(true)}
-              className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90"
-            >
-              <Plus className="h-4 w-4" /> New Booking
-            </button>
-          </>
-        }
-      />
-
-      <div
-        className="rounded-xl border border-border bg-card shadow-card overflow-hidden"
-        onClick={() => setActiveCard(null)}
-      >
-        {/* Date nav */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-border">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setCurrentDate((d) => addBusinessDays(d, view === "week" ? -7 : -1))}
-              className="rounded-md p-1.5 hover:bg-muted"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <div className="font-display font-bold">
-              {view === "week"
-                ? formatWeekRange(weekDates[0], weekDates[6])
-                : formatDate(currentDate)}
-            </div>
-            <button
-              onClick={() => setCurrentDate((d) => addBusinessDays(d, view === "week" ? 7 : 1))}
-              className="rounded-md p-1.5 hover:bg-muted"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setCurrentDate(todayBusinessDate())}
-              className="text-xs text-muted-foreground hover:text-foreground border border-input rounded-md px-2 py-1"
-            >
-              Today
-            </button>
-          </div>
-          <div className="text-xs text-muted-foreground">{bookings.length} total bookings</div>
-        </div>
-
-        {/* Day view */}
-        {view === "day" && <DayGrid date={currentDate} />}
-
-        {/* Week view */}
-        {view === "week" && (
-          <div className="overflow-x-auto">
-            <div className="grid grid-cols-[60px_repeat(7,minmax(120px,1fr))] divide-x divide-border min-w-[900px]">
-              <div>
-                <div className="h-10 border-b border-border" />
-                {HOURS.map((h) => (
-                  <div
-                    key={h}
-                    className="h-14 border-b border-border px-2 py-1 text-[11px] font-mono text-muted-foreground"
+    <>
+      {ConfirmDialog}
+      <div className="p-6">
+        <PageHeader
+          title="Bookings"
+          subtitle={
+            view === "week"
+              ? `${weekBookings.length} bookings for ${formatWeekRange(weekDates[0], weekDates[6])}`
+              : `${todayBookings.length} bookings for ${formatDate(currentDate)}`
+          }
+          actions={
+            <>
+              <div className="inline-flex rounded-md border border-input bg-background p-0.5 text-xs font-medium">
+                {(["day", "week", "list"] as const).map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setView(v)}
+                    className={cn(
+                      "rounded-md px-3 py-1.5 capitalize",
+                      view === v
+                        ? "bg-charcoal text-charcoal-foreground"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
                   >
-                    {String(h).padStart(2, "0")}:00
-                  </div>
+                    {v}
+                  </button>
                 ))}
               </div>
-              {weekDates.map((date) => {
-                const dayBookings = bookings.filter((b) => b.date === date);
-                const isToday = date === todayBusinessDate();
-                return (
-                  <div key={date} className="relative">
-                    <div
-                      className={cn(
-                        "h-10 border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wider",
-                        isToday
-                          ? "bg-primary/10 text-primary"
-                          : "bg-muted/40 text-muted-foreground",
-                      )}
-                    >
-                      {new Date(date + "T00:00:00").toLocaleDateString([], {
-                        weekday: "short",
-                        day: "numeric",
-                      })}
-                    </div>
-                    <div className="relative">
-                      {HOURS.map((h) => (
-                        <div key={h} className="h-14 border-b border-border" />
-                      ))}
-                      {dayBookings.map((b) => {
-                        const [h, m] = b.time.split(":").map(Number);
-                        const startPx = (h - 8) * 56 + (m / 60) * 56;
-                        const heightPx = Math.max(24, (b.durationMin / 60) * 56 - 4);
-                        const color = CAT_COLORS[b.category] ?? "var(--primary)";
-                        return (
-                          <div
-                            key={b.id}
-                            className="absolute left-1 right-1 rounded-md border-l-[3px] bg-card px-1.5 py-1 cursor-pointer overflow-hidden hover:shadow-card"
-                            style={{ top: startPx, height: heightPx, borderLeftColor: color }}
-                            title={`${b.customerName} · ${b.serviceName}`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveCard(b.id === activeCard ? null : b.id);
-                              setCurrentDate(date);
-                              setView("day");
-                            }}
-                          >
-                            <div className="text-[10px] font-bold truncate">{b.customerName}</div>
-                            <div className="text-[10px] text-muted-foreground truncate">
-                              {b.serviceName}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+              <button
+                onClick={() => setWidgetOpen(true)}
+                className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+              >
+                <Globe className="h-4 w-4" /> Online Widget
+              </button>
+              <button
+                onClick={() => setBookingOpen(true)}
+                className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90"
+              >
+                <Plus className="h-4 w-4" /> New Booking
+              </button>
+            </>
+          }
+        />
 
-        {/* List view */}
-        {view === "list" && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-charcoal text-charcoal-foreground text-[11px] uppercase tracking-wider">
-                <tr>
-                  <th className="text-left px-5 py-2.5">Time</th>
-                  <th className="text-left px-3 py-2.5">Customer</th>
-                  <th className="text-left px-3 py-2.5">Vehicle</th>
-                  <th className="text-left px-3 py-2.5">Service</th>
-                  <th className="text-left px-3 py-2.5">Tech</th>
-                  <th className="text-right px-3 py-2.5">Price</th>
-                  <th className="text-left px-3 py-2.5">Deposit</th>
-                  <th className="text-left px-3 py-2.5">Status</th>
-                  <th className="w-28 px-3 py-2.5" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {bookings
-                  .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
-                  .map((b) => (
-                    <tr key={b.id} className="hover:bg-muted/40">
-                      <td className="px-5 py-3 font-mono text-xs">
-                        <div>{b.date}</div>
-                        <div className="text-muted-foreground">{b.time}</div>
-                      </td>
-                      <td className="px-3 py-3 font-medium">{b.customerName}</td>
-                      <td className="px-3 py-3">
-                        <div className="font-mono text-xs">{b.plate}</div>
-                        <div className="text-muted-foreground text-xs">{b.vehicleModel}</div>
-                      </td>
-                      <td className="px-3 py-3">{b.serviceName}</td>
-                      <td className="px-3 py-3 text-muted-foreground">{b.tech}</td>
-                      <td className="px-3 py-3 text-right font-mono font-semibold">
-                        {formatCurrency(b.price)}
-                      </td>
-                      <td className="px-3 py-3">
-                        {b.depositStatus && b.depositStatus !== "none" && (
-                          <span
-                            className={cn(
-                              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                              b.depositStatus === "paid"
-                                ? "bg-success/10 text-success"
-                                : "bg-warning/10 text-warning",
-                            )}
-                          >
-                            <Banknote className="h-3 w-3" />
-                            {b.depositStatus === "paid" ? "Dep. Paid" : "Dep. Req."}
-                          </span>
+        <div
+          className="rounded-xl border border-border bg-card shadow-card overflow-hidden"
+          onClick={() => setActiveCard(null)}
+        >
+          {/* Date nav */}
+          <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setCurrentDate((d) => addBusinessDays(d, view === "week" ? -7 : -1))}
+                className="rounded-md p-1.5 hover:bg-muted"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <div className="font-display font-bold">
+                {view === "week"
+                  ? formatWeekRange(weekDates[0], weekDates[6])
+                  : formatDate(currentDate)}
+              </div>
+              <button
+                onClick={() => setCurrentDate((d) => addBusinessDays(d, view === "week" ? 7 : 1))}
+                className="rounded-md p-1.5 hover:bg-muted"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setCurrentDate(todayBusinessDate())}
+                className="text-xs text-muted-foreground hover:text-foreground border border-input rounded-md px-2 py-1"
+              >
+                Today
+              </button>
+            </div>
+            <div className="text-xs text-muted-foreground">{bookings.length} total bookings</div>
+          </div>
+
+          {/* Day view */}
+          {view === "day" && <DayGrid date={currentDate} />}
+
+          {/* Week view */}
+          {view === "week" && (
+            <div className="overflow-x-auto">
+              <div className="grid grid-cols-[60px_repeat(7,minmax(120px,1fr))] divide-x divide-border min-w-[900px]">
+                <div>
+                  <div className="h-10 border-b border-border" />
+                  {HOURS.map((h) => (
+                    <div
+                      key={h}
+                      className="h-14 border-b border-border px-2 py-1 text-[11px] font-mono text-muted-foreground"
+                    >
+                      {String(h).padStart(2, "0")}:00
+                    </div>
+                  ))}
+                </div>
+                {weekDates.map((date) => {
+                  const dayBookings = bookings.filter((b) => b.date === date);
+                  const isToday = date === todayBusinessDate();
+                  return (
+                    <div key={date} className="relative">
+                      <div
+                        className={cn(
+                          "h-10 border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wider",
+                          isToday
+                            ? "bg-primary/10 text-primary"
+                            : "bg-muted/40 text-muted-foreground",
                         )}
-                      </td>
-                      <td className="px-3 py-3">
-                        <StatusChip variant={statusVariant(b.status)}>{b.status}</StatusChip>
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="flex items-center gap-1">
-                          {b.depositStatus === "required" && (
-                            <button
-                              onClick={() => handleMarkDepositPaid(b.id)}
-                              className="rounded p-1.5 text-warning hover:bg-warning/10"
-                              title="Mark deposit received"
+                      >
+                        {new Date(date + "T00:00:00").toLocaleDateString([], {
+                          weekday: "short",
+                          day: "numeric",
+                        })}
+                      </div>
+                      <div className="relative">
+                        {HOURS.map((h) => (
+                          <div key={h} className="h-14 border-b border-border" />
+                        ))}
+                        {dayBookings.map((b) => {
+                          const [h, m] = b.time.split(":").map(Number);
+                          const startPx = (h - 8) * 56 + (m / 60) * 56;
+                          const heightPx = Math.max(24, (b.durationMin / 60) * 56 - 4);
+                          const color = CAT_COLORS[b.category] ?? "var(--primary)";
+                          return (
+                            <div
+                              key={b.id}
+                              className="absolute left-1 right-1 rounded-md border-l-[3px] bg-card px-1.5 py-1 cursor-pointer overflow-hidden hover:shadow-card"
+                              style={{ top: startPx, height: heightPx, borderLeftColor: color }}
+                              title={`${b.customerName} · ${b.serviceName}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveCard(b.id === activeCard ? null : b.id);
+                                setCurrentDate(date);
+                                setView("day");
+                              }}
                             >
-                              <Banknote className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                          {(b.status === "Confirmed" || b.status === "Pending") && (
-                            <button
-                              onClick={() => handleCheckin(b.id)}
-                              className="inline-flex items-center gap-1 rounded-md bg-success/10 border border-success/30 text-success px-2 py-1 text-xs font-semibold hover:bg-success/20"
-                              title="Check In"
+                              <div className="text-[10px] font-bold truncate">{b.customerName}</div>
+                              <div className="text-[10px] text-muted-foreground truncate">
+                                {b.serviceName}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* List view */}
+          {view === "list" && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-charcoal text-charcoal-foreground text-[11px] uppercase tracking-wider">
+                  <tr>
+                    <th className="text-left px-5 py-2.5">Time</th>
+                    <th className="text-left px-3 py-2.5">Customer</th>
+                    <th className="text-left px-3 py-2.5">Vehicle</th>
+                    <th className="text-left px-3 py-2.5">Service</th>
+                    <th className="text-left px-3 py-2.5">Tech</th>
+                    <th className="text-right px-3 py-2.5">Price</th>
+                    <th className="text-left px-3 py-2.5">Deposit</th>
+                    <th className="text-left px-3 py-2.5">Status</th>
+                    <th className="w-28 px-3 py-2.5" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {bookings
+                    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
+                    .map((b) => (
+                      <tr key={b.id} className="hover:bg-muted/40">
+                        <td className="px-5 py-3 font-mono text-xs">
+                          <div>{b.date}</div>
+                          <div className="text-muted-foreground">{b.time}</div>
+                        </td>
+                        <td className="px-3 py-3 font-medium">{b.customerName}</td>
+                        <td className="px-3 py-3">
+                          <div className="font-mono text-xs">{b.plate}</div>
+                          <div className="text-muted-foreground text-xs">{b.vehicleModel}</div>
+                        </td>
+                        <td className="px-3 py-3">{b.serviceName}</td>
+                        <td className="px-3 py-3 text-muted-foreground">{b.tech}</td>
+                        <td className="px-3 py-3 text-right font-mono font-semibold">
+                          {formatCurrency(b.price)}
+                        </td>
+                        <td className="px-3 py-3">
+                          {b.depositStatus && b.depositStatus !== "none" && (
+                            <span
+                              className={cn(
+                                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                                b.depositStatus === "paid"
+                                  ? "bg-success/10 text-success"
+                                  : "bg-warning/10 text-warning",
+                              )}
                             >
-                              <LogIn className="h-3 w-3" /> Check In
-                            </button>
+                              <Banknote className="h-3 w-3" />
+                              {b.depositStatus === "paid" ? "Dep. Paid" : "Dep. Req."}
+                            </span>
                           )}
-                          <button
-                            onClick={() => handleDelete(b.id)}
-                            className="rounded p-1.5 text-muted-foreground hover:text-primary hover:bg-muted"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
+                        </td>
+                        <td className="px-3 py-3">
+                          <StatusChip variant={statusVariant(b.status)}>{b.status}</StatusChip>
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="flex items-center gap-1">
+                            {b.depositStatus === "required" && (
+                              <button
+                                onClick={() => handleMarkDepositPaid(b.id)}
+                                className="rounded p-1.5 text-warning hover:bg-warning/10"
+                                title="Mark deposit received"
+                              >
+                                <Banknote className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            {(b.status === "Confirmed" || b.status === "Pending") && (
+                              <button
+                                onClick={() => handleCheckin(b.id)}
+                                className="inline-flex items-center gap-1 rounded-md bg-success/10 border border-success/30 text-success px-2 py-1 text-xs font-semibold hover:bg-success/20"
+                                title="Check In"
+                              >
+                                <LogIn className="h-3 w-3" /> Check In
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDelete(b.id)}
+                              className="rounded p-1.5 text-muted-foreground hover:text-primary hover:bg-muted"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  {bookings.length === 0 && (
+                    <tr>
+                      <td colSpan={9} className="text-center py-10 text-muted-foreground">
+                        No bookings yet
                       </td>
                     </tr>
-                  ))}
-                {bookings.length === 0 && (
-                  <tr>
-                    <td colSpan={9} className="text-center py-10 text-muted-foreground">
-                      No bookings yet
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <BookingSheet open={bookingOpen} onOpenChange={setBookingOpen} />
+
+        {/* Online Widget modal */}
+        {widgetOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            onClick={() => setWidgetOpen(false)}
+          >
+            <div
+              className="w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-elevated"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h2 className="font-display font-bold text-foreground">Online Booking Widget</h2>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Share the link or embed the widget on your website.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setWidgetOpen(false)}
+                  className="rounded-md p-1.5 hover:bg-muted"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Direct Link
+                  </label>
+                  <div className="flex gap-2">
+                    <a
+                      href={widgetUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 truncate rounded-lg border border-input bg-muted/40 px-3 py-2 text-sm text-foreground hover:bg-muted"
+                    >
+                      {widgetUrl}
+                    </a>
+                    <a
+                      href={widgetUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-lg border border-input bg-background px-3 py-2 text-xs font-medium hover:bg-muted"
+                    >
+                      <Globe className="h-3.5 w-3.5" /> Open
+                    </a>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Embed Code (iFrame)
+                  </label>
+                  <div className="relative rounded-lg border border-input bg-muted/40 p-3 font-mono text-xs text-muted-foreground">
+                    <pre className="whitespace-pre-wrap break-all">{embedCode}</pre>
+                    <button
+                      onClick={copyEmbed}
+                      className="absolute top-2 right-2 flex items-center gap-1 rounded-md bg-background border border-input px-2 py-1 text-xs font-medium hover:bg-muted"
+                    >
+                      {copied ? (
+                        <Check className="h-3 w-3 text-success" />
+                      ) : (
+                        <Copy className="h-3 w-3" />
+                      )}
+                      {copied ? "Copied!" : "Copy"}
+                    </button>
+                  </div>
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Paste this snippet into your website's HTML to embed the booking form.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
-
-      <BookingSheet open={bookingOpen} onOpenChange={setBookingOpen} />
-
-      {/* Online Widget modal */}
-      {widgetOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          onClick={() => setWidgetOpen(false)}
-        >
-          <div
-            className="w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-elevated"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="font-display font-bold text-foreground">Online Booking Widget</h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Share the link or embed the widget on your website.
-                </p>
-              </div>
-              <button
-                onClick={() => setWidgetOpen(false)}
-                className="rounded-md p-1.5 hover:bg-muted"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Direct Link
-                </label>
-                <div className="flex gap-2">
-                  <a
-                    href={widgetUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 truncate rounded-lg border border-input bg-muted/40 px-3 py-2 text-sm text-foreground hover:bg-muted"
-                  >
-                    {widgetUrl}
-                  </a>
-                  <a
-                    href={widgetUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 rounded-lg border border-input bg-background px-3 py-2 text-xs font-medium hover:bg-muted"
-                  >
-                    <Globe className="h-3.5 w-3.5" /> Open
-                  </a>
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Embed Code (iFrame)
-                </label>
-                <div className="relative rounded-lg border border-input bg-muted/40 p-3 font-mono text-xs text-muted-foreground">
-                  <pre className="whitespace-pre-wrap break-all">{embedCode}</pre>
-                  <button
-                    onClick={copyEmbed}
-                    className="absolute top-2 right-2 flex items-center gap-1 rounded-md bg-background border border-input px-2 py-1 text-xs font-medium hover:bg-muted"
-                  >
-                    {copied ? (
-                      <Check className="h-3 w-3 text-success" />
-                    ) : (
-                      <Copy className="h-3 w-3" />
-                    )}
-                    {copied ? "Copied!" : "Copy"}
-                  </button>
-                </div>
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  Paste this snippet into your website's HTML to embed the booking form.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    </>
   );
 }

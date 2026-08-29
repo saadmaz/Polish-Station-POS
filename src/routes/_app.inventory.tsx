@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import type { InventoryItem } from "@/lib/db";
 import { newId } from "@/lib/db";
 import { formatCurrency } from "@/lib/currency";
+import { useConfirm } from "@/hooks/use-confirm";
 
 export const Route = createFileRoute("/_app/inventory")({
   head: () => ({ meta: [{ title: "Inventory · Polish Station OS" }] }),
@@ -238,6 +239,7 @@ function Inventory() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
+  const { confirm, ConfirmDialog } = useConfirm();
 
   const categories = ["All", ...Array.from(new Set(inventory.map((i) => i.category))).sort()];
 
@@ -268,14 +270,15 @@ function Inventory() {
     setFormMode(null);
   }
 
-  function handleDelete(id: string, name: string) {
-    if (!confirm(`Delete "${name}"?`)) return;
+  async function handleDelete(id: string, name: string) {
+    if (!(await confirm({ title: `Delete "${name}"?` }))) return;
     deleteInventoryItem(id);
     toast.error("Item removed");
   }
 
   return (
     <div className="p-6">
+      {ConfirmDialog}
       <PageHeader
         title="Inventory"
         subtitle={`${inventory.length} SKUs · ${formatCurrency(totalValue)} on hand`}

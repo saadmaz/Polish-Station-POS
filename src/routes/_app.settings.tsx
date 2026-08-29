@@ -9,6 +9,7 @@ import * as db from "@/lib/db";
 import type { BusinessInfo, Service, ServiceCategory } from "@/lib/db";
 import { formatCurrency } from "@/lib/currency";
 import { formatDateTime } from "@/lib/date-format";
+import { useConfirm } from "@/hooks/use-confirm";
 import {
   Building2,
   Tag,
@@ -217,6 +218,7 @@ function CatalogPanel() {
   const [editing, setEditing] = useState<Service | null>(null);
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState<Omit<Service, "id">>(BLANK_SERVICE);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   function openAdd() {
     setForm(BLANK_SERVICE);
@@ -245,6 +247,7 @@ function CatalogPanel() {
 
   return (
     <>
+      {ConfirmDialog}
       <SectionTitle title="Services Catalog" desc="Add, edit and price the services on offer." />
 
       {(adding || editing) && (
@@ -338,8 +341,8 @@ function CatalogPanel() {
                 Edit
               </button>
               <button
-                onClick={() => {
-                  if (confirm(`Delete "${s.name}"?`)) deleteService(s.id);
+                onClick={async () => {
+                  if (await confirm({ title: `Delete "${s.name}"?` })) deleteService(s.id);
                 }}
                 className="rounded-md p-2 text-xs text-destructive hover:bg-accent"
                 aria-label={`Delete ${s.name}`}
@@ -380,8 +383,8 @@ function CatalogPanel() {
                     Edit
                   </button>
                   <button
-                    onClick={() => {
-                      if (confirm(`Delete "${s.name}"?`)) deleteService(s.id);
+                    onClick={async () => {
+                      if (await confirm({ title: `Delete "${s.name}"?` })) deleteService(s.id);
                     }}
                     className="text-xs text-destructive hover:underline"
                   >

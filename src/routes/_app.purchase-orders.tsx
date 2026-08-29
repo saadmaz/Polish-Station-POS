@@ -20,6 +20,7 @@ import type { PurchaseOrder, POLine, POStatus } from "@/lib/db";
 import { downloadPOPDF } from "@/lib/pdf";
 import { formatCurrency } from "@/lib/currency";
 import { formatDate } from "@/lib/date-format";
+import { useConfirm } from "@/hooks/use-confirm";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/purchase-orders")({
@@ -372,6 +373,7 @@ function ReceivePanel({
 function POExpandedContent({ po }: { po: PurchaseOrder }) {
   const { updatePurchaseOrder, receivePO } = useStore();
   const [receiving, setReceiving] = useState(false);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   const total = poTotal(po);
   const canSend = po.status === "Draft";
@@ -382,14 +384,15 @@ function POExpandedContent({ po }: { po: PurchaseOrder }) {
     updatePurchaseOrder({ ...po, status: "Sent", sentAt: new Date().toISOString() });
   }
 
-  function cancel() {
-    if (confirm("Cancel this purchase order?")) {
+  async function cancel() {
+    if (await confirm({ title: "Cancel this purchase order?" })) {
       updatePurchaseOrder({ ...po, status: "Cancelled" });
     }
   }
 
   return (
     <>
+      {ConfirmDialog}
       {/* PO meta */}
       <div className="mb-3 grid grid-cols-1 gap-x-8 gap-y-1 text-sm sm:grid-cols-2 lg:grid-cols-4">
         {po.createdBy && (
@@ -541,9 +544,11 @@ function PORow({ po }: { po: PurchaseOrder }) {
   const { deletePurchaseOrder } = useStore();
   const [open, setOpen] = useState(false);
   const total = poTotal(po);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   return (
     <>
+      {ConfirmDialog}
       <tr
         className={cn(
           "border-t border-border transition-colors hover:bg-muted/30 cursor-pointer",
@@ -596,8 +601,8 @@ function PORow({ po }: { po: PurchaseOrder }) {
             </button>
             {po.status === "Draft" && (
               <button
-                onClick={() => {
-                  if (confirm("Delete this draft PO?")) deletePurchaseOrder(po.id);
+                onClick={async () => {
+                  if (await confirm({ title: "Delete this draft PO?" })) deletePurchaseOrder(po.id);
                 }}
                 aria-label="Delete"
                 className="rounded p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
@@ -627,9 +632,11 @@ function POCard({ po }: { po: PurchaseOrder }) {
   const { deletePurchaseOrder } = useStore();
   const [open, setOpen] = useState(false);
   const total = poTotal(po);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   return (
     <div className="p-4">
+      {ConfirmDialog}
       <button
         className="flex w-full items-start justify-between gap-3 text-left"
         onClick={() => setOpen((o) => !o)}
@@ -671,8 +678,8 @@ function POCard({ po }: { po: PurchaseOrder }) {
         </button>
         {po.status === "Draft" && (
           <button
-            onClick={() => {
-              if (confirm("Delete this draft PO?")) deletePurchaseOrder(po.id);
+            onClick={async () => {
+              if (await confirm({ title: "Delete this draft PO?" })) deletePurchaseOrder(po.id);
             }}
             className="inline-flex items-center gap-1 rounded-md border border-input px-2.5 py-1.5 text-[11px] font-medium text-destructive hover:bg-destructive/10"
           >
@@ -696,9 +703,10 @@ function PurchaseOrdersPage() {
   const { purchaseOrdersList, addPurchaseOrder, lowStockItems } = useStore();
   const [showForm, setShowForm] = useState(false);
   const [filterStatus, setFilterStatus] = useState<"All" | POStatus>("All");
+  const { confirm, ConfirmDialog } = useConfirm();
 
   // Auto PO: group low-stock items by supplier, one PO per supplier
-  function createAutoPOs() {
+  async function createAutoPOs() {
     const items = lowStockItems.filter((i) => i.supplier);
     if (items.length === 0) {
       alert("No low-stock items with a supplier set.");
@@ -713,12 +721,11 @@ function PurchaseOrdersPage() {
     }, {});
 
     const supplierCount = Object.keys(grouped).length;
-    if (
-      !confirm(
-        `Create ${supplierCount} PO${supplierCount > 1 ? "s" : ""} for ${items.length} low-stock item${items.length > 1 ? "s" : ""}?`,
-      )
-    )
-      return;
+    const ok = await confirm({
+      title: `Create ${supplierCount} PO${supplierCount > 1 ? "s" : ""} for ${items.length} low-stock item${items.length > 1 ? "s" : ""}?`,
+      destructive: false,
+    });
+    if (!ok) return;
 
     for (const [supplier, supplierItems] of Object.entries(grouped)) {
       const lines: POLine[] = supplierItems.map((item) => ({
@@ -758,6 +765,7 @@ function PurchaseOrdersPage() {
 
   return (
     <div className="flex flex-col gap-6 p-4 sm:p-6">
+      {ConfirmDialog}
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>

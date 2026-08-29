@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { isManagerOrAbove } from "@/lib/permissions";
 import { formatCurrency } from "@/lib/currency";
 import { formatDate } from "@/lib/date-format";
+import { useConfirm } from "@/hooks/use-confirm";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
 import {
@@ -628,6 +629,7 @@ function CouponsPanel() {
   const { staff } = useAuth();
   const canManage = isManagerOrAbove(staff?.role);
   const [formMode, setFormMode] = useState<null | "add" | Coupon>(null);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   function handleSave(data: Omit<Coupon, "id" | "createdAt" | "redeemedCount"> | Coupon) {
     if ("id" in data) {
@@ -640,14 +642,15 @@ function CouponsPanel() {
     setFormMode(null);
   }
 
-  function handleDelete(id: string) {
-    if (!confirm("Delete this coupon? This cannot be undone.")) return;
+  async function handleDelete(id: string) {
+    if (!(await confirm({ title: "Delete this coupon? This cannot be undone." }))) return;
     deleteCoupon(id);
     toast.error("Coupon deleted");
   }
 
   return (
     <div className="mt-6 rounded-xl border border-border bg-card shadow-card">
+      {ConfirmDialog}
       <div className="flex flex-col gap-3 p-4 border-b border-border sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="font-display font-bold flex items-center gap-2">
@@ -824,6 +827,7 @@ function Customers() {
   const [search, setSearch] = useState("");
   const [tierFilter, setTierFilter] = useState("All");
   const [formMode, setFormMode] = useState<null | "add" | Customer>(null);
+  const { confirm, ConfirmDialog } = useConfirm();
 
   const filtered = customers.filter((c) => {
     const q = search.toLowerCase();
@@ -850,14 +854,15 @@ function Customers() {
     setFormMode(null);
   }
 
-  function handleDelete(id: string) {
-    if (!confirm("Delete this customer? This cannot be undone.")) return;
+  async function handleDelete(id: string) {
+    if (!(await confirm({ title: "Delete this customer? This cannot be undone." }))) return;
     deleteCustomer(id);
     toast.error("Customer deleted");
   }
 
   return (
     <div className="p-4 sm:p-6">
+      {ConfirmDialog}
       <PageHeader
         title="Customers"
         subtitle={`${customers.length} customers · ${totalVehicles} vehicles on file`}
