@@ -86,7 +86,7 @@ function BookingCard({
           {booking.durationMin}m
         </div>
         <div>
-          <span className="text-muted-foreground">Tech:</span> {booking.tech}
+          <span className="text-muted-foreground">Tech:</span> {booking.tech || "—"}
         </div>
         <div>
           <span className="text-muted-foreground">Price:</span> {formatCurrency(booking.price)}
@@ -333,7 +333,7 @@ function Bookings() {
                         <div className="text-[10px] text-muted-foreground truncate">
                           {b.serviceName}
                         </div>
-                        {heightPx > 44 && (
+                        {heightPx > 44 && b.tech && (
                           <div className="text-[10px] text-muted-foreground">{b.tech}</div>
                         )}
                         {b.status === "Checked-In" && (
@@ -442,7 +442,7 @@ function Bookings() {
           {/* Week view */}
           {view === "week" && (
             <div className="overflow-x-auto">
-              <div className="grid grid-cols-[60px_repeat(7,minmax(120px,1fr))] divide-x divide-border min-w-[900px]">
+              <div className="grid grid-cols-[60px_repeat(7,minmax(100px,1fr))] divide-x divide-border min-w-[760px]">
                 <div>
                   <div className="h-10 border-b border-border" />
                   {HOURS.map((h) => (
@@ -561,8 +561,8 @@ function Bookings() {
                         <div className="text-muted-foreground text-xs">{b.vehicleModel}</div>
                       </td>
                       <td className="px-3 py-3">{b.serviceName}</td>
-                      <td className="px-3 py-3 text-muted-foreground">{b.tech}</td>
-                      <td className="px-3 py-3 text-right font-mono font-semibold">
+                      <td className="px-3 py-3 text-muted-foreground">{b.tech || "—"}</td>
+                      <td className="px-3 py-3 text-right font-mono font-semibold whitespace-nowrap">
                         {formatCurrency(b.price)}
                       </td>
                       <td className="px-3 py-3">

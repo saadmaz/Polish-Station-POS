@@ -16,7 +16,8 @@ export const Route = createFileRoute("/_app/dashboard")({
 });
 
 function Dashboard() {
-  const { invoices, jobs, listenerErrors, openShift, lowStockItems, refreshAll } = useStore();
+  const { invoices, jobs, listenerErrors, openShift, inventory, lowStockItems, refreshAll } =
+    useStore();
   const [shiftOpen, setShiftOpen] = useState(false);
 
   // The one computation every KPI card and the timeline both read from —
@@ -100,7 +101,9 @@ function Dashboard() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div
+        className={cn("grid grid-cols-1 gap-6", openShift ? "md:grid-cols-3" : "md:grid-cols-2")}
+      >
         {/* Today's job timeline */}
         <div className="rounded-xl border border-border bg-card shadow-card">
           <div className="px-5 py-3 border-b border-border">
@@ -154,7 +157,9 @@ function Dashboard() {
                 </div>
               ))
             ) : (
-              <p className="text-xs text-muted-foreground text-center py-4">All items in stock</p>
+              <p className="text-xs text-muted-foreground text-center py-4">
+                {inventory.length === 0 ? "No inventory items tracked yet" : "All items in stock"}
+              </p>
             )}
           </div>
         </div>

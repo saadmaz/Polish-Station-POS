@@ -145,7 +145,7 @@ export const createBookingFn = createServerFn({ method: "POST" })
           price: service.price as number,
           date: data.date,
           time: data.time,
-          tech: "—",
+          tech: "", // no fallback-routing logic keys on this one (unlike bay)
           bay: "—",
           status: "Pending",
           notes: data.notes,

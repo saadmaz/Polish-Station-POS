@@ -207,7 +207,13 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
       price: svc.price,
       date: form.date,
       time: form.time,
-      tech: form.tech || "—",
+      // Unlike bay (below), tech has no fallback-routing logic anywhere that
+      // depends on this exact sentinel -- store the real value (possibly
+      // empty) and let the UI decide how to display "no tech assigned"
+      // (audit B7: baking "—" into stored data, vs. a blank cell elsewhere
+      // for the same "no value" condition, made neither displayed dash
+      // trustworthy).
+      tech: form.tech,
       bay: form.bay || "—",
       status: "Confirmed",
       notes: form.notes,

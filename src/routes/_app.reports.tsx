@@ -43,6 +43,15 @@ function periodStartBusinessDate(period: Period): string {
   return "1970-01-01";
 }
 
+// Rounds a chart axis max up to a "nice" step (audit R8: the default domain
+// was the raw data max, so ticks like 0/7k/13k/20k/26k gave no round number
+// to estimate an off-grid value against).
+function niceAxisMax(max: number): number {
+  if (max <= 0) return 1000;
+  const magnitude = 10 ** Math.floor(Math.log10(max));
+  return Math.ceil(max / magnitude) * magnitude;
+}
+
 // Build daily revenue data from the invoice array.
 // Cash/card/transfer split is computed per-payment, not per-invoice: a
 // split-tender invoice (part cash, part card) must contribute to every
@@ -149,8 +158,11 @@ function Reports() {
     }, {}),
   ).sort((a, b) => b[1] - a[1]);
 
-  // Chart data: last 14 days for "today"/"7d", last 30 for "30d", last 60 for "all"
-  const chartDays = period === "today" ? 14 : period === "7d" ? 14 : period === "30d" ? 30 : 60;
+  // Chart range matches the period exactly (audit R4: this used to be a
+  // second, independent day-count that disagreed with the KPI cards' own
+  // period scoping for both "today" (14 days shown) and "7d" (also 14)).
+  // "all" has no fixed start, so it still needs its own reasonable cap.
+  const chartDays = period === "today" ? 1 : period === "7d" ? 7 : period === "30d" ? 30 : 60;
   const dailyData = buildDailyData(filteredInvoices, chartDays);
 
   const reports = [
@@ -382,8 +394,8 @@ function Reports() {
                 <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
               </linearGradient>
               <linearGradient id="gCard" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                <stop offset="5%" stopColor="hsl(var(--chart-3))" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="hsl(var(--chart-3))" stopOpacity={0} />
               </linearGradient>
               <linearGradient id="gTransfer" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="hsl(var(--info))" stopOpacity={0.3} />
@@ -402,6 +414,7 @@ function Reports() {
               tick={{ fontSize: 11 }}
               tickLine={false}
               axisLine={false}
+              domain={[0, (max: number) => niceAxisMax(max)]}
               tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
             />
             <Tooltip
@@ -413,9 +426,10 @@ function Reports() {
             />
             <Legend
               formatter={(v) => (v === "cash" ? "Cash" : v === "card" ? "Card" : "Transfer")}
+              wrapperStyle={{ display: "flex", gap: 16, justifyContent: "center" }}
             />
             <Area
-              type="monotone"
+              type="linear"
               dataKey="cash"
               stroke="hsl(var(--primary))"
               fill="url(#gCash)"
@@ -423,15 +437,15 @@ function Reports() {
               dot={false}
             />
             <Area
-              type="monotone"
+              type="linear"
               dataKey="card"
-              stroke="#6366f1"
+              stroke="hsl(var(--chart-3))"
               fill="url(#gCard)"
               strokeWidth={2}
               dot={false}
             />
             <Area
-              type="monotone"
+              type="linear"
               dataKey="transfer"
               stroke="hsl(var(--info))"
               fill="url(#gTransfer)"

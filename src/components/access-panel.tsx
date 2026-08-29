@@ -118,7 +118,9 @@ export function AccessPanel() {
             const v = d.data();
             return {
               id: d.id,
-              username: (v.username as string) ?? "—",
+              // Displayed verbatim used to show inconsistent casing between
+              // accounts (audit S4); login already matches case-insensitively.
+              username: ((v.username as string) ?? "—").toLowerCase(),
               name: v.name as string,
               role: v.role as StaffRole,
               color: (v.color as string) ?? PALETTE[0],

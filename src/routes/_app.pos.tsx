@@ -529,11 +529,15 @@ function POS() {
         >
           {charging
             ? "Processing…"
-            : total <= 0
-              ? "Complete: Covered by Points"
-              : tendered > 0 && tendered < total
-                ? `Collect ${formatCurrency(tendered)} of ${formatCurrency(total)}`
-                : `Charge ${formatCurrency(total)}`}
+            : lines.length === 0
+              ? "Complete Sale"
+              : total <= 0 && pointsValue > 0
+                ? "Complete: Covered by Points"
+                : total <= 0
+                  ? "Complete Sale"
+                  : tendered > 0 && tendered < total
+                    ? `Collect ${formatCurrency(tendered)} of ${formatCurrency(total)}`
+                    : `Charge ${formatCurrency(total)}`}
         </button>
 
         <button

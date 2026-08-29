@@ -298,8 +298,8 @@ function Inventory() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         {[
           { label: "Total SKUs", value: inventory.length, tone: "" },
-          { label: "Low Stock", value: lowCount, tone: "text-warning" },
-          { label: "Out of Stock", value: outCount, tone: "text-primary" },
+          { label: "Low Stock", value: lowCount, tone: lowCount > 0 ? "text-warning" : "" },
+          { label: "Out of Stock", value: outCount, tone: outCount > 0 ? "text-primary" : "" },
           { label: "Stock Value", value: formatCurrency(totalValue), tone: "" },
         ].map((s) => (
           <div key={s.label} className="rounded-xl border border-border bg-card p-4 shadow-card">
@@ -419,7 +419,7 @@ function Inventory() {
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={10} className="text-center py-10 text-muted-foreground">
-                  No items match your filter
+                  {inventory.length === 0 ? "No inventory items yet" : "No items match your filter"}
                 </td>
               </tr>
             )}

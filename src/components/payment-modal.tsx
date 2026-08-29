@@ -119,7 +119,12 @@ export function TenderLineEditor({
       <div
         className={cn(
           "flex justify-between text-xs font-medium rounded-md px-3 py-2",
-          stillOwed > 0 ? "bg-muted/50 text-muted-foreground" : "bg-success/10 text-success",
+          // Green "fully tendered" only when there was something to tender
+          // AND it's actually been covered -- an empty/already-settled sale
+          // (remaining <= 0) isn't a tendering success, it's nothing to do.
+          remaining > 0 && stillOwed <= 0
+            ? "bg-success/10 text-success"
+            : "bg-muted/50 text-foreground",
         )}
       >
         <span>Remaining to tender</span>

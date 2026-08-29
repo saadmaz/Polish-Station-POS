@@ -33,7 +33,11 @@ async function fetchStaffList(): Promise<PublicStaff[]> {
           role: v.role as StaffRole,
           color: v.color as string,
           active: v.active !== false,
-          username: (v.username as string) ?? "",
+          // Displayed verbatim used to show inconsistent casing between
+          // accounts (audit S4) -- login already matches usernames
+          // case-insensitively, so there's no meaning lost normalizing the
+          // display too.
+          username: ((v.username as string) ?? "").toLowerCase(),
         } satisfies PublicStaff;
       })
       // Deactivated staff never appear in pickers or the staff grid.
