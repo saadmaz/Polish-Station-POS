@@ -341,6 +341,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // Ref always holds latest state, safe to use in async mutations without stale closures
   const S = useRef({
+    services,
     customers,
     coupons,
     bookings,
@@ -354,9 +355,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     purchaseOrdersList,
     sentNotificationsList,
     notificationSettingsData,
+    businessInfo,
+    bays,
   });
   useEffect(() => {
     S.current = {
+      services,
       customers,
       coupons,
       bookings,
@@ -370,8 +374,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       purchaseOrdersList,
       sentNotificationsList,
       notificationSettingsData,
+      businessInfo,
+      bays,
     };
   }, [
+    services,
     customers,
     coupons,
     bookings,
@@ -385,6 +392,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     purchaseOrdersList,
     sentNotificationsList,
     notificationSettingsData,
+    businessInfo,
+    bays,
   ]);
 
   // ── Firestore listeners ────────────────────────────────────────────────────
@@ -737,14 +746,41 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         loyaltyPoints: 0,
       };
       write("customers", c);
+      logAudit(actorRef.current, {
+        action: "ADD_CUSTOMER",
+        entity: "Customer",
+        entityId: c.id,
+        before: null,
+        after: c,
+      });
       return c;
     },
     [],
   );
 
-  const updateCustomer = useCallback((c: Customer) => write("customers", c), []);
+  const updateCustomer = useCallback((c: Customer) => {
+    const before = S.current.customers.find((x) => x.id === c.id) ?? null;
+    write("customers", c);
+    logAudit(actorRef.current, {
+      action: "UPDATE_CUSTOMER",
+      entity: "Customer",
+      entityId: c.id,
+      before,
+      after: c,
+    });
+  }, []);
 
-  const deleteCustomer = useCallback((id: string) => remove("customers", id), []);
+  const deleteCustomer = useCallback((id: string) => {
+    const before = S.current.customers.find((x) => x.id === id) ?? null;
+    remove("customers", id);
+    logAudit(actorRef.current, {
+      action: "DELETE_CUSTOMER",
+      entity: "Customer",
+      entityId: id,
+      before,
+      after: null,
+    });
+  }, []);
 
   // ── Lead mutations ─────────────────────────────────────────────────────────
   const updateLead = useCallback((l: Lead) => write("leads", l), []);
@@ -759,14 +795,41 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         redeemedCount: 0,
       };
       write("coupons", c);
+      logAudit(actorRef.current, {
+        action: "ADD_COUPON",
+        entity: "Coupon",
+        entityId: c.id,
+        before: null,
+        after: c,
+      });
       return c;
     },
     [],
   );
 
-  const updateCoupon = useCallback((c: Coupon) => write("coupons", c), []);
+  const updateCoupon = useCallback((c: Coupon) => {
+    const before = S.current.coupons.find((x) => x.id === c.id) ?? null;
+    write("coupons", c);
+    logAudit(actorRef.current, {
+      action: "UPDATE_COUPON",
+      entity: "Coupon",
+      entityId: c.id,
+      before,
+      after: c,
+    });
+  }, []);
 
-  const deleteCoupon = useCallback((id: string) => remove("coupons", id), []);
+  const deleteCoupon = useCallback((id: string) => {
+    const before = S.current.coupons.find((x) => x.id === id) ?? null;
+    remove("coupons", id);
+    logAudit(actorRef.current, {
+      action: "DELETE_COUPON",
+      entity: "Coupon",
+      entityId: id,
+      before,
+      after: null,
+    });
+  }, []);
 
   // ── Rota mutations ──────────────────────────────────────────────────────────
   const addRotaShift = useCallback((data: Omit<RotaShift, "id" | "createdAt">): RotaShift => {
@@ -788,41 +851,132 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         createdAt: new Date().toISOString(),
       };
       write("bookings", b);
+      logAudit(actorRef.current, {
+        action: "ADD_BOOKING",
+        entity: "Booking",
+        entityId: b.id,
+        before: null,
+        after: b,
+      });
       return b;
     },
     [],
   );
 
-  const updateBooking = useCallback((b: Booking) => write("bookings", b), []);
+  const updateBooking = useCallback((b: Booking) => {
+    const before = S.current.bookings.find((x) => x.id === b.id) ?? null;
+    write("bookings", b);
+    logAudit(actorRef.current, {
+      action: "UPDATE_BOOKING",
+      entity: "Booking",
+      entityId: b.id,
+      before,
+      after: b,
+    });
+  }, []);
 
-  const deleteBooking = useCallback((id: string) => remove("bookings", id), []);
+  const deleteBooking = useCallback((id: string) => {
+    const before = S.current.bookings.find((x) => x.id === id) ?? null;
+    remove("bookings", id);
+    logAudit(actorRef.current, {
+      action: "DELETE_BOOKING",
+      entity: "Booking",
+      entityId: id,
+      before,
+      after: null,
+    });
+  }, []);
 
   const checkinBooking = useCallback(async (id: string) => {
     const b = S.current.bookings.find((x) => x.id === id);
     if (!b) return;
-    write("bookings", { ...b, status: "Checked-In" });
+    const after = { ...b, status: "Checked-In" as const };
+    write("bookings", after);
+    logAudit(actorRef.current, {
+      action: "CHECKIN_BOOKING",
+      entity: "Booking",
+      entityId: id,
+      before: b,
+      after,
+    });
   }, []);
 
   const markDepositPaid = useCallback((bookingId: string) => {
     const b = S.current.bookings.find((x) => x.id === bookingId);
     if (!b) return;
-    write("bookings", { ...b, depositStatus: "paid" });
+    const after = { ...b, depositStatus: "paid" as const };
+    write("bookings", after);
+    logAudit(actorRef.current, {
+      action: "MARK_DEPOSIT_PAID",
+      entity: "Booking",
+      entityId: bookingId,
+      before: b,
+      after,
+    });
   }, []);
 
   // ── Service mutations ──────────────────────────────────────────────────────
-  const upsertService = useCallback((s: Service) => write("services", s), []);
-  const deleteService = useCallback((id: string) => remove("services", id), []);
+  const upsertService = useCallback((s: Service) => {
+    const before = S.current.services.find((x) => x.id === s.id) ?? null;
+    write("services", s);
+    logAudit(actorRef.current, {
+      action: "UPSERT_SERVICE",
+      entity: "Service",
+      entityId: s.id,
+      before,
+      after: s,
+    });
+  }, []);
+  const deleteService = useCallback((id: string) => {
+    const before = S.current.services.find((x) => x.id === id) ?? null;
+    remove("services", id);
+    logAudit(actorRef.current, {
+      action: "DELETE_SERVICE",
+      entity: "Service",
+      entityId: id,
+      before,
+      after: null,
+    });
+  }, []);
 
   // ── Inventory mutations ────────────────────────────────────────────────────
-  const upsertInventoryItem = useCallback((item: InventoryItem) => write("inventory", item), []);
-  const deleteInventoryItem = useCallback((id: string) => remove("inventory", id), []);
+  const upsertInventoryItem = useCallback((item: InventoryItem) => {
+    const before = S.current.inventory.find((x) => x.id === item.id) ?? null;
+    write("inventory", item);
+    logAudit(actorRef.current, {
+      action: "UPSERT_INVENTORY_ITEM",
+      entity: "InventoryItem",
+      entityId: item.id,
+      before,
+      after: item,
+    });
+  }, []);
+  const deleteInventoryItem = useCallback((id: string) => {
+    const before = S.current.inventory.find((x) => x.id === id) ?? null;
+    remove("inventory", id);
+    logAudit(actorRef.current, {
+      action: "DELETE_INVENTORY_ITEM",
+      entity: "InventoryItem",
+      entityId: id,
+      before,
+      after: null,
+    });
+  }, []);
   const adjustStock = useCallback((id: string, delta: number) => {
     const item = S.current.inventory.find((x) => x.id === id);
     if (!item) return;
-    write("inventory", {
+    const after = {
       ...item,
       stock: Math.max(0, item.stock + delta),
       lastUpdated: new Date().toISOString(),
+    };
+    write("inventory", after);
+    logAudit(actorRef.current, {
+      action: "ADJUST_STOCK",
+      entity: "InventoryItem",
+      entityId: id,
+      before: item,
+      after,
     });
   }, []);
 
@@ -928,6 +1082,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // the caller instead of silently vanishing into a console.error while
       // the UI reports success for a sale that never landed.
       await batch.commit();
+      // Invoice creation is the core money event this store handles, and
+      // was the one demonstrably NOT audited before (audit finding ST2) --
+      // logged only after commit succeeds, so a failed sale never shows up
+      // as a phantom entry.
+      logAudit(actorRef.current, {
+        action: "ADD_INVOICE",
+        entity: "Invoice",
+        entityId: inv.id,
+        before: null,
+        after: inv,
+      });
       // Recalc shift totals after Firestore write settles, for every shift
       // touched by this invoice's tender lines (normally just the open shift).
       const shiftIds = new Set(payments.map((p) => p.sessionId).filter((x): x is string => !!x));
@@ -937,7 +1102,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [recalcShift, services],
   );
 
-  const updateInvoice = useCallback((inv: Invoice) => write("invoices", inv), []);
+  const updateInvoice = useCallback((inv: Invoice) => {
+    const before = S.current.invoices.find((x) => x.id === inv.id) ?? null;
+    write("invoices", inv);
+    logAudit(actorRef.current, {
+      action: "UPDATE_INVOICE",
+      entity: "Invoice",
+      entityId: inv.id,
+      before,
+      after: inv,
+    });
+  }, []);
 
   const voidInvoice = useCallback((id: string) => {
     const inv = S.current.invoices.find((x) => x.id === id);
@@ -1015,6 +1190,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     (data: Omit<Expense, "id" | "createdAt">): Expense => {
       const e: Expense = { ...data, id: newId(), createdAt: new Date().toISOString() };
       write("expenses", e);
+      logAudit(actorRef.current, {
+        action: "ADD_EXPENSE",
+        entity: "Expense",
+        entityId: e.id,
+        before: null,
+        after: e,
+      });
       if (data.sessionId) setTimeout(() => recalcShift(data.sessionId), 500);
       return e;
     },
@@ -1025,6 +1207,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     (id: string) => {
       const e = S.current.expenses.find((x) => x.id === id);
       remove("expenses", id);
+      logAudit(actorRef.current, {
+        action: "DELETE_EXPENSE",
+        entity: "Expense",
+        entityId: id,
+        before: e ?? null,
+        after: null,
+      });
       if (e?.sessionId) setTimeout(() => recalcShift(e.sessionId), 500);
     },
     [recalcShift],
@@ -1113,13 +1302,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   // ── Equipment mutations ────────────────────────────────────────────────────
-  const upsertEquipment = useCallback((eq: Equipment) => write("equipment", eq), []);
-  const deleteEquipment = useCallback((id: string) => remove("equipment", id), []);
+  const upsertEquipment = useCallback((eq: Equipment) => {
+    const before = S.current.equipmentList.find((x) => x.id === eq.id) ?? null;
+    write("equipment", eq);
+    logAudit(actorRef.current, {
+      action: before ? "UPDATE_EQUIPMENT" : "ADD_EQUIPMENT",
+      entity: "Equipment",
+      entityId: eq.id,
+      before,
+      after: eq,
+    });
+  }, []);
+  const deleteEquipment = useCallback((id: string) => {
+    const before = S.current.equipmentList.find((x) => x.id === id) ?? null;
+    remove("equipment", id);
+    logAudit(actorRef.current, {
+      action: "DELETE_EQUIPMENT",
+      entity: "Equipment",
+      entityId: id,
+      before,
+      after: null,
+    });
+  }, []);
 
   const addMaintenanceLog = useCallback(
     (data: Omit<MaintenanceLog, "id" | "createdAt">): MaintenanceLog => {
       const m: MaintenanceLog = { ...data, id: newId(), createdAt: new Date().toISOString() };
       write("maintenanceLogs", m);
+      logAudit(actorRef.current, {
+        action: "ADD_MAINTENANCE_LOG",
+        entity: "MaintenanceLog",
+        entityId: m.id,
+        before: null,
+        after: m,
+      });
       // Update equipment's lastServiceDate if this is more recent
       const eq = S.current.equipmentList.find((e) => e.id === data.equipmentId);
       if (eq && (eq.lastServiceDate === null || data.date > eq.lastServiceDate)) {
@@ -1130,7 +1346,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const deleteMaintenanceLog = useCallback((id: string) => remove("maintenanceLogs", id), []);
+  const deleteMaintenanceLog = useCallback((id: string) => {
+    const before = S.current.maintenanceLogsList.find((x) => x.id === id) ?? null;
+    remove("maintenanceLogs", id);
+    logAudit(actorRef.current, {
+      action: "DELETE_MAINTENANCE_LOG",
+      entity: "MaintenanceLog",
+      entityId: id,
+      before,
+      after: null,
+    });
+  }, []);
 
   // ── Purchase Order mutations ───────────────────────────────────────────────
   const addPurchaseOrder = useCallback(
@@ -1138,13 +1364,40 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const id = await nextSeqId("purchaseOrders", "PO-", S.current.purchaseOrdersList, 1000);
       const po: PurchaseOrder = { ...data, id, poNumber: id, createdAt: new Date().toISOString() };
       write("purchaseOrders", po);
+      logAudit(actorRef.current, {
+        action: "ADD_PURCHASE_ORDER",
+        entity: "PurchaseOrder",
+        entityId: po.id,
+        before: null,
+        after: po,
+      });
       return po;
     },
     [],
   );
 
-  const updatePurchaseOrder = useCallback((po: PurchaseOrder) => write("purchaseOrders", po), []);
-  const deletePurchaseOrder = useCallback((id: string) => remove("purchaseOrders", id), []);
+  const updatePurchaseOrder = useCallback((po: PurchaseOrder) => {
+    const before = S.current.purchaseOrdersList.find((x) => x.id === po.id) ?? null;
+    write("purchaseOrders", po);
+    logAudit(actorRef.current, {
+      action: "UPDATE_PURCHASE_ORDER",
+      entity: "PurchaseOrder",
+      entityId: po.id,
+      before,
+      after: po,
+    });
+  }, []);
+  const deletePurchaseOrder = useCallback((id: string) => {
+    const before = S.current.purchaseOrdersList.find((x) => x.id === id) ?? null;
+    remove("purchaseOrders", id);
+    logAudit(actorRef.current, {
+      action: "DELETE_PURCHASE_ORDER",
+      entity: "PurchaseOrder",
+      entityId: id,
+      before,
+      after: null,
+    });
+  }, []);
 
   const receivePO = useCallback(
     (poId: string, receivedLines: { inventoryItemId: string; qtyReceived: number }[]) => {
@@ -1185,7 +1438,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }
         }
       }
-      batch.commit().catch((err) => console.error("[store] receivePO:", err));
+      batch
+        .commit()
+        .then(() => {
+          logAudit(actorRef.current, {
+            action: "RECEIVE_PO",
+            entity: "PurchaseOrder",
+            entityId: po.id,
+            before: po,
+            after: { ...po, lines: updatedLines, status },
+          });
+        })
+        .catch((err) => console.error("[store] receivePO:", err));
     },
     [],
   );
@@ -1201,16 +1465,36 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Write is gated by firestore.rules (Manager+ holding the settings module),
   // same as the notification settings above.
   const saveBusinessInfo = useCallback((b: BusinessInfo) => {
-    setDoc(fd("settings", "business"), sanitizeBusinessInfo(b)).catch((err) =>
-      console.error("[store] saveBusinessInfo:", err),
-    );
+    const before = S.current.businessInfo;
+    const sanitized = sanitizeBusinessInfo(b);
+    setDoc(fd("settings", "business"), sanitized)
+      .then(() => {
+        logAudit(actorRef.current, {
+          action: "UPDATE_BUSINESS_INFO",
+          entity: "Settings",
+          entityId: "business",
+          before,
+          after: sanitized,
+        });
+      })
+      .catch((err) => console.error("[store] saveBusinessInfo:", err));
   }, []);
 
   // ── Bays ────────────────────────────────────────────────────────────────────
   const saveBays = useCallback((next: string[]) => {
-    setDoc(fd("settings", "bays"), { bays: sanitizeBays({ bays: next }) }).catch((err) =>
-      console.error("[store] saveBays:", err),
-    );
+    const before = S.current.bays;
+    const sanitized = sanitizeBays({ bays: next });
+    setDoc(fd("settings", "bays"), { bays: sanitized })
+      .then(() => {
+        logAudit(actorRef.current, {
+          action: "UPDATE_BAYS",
+          entity: "Settings",
+          entityId: "bays",
+          before: { bays: before },
+          after: { bays: sanitized },
+        });
+      })
+      .catch((err) => console.error("[store] saveBays:", err));
   }, []);
 
   const recordNotification = useCallback(

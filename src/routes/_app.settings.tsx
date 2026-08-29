@@ -90,7 +90,7 @@ function Settings() {
   const [active, setActive] = useState<SectionId>(tab ?? "business");
   return (
     <div className="p-4 sm:p-6">
-      <PageHeader title="Settings" subtitle="Admin-only · shift and payment actions audited" />
+      <PageHeader title="Settings" subtitle="Admin-only · sales, shifts, and records audited" />
       <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-5">
         <nav className="rounded-xl border border-border bg-card shadow-card p-2 h-fit">
           {SECTIONS.map(({ id, icon: Icon, name }) => (
@@ -720,8 +720,9 @@ function AuditPanel() {
         <div>
           <h2 className="font-display text-lg font-bold">Audit Log</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Shift opens/closes and invoice voids/refunds are recorded immutably below. Other actions
-            (bookings, customers, inventory, staff, and more) aren't logged yet.
+            Sales, shifts, bookings, customers, coupons, services, inventory, equipment, purchase
+            orders, expenses, and business/bay settings are all recorded immutably below. Rota
+            scheduling, notification settings, and staff accounts aren't logged yet.
           </p>
         </div>
         {events.length > 0 && (

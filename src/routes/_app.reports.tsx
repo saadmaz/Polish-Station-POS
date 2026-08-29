@@ -72,7 +72,8 @@ function buildDailyData(
 }
 
 function Reports() {
-  const { invoices, bookings, customers, inventory, shifts, expenses } = useStore();
+  const { invoices, bookings, customers, inventory, shifts, expenses, listenerErrors } = useStore();
+  const expensesErrored = listenerErrors.has("expenses");
   const [period, setPeriod] = useState<Period>("30d");
 
   const sinceBusinessDate = periodStartBusinessDate(period);
@@ -171,7 +172,6 @@ function Reports() {
       desc: `Cash ${formatCurrency(cashRevenue)} · Card ${formatCurrency(cardRevenue)} · Transfer ${formatCurrency(transferRevenue)}`,
       metric: formatCurrency(totalRevenue),
       delta: `Avg invoice ${formatCurrency(avgInvoice)}`,
-      color: "text-success",
       exportFn: () =>
         exportCSV(
           ["Invoice ID", "Customer", "Date", "Total", "Method", "Status"],
@@ -188,10 +188,16 @@ function Reports() {
     },
     {
       name: "Profit & Loss",
-      desc: `Revenue ${formatCurrency(totalRevenue)} − Expenses ${formatCurrency(totalExpenseAmt)}`,
-      metric: formatCurrency(netProfit),
-      delta: netProfit >= 0 ? "Net profit" : "Net loss",
-      color: netProfit >= 0 ? "text-success" : "text-destructive",
+      desc: expensesErrored
+        ? "Expense data couldn't be loaded — this figure excludes expenses"
+        : `Revenue ${formatCurrency(totalRevenue)} − Expenses ${formatCurrency(totalExpenseAmt)}`,
+      metric: expensesErrored ? "—" : formatCurrency(netProfit),
+      delta: expensesErrored ? "Unavailable" : netProfit >= 0 ? "Net profit" : "Net loss",
+      color: expensesErrored
+        ? "text-warning"
+        : netProfit >= 0
+          ? "text-success"
+          : "text-destructive",
       exportFn: () =>
         exportCSV(
           ["Category", "Amount"],
@@ -204,7 +210,6 @@ function Reports() {
       desc: `${checkedIn} checked in · ${noShows} no-shows`,
       metric: `${filteredBookings.length} bookings`,
       delta: `${noShowPct}% no-show rate`,
-      color: "text-warning",
       exportFn: () =>
         exportCSV(
           ["Booking ID", "Customer", "Service", "Date", "Time", "Status"],
@@ -224,7 +229,6 @@ function Reports() {
       desc: `${returningCustomers.size} returning · ${newCustomers.size} new customers`,
       metric: `${retentionPct}% retention`,
       delta: `${customers.length} total customers`,
-      color: "text-primary",
       exportFn: () =>
         exportCSV(
           ["Name", "Phone", "Tier", "Visits", "Spend", "Last Visit"],
@@ -246,7 +250,6 @@ function Reports() {
         : "No repeat customers yet",
       metric: formatCurrency(avgCLV),
       delta: "Average lifetime spend",
-      color: "text-primary",
       exportFn: () =>
         exportCSV(
           ["Name", "Phone", "Visits", "Lifetime Spend", "Avg Order Value", "Tier"],
@@ -259,7 +262,6 @@ function Reports() {
       desc: `${lowCount} low · ${outCount} out of stock`,
       metric: formatCurrency(stockValue),
       delta: `${inventory.length} SKUs on file`,
-      color: "text-warning",
       exportFn: () =>
         exportCSV(
           ["Item", "SKU", "Category", "Stock", "Reorder", "Unit Cost", "Value"],
@@ -281,7 +283,6 @@ function Reports() {
       metric: `${shifts.length} shifts`,
       delta:
         shifts.filter((s) => s.status === "OPEN").length > 0 ? "1 shift open" : "No open shift",
-      color: "text-info",
       exportFn: () =>
         exportCSV(
           [
@@ -374,7 +375,9 @@ function Reports() {
               </button>
             </div>
             <div className="mt-4">
-              <div className={`font-display text-2xl font-extrabold ${r.color}`}>{r.metric}</div>
+              <div className={`font-display text-2xl font-extrabold ${r.color ?? ""}`}>
+                {r.metric}
+              </div>
               <div className="text-[11px] text-muted-foreground font-semibold mt-0.5">
                 {r.delta}
               </div>
