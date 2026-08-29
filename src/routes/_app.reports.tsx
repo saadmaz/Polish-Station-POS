@@ -3,7 +3,7 @@ import { useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Download } from "lucide-react";
 import { useStore } from "@/lib/store";
-import { getPayments, describePaymentMethods, type Invoice } from "@/lib/db";
+import { sumPaymentsByMethod, describePaymentMethods, type Invoice } from "@/lib/db";
 import {
   todayBusinessDate,
   addBusinessDays,
@@ -43,26 +43,20 @@ function periodStartBusinessDate(period: Period): string {
 }
 
 // Build daily revenue data from the invoice array.
-// Cash/card split is computed per-payment, not per-invoice: a split-tender
-// invoice (part cash, part card) must contribute to both buckets correctly.
+// Cash/card/transfer split is computed per-payment, not per-invoice: a
+// split-tender invoice (part cash, part card) must contribute to every
+// bucket it actually touches.
 function buildDailyData(
   invoices: Invoice[],
   days: number,
-): { date: string; cash: number; card: number }[] {
-  const result: { date: string; cash: number; card: number }[] = [];
+): { date: string; cash: number; card: number; transfer: number }[] {
+  const result: { date: string; cash: number; card: number; transfer: number }[] = [];
   const today = todayBusinessDate();
   for (let i = days - 1; i >= 0; i--) {
     const d = addBusinessDays(today, -i);
     const dayInvs = invoices.filter((inv) => isInBusinessDay(inv.createdAt, d));
-    let cash = 0;
-    let card = 0;
-    for (const inv of dayInvs) {
-      for (const p of getPayments(inv)) {
-        if (p.method === "Cash") cash += p.amount;
-        else card += p.amount;
-      }
-    }
-    result.push({ date: d.slice(5), cash, card }); // MM-DD
+    const { cash, card, transfer } = sumPaymentsByMethod(dayInvs);
+    result.push({ date: d.slice(5), cash, card, transfer }); // MM-DD
   }
   return result;
 }
@@ -76,17 +70,14 @@ function Reports() {
   const filteredInvoices = invoices.filter((i) => i.createdAt >= since && i.status !== "Void");
   const filteredBookings = bookings.filter((b) => b.date >= sinceBusinessDate);
 
-  // Revenue stats. Cash/card split is per-payment (a split-tender invoice
-  // contributes to both buckets), not per-invoice.
+  // Revenue stats. Cash/card/transfer split is per-payment (a split-tender
+  // invoice contributes to every bucket it touches), not per-invoice.
   const totalRevenue = filteredInvoices.reduce((s, i) => s + i.total, 0);
-  let cashRevenue = 0;
-  let cardRevenue = 0;
-  for (const inv of filteredInvoices) {
-    for (const p of getPayments(inv)) {
-      if (p.method === "Cash") cashRevenue += p.amount;
-      else cardRevenue += p.amount;
-    }
-  }
+  const {
+    cash: cashRevenue,
+    card: cardRevenue,
+    transfer: transferRevenue,
+  } = sumPaymentsByMethod(filteredInvoices);
   const avgInvoice =
     filteredInvoices.length > 0 ? Math.round(totalRevenue / filteredInvoices.length) : 0;
 
@@ -164,7 +155,7 @@ function Reports() {
   const reports = [
     {
       name: "Revenue Summary",
-      desc: `Cash LKR ${cashRevenue.toLocaleString()} · Card LKR ${cardRevenue.toLocaleString()}`,
+      desc: `Cash LKR ${cashRevenue.toLocaleString()} · Card LKR ${cardRevenue.toLocaleString()} · Transfer LKR ${transferRevenue.toLocaleString()}`,
       metric: totalRevenue > 0 ? `LKR ${totalRevenue.toLocaleString()}` : "LKR 0",
       delta: `Avg invoice LKR ${avgInvoice.toLocaleString()}`,
       color: "text-success",
@@ -391,6 +382,10 @@ function Reports() {
                 <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
                 <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
               </linearGradient>
+              <linearGradient id="gTransfer" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="hsl(var(--info))" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="hsl(var(--info))" stopOpacity={0} />
+              </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
             <XAxis
@@ -409,11 +404,13 @@ function Reports() {
             <Tooltip
               formatter={(val: number, name: string) => [
                 `LKR ${val.toLocaleString()}`,
-                name === "cash" ? "Cash" : "Card",
+                name === "cash" ? "Cash" : name === "card" ? "Card" : "Transfer",
               ]}
               contentStyle={{ fontSize: 12, borderRadius: 8 }}
             />
-            <Legend formatter={(v) => (v === "cash" ? "Cash" : "Card")} />
+            <Legend
+              formatter={(v) => (v === "cash" ? "Cash" : v === "card" ? "Card" : "Transfer")}
+            />
             <Area
               type="monotone"
               dataKey="cash"
@@ -427,6 +424,14 @@ function Reports() {
               dataKey="card"
               stroke="#6366f1"
               fill="url(#gCard)"
+              strokeWidth={2}
+              dot={false}
+            />
+            <Area
+              type="monotone"
+              dataKey="transfer"
+              stroke="hsl(var(--info))"
+              fill="url(#gTransfer)"
               strokeWidth={2}
               dot={false}
             />

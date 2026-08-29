@@ -193,6 +193,15 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
       toast.error("A reason is required for refunds");
       return;
     }
+    // Irreversible money leaving the till — same confirm() gate Void already
+    // has (pos.tsx), which Refund was missing entirely (audit finding P4).
+    if (
+      !confirm(
+        `Refund LKR ${refundAmount.toLocaleString()} on ${invoice.id}? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
     setSaving(true);
     refundInvoicePayment(invoice.id, {
       amount: refundAmount,

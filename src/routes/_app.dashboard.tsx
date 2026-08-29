@@ -14,7 +14,7 @@ export const Route = createFileRoute("/_app/dashboard")({
 });
 
 function Dashboard() {
-  const { invoices, jobs, openShift, lowStockItems, refreshAll } = useStore();
+  const { invoices, jobs, listenerErrors, openShift, lowStockItems, refreshAll } = useStore();
   const [shiftOpen, setShiftOpen] = useState(false);
 
   // The one computation every KPI card and the timeline both read from —
@@ -24,10 +24,28 @@ function Dashboard() {
   const metrics = computeDashboardMetrics(invoices, jobs);
   const todayJobs = metrics.timelineJobs;
 
-  const kpis = [
-    { label: "Revenue Today", value: `LKR ${metrics.revenueToday.toLocaleString()}` },
-    { label: "Upcoming (today)", value: String(metrics.upcomingToday) },
-    { label: "Outstanding", value: `LKR ${metrics.outstanding.toLocaleString()}` },
+  // Revenue Today and Outstanding are derived from `invoices`, not `jobs` —
+  // a failed jobs listener doesn't touch them. Only the timeline and
+  // Upcoming (today) read jobs, so only those two get a degraded state
+  // instead of a confident (and here, false) zero (audit finding D1).
+  const jobsErrored = listenerErrors.has("jobs");
+
+  const kpis: { label: string; value: string; degraded: boolean }[] = [
+    {
+      label: "Revenue Today",
+      value: `LKR ${metrics.revenueToday.toLocaleString()}`,
+      degraded: false,
+    },
+    {
+      label: "Upcoming (today)",
+      value: jobsErrored ? "—" : String(metrics.upcomingToday),
+      degraded: jobsErrored,
+    },
+    {
+      label: "Outstanding",
+      value: `LKR ${metrics.outstanding.toLocaleString()}`,
+      degraded: false,
+    },
   ];
 
   return (
@@ -70,7 +88,12 @@ function Dashboard() {
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
               {k.label}
             </div>
-            <div className="mt-1.5 font-display text-xl font-bold">{k.value}</div>
+            <div
+              className={cn("mt-1.5 font-display text-xl font-bold", k.degraded && "text-warning")}
+              title={k.degraded ? "Couldn't load today's jobs" : undefined}
+            >
+              {k.value}
+            </div>
           </div>
         ))}
       </div>
@@ -82,7 +105,11 @@ function Dashboard() {
             <h2 className="font-display text-base font-bold">Today's Timeline</h2>
           </div>
           <div className="p-4 space-y-1.5 max-h-65 overflow-auto">
-            {todayJobs.length > 0 ? (
+            {jobsErrored ? (
+              <p className="text-xs text-warning text-center py-4">
+                Couldn't load today's jobs — this isn't an empty day, the data couldn't be read
+              </p>
+            ) : todayJobs.length > 0 ? (
               todayJobs
                 .sort((a, b) => a.time.localeCompare(b.time))
                 .map((j) => (

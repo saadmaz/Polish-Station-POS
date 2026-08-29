@@ -116,6 +116,9 @@ function newId(): string {
 
 interface Store {
   storeLoading: boolean;
+  /** Collection names whose Firestore listener is currently erroring (e.g.
+   *  permission-denied) — see the note on setListenerErrors in the provider. */
+  listenerErrors: Set<string>;
 
   // data
   services: Service[];
@@ -306,6 +309,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [storeLoading, setStoreLoading] = useState(true);
+  // Names of collections whose onSnapshot listener is currently erroring
+  // (e.g. permission-denied). Before this, fail() below only console.error'd
+  // and moved on — every consumer saw an empty array, indistinguishable from
+  // "genuinely no data". Dashboard reads this to tell "no jobs today" apart
+  // from "couldn't read jobs" (audit finding D1).
+  const [listenerErrors, setListenerErrors] = useState<Set<string>>(new Set());
   const [services, setServices] = useState<Service[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
@@ -388,9 +397,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // the auth guard in _app.tsx redirects to login before data is needed.
     if (!staffId) {
       setStoreLoading(false);
+      setListenerErrors(new Set());
       return;
     }
     setStoreLoading(true);
+    setListenerErrors(new Set());
 
     // Collections whose read rules require a module claim. Subscribing without
     // it would only produce a permission-denied, so skip it and leave the slice
@@ -636,10 +647,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (++loaded >= quorum) setStoreLoading(false);
     }
     // An errored listener still counts as done: data stays empty, but the UI
-    // must never hang on a spinner because a subscription failed.
+    // must never hang on a spinner because a subscription failed. It's
+    // recorded in listenerErrors, though, so a consumer that cares (see
+    // Dashboard) can render "couldn't load" instead of a false "no data".
     function fail(name: string) {
       return (err: unknown) => {
         console.error(`[store] "${name}" listener error:`, err);
+        setListenerErrors((prev) => {
+          if (prev.has(name)) return prev;
+          const next = new Set(prev);
+          next.add(name);
+          return next;
+        });
         done();
       };
     }
@@ -1218,6 +1237,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // ── Context value ──────────────────────────────────────────────────────────
   const value: Store = {
     storeLoading,
+    listenerErrors,
     services,
     customers,
     coupons,

@@ -298,6 +298,42 @@ export function describePaymentMethods(inv: Invoice): string {
   return methods.length > 0 ? methods.join(" + ") : inv.method;
 }
 
+export interface PaymentMethodTotals {
+  cash: number;
+  card: number;
+  transfer: number;
+}
+
+// Exhaustive by construction (the `never` check fails to compile if
+// PaymentMethod ever grows a fourth value): Reports used to bucket revenue
+// with `method === "Cash" ? cash : card`, written independently in two
+// places, which silently counted every Transfer payment as Card (audit
+// finding R1). Both call sites now share this instead of re-deriving the
+// split.
+export function sumPaymentsByMethod(invoices: Invoice[]): PaymentMethodTotals {
+  const totals: PaymentMethodTotals = { cash: 0, card: 0, transfer: 0 };
+  for (const inv of invoices) {
+    for (const p of getPayments(inv)) {
+      switch (p.method) {
+        case "Cash":
+          totals.cash += p.amount;
+          break;
+        case "Card":
+          totals.card += p.amount;
+          break;
+        case "Transfer":
+          totals.transfer += p.amount;
+          break;
+        default: {
+          const exhaustive: never = p.method;
+          throw new Error(`Unhandled payment method: ${exhaustive}`);
+        }
+      }
+    }
+  }
+  return totals;
+}
+
 // ─── Loyalty & coupon math ───────────────────────────────────────────────────
 // 1 point per 100 (currency units) of invoice total, redeemable 1 point = 1
 // unit off a later sale. Kept as named constants/functions rather than
