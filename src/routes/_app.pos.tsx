@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import { isManagerOrAbove } from "@/lib/permissions";
+import { formatCurrency } from "@/lib/currency";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip, statusVariant } from "@/components/status-chip";
 import {
@@ -226,7 +227,7 @@ function POS() {
       toast.success(
         inv.status === "Partially Paid" ? "Partial payment recorded" : "Payment received",
         {
-          description: `${inv.id} · LKR ${tendered.toLocaleString()} · ${describePaymentMethods(inv)}`,
+          description: `${inv.id} · ${formatCurrency(tendered)} · ${describePaymentMethods(inv)}`,
         },
       );
 
@@ -349,13 +350,12 @@ function POS() {
             <div className="text-xs text-muted-foreground">Customer</div>
             <div className="font-display font-bold">{customerRecord.name}</div>
             <div className="text-xs text-muted-foreground">
-              {customerRecord.tier} · {customerRecord.visits} visits · LKR{" "}
-              {customerRecord.spend.toLocaleString()} lifetime
+              {customerRecord.tier} · {customerRecord.visits} visits ·{" "}
+              {formatCurrency(customerRecord.spend)} lifetime
             </div>
             <div className="text-xs text-muted-foreground mt-0.5">
               <Gift className="mr-1 inline h-3 w-3" />
-              {pointsBalance.toLocaleString()} loyalty points (≈ LKR{" "}
-              {pointsBalance.toLocaleString()})
+              {pointsBalance.toLocaleString()} loyalty points (≈ {formatCurrency(pointsBalance)})
             </div>
           </div>
         )}
@@ -418,19 +418,19 @@ function POS() {
         )}
 
         <div className="space-y-2 text-sm border-y border-border py-4">
-          <Row label="Subtotal" value={`LKR ${subtotal.toLocaleString()}`} />
+          <Row label="Subtotal" value={formatCurrency(subtotal)} />
           {couponDiscount > 0 && (
             <Row
               label={`Coupon (${appliedCoupon?.code})`}
-              value={`− LKR ${couponDiscount.toLocaleString()}`}
+              value={`− ${formatCurrency(couponDiscount)}`}
               tone="success"
             />
           )}
-          <Row label="Tip" value={`LKR ${tip.toLocaleString()}`} />
+          <Row label="Tip" value={formatCurrency(tip)} />
           {pointsValue > 0 && (
             <Row
               label="Points redeemed"
-              value={`− LKR ${pointsValue.toLocaleString()}`}
+              value={`− ${formatCurrency(pointsValue)}`}
               tone="success"
             />
           )}
@@ -438,7 +438,7 @@ function POS() {
         <div className="flex items-baseline justify-between py-4">
           <span className="text-sm font-semibold uppercase tracking-wider">Total</span>
           <span className="font-display text-2xl font-extrabold text-primary">
-            LKR {total.toLocaleString()}
+            {formatCurrency(total)}
           </span>
         </div>
 
@@ -454,7 +454,7 @@ function POS() {
                   : "border-input hover:bg-accent",
               )}
             >
-              Tip LKR {amt}
+              Tip {formatCurrency(amt)}
             </button>
           ))}
         </div>
@@ -529,8 +529,8 @@ function POS() {
             : total <= 0
               ? "Complete: Covered by Points"
               : tendered > 0 && tendered < total
-                ? `Collect LKR ${tendered.toLocaleString()} of LKR ${total.toLocaleString()}`
-                : `Charge LKR ${total.toLocaleString()}`}
+                ? `Collect ${formatCurrency(tendered)} of ${formatCurrency(total)}`
+                : `Charge ${formatCurrency(total)}`}
         </button>
 
         <button
@@ -640,7 +640,7 @@ function POS() {
                 <option value="">+ Add service…</option>
                 {services.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.name} · LKR {s.price.toLocaleString()}
+                    {s.name} · {formatCurrency(s.price)}
                   </option>
                 ))}
               </select>
@@ -707,7 +707,7 @@ function POS() {
                     <div className="flex items-baseline justify-between text-sm">
                       <span className="text-muted-foreground">Line total</span>
                       <span className="font-mono font-semibold">
-                        {(l.unitPrice * l.qty - l.discount).toLocaleString()}
+                        {formatCurrency(l.unitPrice * l.qty - l.discount)}
                       </span>
                     </div>
                   </div>
@@ -765,7 +765,7 @@ function POS() {
                           />
                         </td>
                         <td className="px-3 py-2 text-right font-mono font-semibold">
-                          {(l.unitPrice * l.qty - l.discount).toLocaleString()}
+                          {formatCurrency(l.unitPrice * l.qty - l.discount)}
                         </td>
                         <td className="px-2 py-2 text-right">
                           <button
@@ -828,17 +828,15 @@ function POS() {
                       <div className="flex items-baseline justify-between">
                         <span className="text-sm text-muted-foreground">Total</span>
                         <div className="text-right">
-                          <span className="font-mono font-semibold">
-                            LKR {i.total.toLocaleString()}
-                          </span>
+                          <span className="font-mono font-semibold">{formatCurrency(i.total)}</span>
                           {i.status === "Partially Paid" && (
                             <div className="text-[10px] font-normal text-muted-foreground">
-                              LKR {row.paid.toLocaleString()} paid
+                              {formatCurrency(row.paid)} paid
                             </div>
                           )}
                           {row.refunded > 0 && (
                             <div className="text-[10px] font-normal text-primary">
-                              LKR {row.refunded.toLocaleString()} refunded
+                              {formatCurrency(row.refunded)} refunded
                             </div>
                           )}
                         </div>
@@ -879,15 +877,15 @@ function POS() {
                             })}
                           </td>
                           <td className="px-3 py-2.5 text-right font-mono font-semibold">
-                            LKR {i.total.toLocaleString()}
+                            {formatCurrency(i.total)}
                             {i.status === "Partially Paid" && (
                               <div className="text-[10px] font-normal text-muted-foreground">
-                                LKR {row.paid.toLocaleString()} paid
+                                {formatCurrency(row.paid)} paid
                               </div>
                             )}
                             {row.refunded > 0 && (
                               <div className="text-[10px] font-normal text-primary">
-                                LKR {row.refunded.toLocaleString()} refunded
+                                {formatCurrency(row.refunded)} refunded
                               </div>
                             )}
                           </td>
@@ -919,7 +917,7 @@ function POS() {
         <div className="min-w-0 flex-1">
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Total</div>
           <div className="font-display text-lg font-extrabold text-primary truncate">
-            LKR {total.toLocaleString()}
+            {formatCurrency(total)}
           </div>
         </div>
         <button

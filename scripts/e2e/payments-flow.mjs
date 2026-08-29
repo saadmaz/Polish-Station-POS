@@ -32,6 +32,7 @@ await adminDb.collection("shifts").doc(shiftId).set({
   closingDenominations: null,
   cashSales: 0,
   cardSales: 0,
+  transferSales: 0,
   totalExpenses: 0,
   totalDeposits: 0,
   variance: null,

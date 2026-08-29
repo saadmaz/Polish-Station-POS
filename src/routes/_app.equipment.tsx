@@ -18,6 +18,7 @@ import {
 import { useStore } from "@/lib/store";
 import type { Equipment, MaintenanceLog, MaintenanceType, EquipmentStatus } from "@/lib/db";
 import { newId } from "@/lib/db";
+import { formatCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/equipment")({
@@ -61,10 +62,6 @@ function fmtDate(iso: string) {
     year: "numeric",
   });
 }
-function fmtCost(n: number) {
-  return `LKR ${n.toLocaleString()}`;
-}
-
 // ─── Equipment Form ──────────────────────────────────────────────────────────
 
 const BLANK_EQ: Omit<Equipment, "id" | "createdAt"> = {
@@ -580,7 +577,7 @@ function EquipmentRow({ eq }: { eq: Equipment }) {
                             {log.performedBy || "—"}
                           </td>
                           <td className="px-3 py-2 text-right text-sm font-medium">
-                            {log.cost > 0 ? fmtCost(log.cost) : "—"}
+                            {log.cost > 0 ? formatCurrency(log.cost) : "—"}
                           </td>
                           <td className="px-3 py-2">
                             <button

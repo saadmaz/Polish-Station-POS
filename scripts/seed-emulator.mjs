@@ -637,6 +637,7 @@ async function seedUiTestData() {
     const opening = pick([10000, 15000, 20000]);
     const cashSales = ri(5000, 60000);
     const cardSales = ri(5000, 80000);
+    const transferSales = ri(0, 20000);
     const totalExpenses = ri(0, 5000);
     const totalDeposits = ri(0, 3000);
     const expectedCash = opening + cashSales - totalExpenses - totalDeposits;
@@ -659,6 +660,7 @@ async function seedUiTestData() {
       closingDenominations: denomsFor(closingBalance),
       cashSales,
       cardSales,
+      transferSales,
       totalExpenses,
       totalDeposits,
       variance: closingBalance - expectedCash,
@@ -682,6 +684,7 @@ async function seedUiTestData() {
       closingDenominations: null,
       cashSales: ri(2000, 15000),
       cardSales: ri(2000, 15000),
+      transferSales: ri(0, 5000),
       totalExpenses: ri(0, 1000),
       totalDeposits: 0,
       variance: null,

@@ -18,6 +18,7 @@ import {
 import { useStore } from "@/lib/store";
 import type { PurchaseOrder, POLine, POStatus } from "@/lib/db";
 import { downloadPOPDF } from "@/lib/pdf";
+import { formatCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/purchase-orders")({
@@ -32,9 +33,6 @@ function fmtDate(iso: string) {
     month: "short",
     year: "numeric",
   });
-}
-function fmtLKR(n: number) {
-  return `LKR ${n.toLocaleString()}`;
 }
 function poTotal(po: PurchaseOrder) {
   return po.lines.reduce((s, l) => s + l.unitCost * l.qtyOrdered, 0);
@@ -212,7 +210,7 @@ function CreatePOForm({
                     />
                   </td>
                   <td className="px-3 py-2 text-right font-medium">
-                    {fmtLKR(l.unitCost * l.qtyOrdered)}
+                    {formatCurrency(l.unitCost * l.qtyOrdered)}
                   </td>
                   <td className="px-3 py-2">
                     <button
@@ -232,7 +230,7 @@ function CreatePOForm({
                 <td colSpan={4} className="px-3 py-2 text-right text-sm font-semibold">
                   Order Total
                 </td>
-                <td className="px-3 py-2 text-right text-sm font-bold">{fmtLKR(total)}</td>
+                <td className="px-3 py-2 text-right text-sm font-bold">{formatCurrency(total)}</td>
                 <td></td>
               </tr>
             </tfoot>
@@ -471,9 +469,11 @@ function POExpandedContent({ po }: { po: PurchaseOrder }) {
                     {l.qtyReceived}
                   </span>
                 </td>
-                <td className="px-3 py-2 text-right text-muted-foreground">{fmtLKR(l.unitCost)}</td>
+                <td className="px-3 py-2 text-right text-muted-foreground">
+                  {formatCurrency(l.unitCost)}
+                </td>
                 <td className="px-3 py-2 text-right font-medium">
-                  {fmtLKR(l.unitCost * l.qtyOrdered)}
+                  {formatCurrency(l.unitCost * l.qtyOrdered)}
                 </td>
               </tr>
             ))}
@@ -483,7 +483,7 @@ function POExpandedContent({ po }: { po: PurchaseOrder }) {
               <td colSpan={5} className="px-3 py-2 text-right text-sm font-semibold">
                 Order Total
               </td>
-              <td className="px-3 py-2 text-right text-sm font-bold">{fmtLKR(total)}</td>
+              <td className="px-3 py-2 text-right text-sm font-bold">{formatCurrency(total)}</td>
             </tr>
           </tfoot>
         </table>
@@ -578,7 +578,7 @@ function PORow({ po }: { po: PurchaseOrder }) {
         <td className="px-4 py-3 text-sm text-muted-foreground">
           {po.lines.length} item{po.lines.length !== 1 ? "s" : ""}
         </td>
-        <td className="px-4 py-3 text-sm font-semibold">{fmtLKR(total)}</td>
+        <td className="px-4 py-3 text-sm font-semibold">{formatCurrency(total)}</td>
         <td className="px-4 py-3">
           <span
             className={cn(
@@ -647,7 +647,7 @@ function POCard({ po }: { po: PurchaseOrder }) {
             <span>
               {po.lines.length} item{po.lines.length !== 1 ? "s" : ""}
             </span>
-            <span className="font-semibold text-foreground">{fmtLKR(total)}</span>
+            <span className="font-semibold text-foreground">{formatCurrency(total)}</span>
           </div>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-2">
@@ -830,8 +830,8 @@ function PurchaseOrdersPage() {
         <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800/40 dark:bg-blue-900/20">
           <ShoppingCart className="h-5 w-5 text-blue-600 dark:text-blue-400" />
           <p className="text-sm text-blue-700 dark:text-blue-300">
-            <span className="font-semibold">{fmtLKR(totalCommitted)}</span> committed on open
-            purchase orders
+            <span className="font-semibold">{formatCurrency(totalCommitted)}</span> committed on
+            open purchase orders
           </p>
         </div>
       )}

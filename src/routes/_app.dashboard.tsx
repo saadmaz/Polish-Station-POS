@@ -6,6 +6,7 @@ import { computeDashboardMetrics } from "@/lib/dashboard-metrics";
 import { StatusChip, statusVariant } from "@/components/status-chip";
 import { PageHeader } from "@/components/page-header";
 import { ShiftModal } from "@/components/shift-modal";
+import { formatCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/dashboard")({
@@ -33,7 +34,7 @@ function Dashboard() {
   const kpis: { label: string; value: string; degraded: boolean }[] = [
     {
       label: "Revenue Today",
-      value: `LKR ${metrics.revenueToday.toLocaleString()}`,
+      value: formatCurrency(metrics.revenueToday),
       degraded: false,
     },
     {
@@ -43,7 +44,7 @@ function Dashboard() {
     },
     {
       label: "Outstanding",
-      value: `LKR ${metrics.outstanding.toLocaleString()}`,
+      value: formatCurrency(metrics.outstanding),
       degraded: false,
     },
   ];
@@ -181,13 +182,19 @@ function Dashboard() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Cash Sales</span>
                 <span className="font-mono font-semibold">
-                  LKR {openShift.cashSales.toLocaleString()}
+                  {formatCurrency(openShift.cashSales)}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Card Sales</span>
                 <span className="font-mono font-semibold">
-                  LKR {openShift.cardSales.toLocaleString()}
+                  {formatCurrency(openShift.cardSales)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Transfer Sales</span>
+                <span className="font-mono font-semibold">
+                  {formatCurrency(openShift.transferSales)}
                 </span>
               </div>
             </div>

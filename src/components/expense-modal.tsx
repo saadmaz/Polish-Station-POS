@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X, ArrowUpRight, ArrowDownLeft } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { formatCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
 interface ExpenseModalProps {
@@ -192,7 +193,8 @@ export function ExpenseModal({ open, onClose }: ExpenseModalProps) {
                           ex.type === "DEPOSIT" ? "text-success" : "text-primary",
                         )}
                       >
-                        {ex.type === "DEPOSIT" ? "+" : "-"}LKR {ex.amount.toLocaleString()}
+                        {ex.type === "DEPOSIT" ? "+" : "-"}
+                        {formatCurrency(ex.amount)}
                       </span>
                     </div>
                   ))}

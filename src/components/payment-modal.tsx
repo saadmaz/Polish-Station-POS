@@ -8,6 +8,7 @@ import { X, Banknote, CreditCard, ArrowRightLeft, Trash2 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import { getAmountPaid, getAmountRefunded, type Invoice, type PaymentMethod } from "@/lib/db";
+import { formatCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
 export interface TenderLine {
@@ -121,7 +122,7 @@ export function TenderLineEditor({
         )}
       >
         <span>Remaining to tender</span>
-        <span className="font-mono">LKR {Math.max(0, stillOwed).toLocaleString()}</span>
+        <span className="font-mono">{formatCurrency(Math.max(0, stillOwed))}</span>
       </div>
     </div>
   );
@@ -186,7 +187,7 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
     // NaN passes both comparisons below (NaN <= 0 and NaN > x are both false),
     // and Firestore will store it, poisoning every derived total after that.
     if (!Number.isFinite(refundAmount) || refundAmount <= 0 || refundAmount > refundable) {
-      toast.error(`Refund amount must be between 1 and ${refundable.toLocaleString()}`);
+      toast.error(`Refund amount must be between 1 and ${formatCurrency(refundable)}`);
       return;
     }
     if (!refundReason.trim()) {
@@ -196,9 +197,7 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
     // Irreversible money leaving the till — same confirm() gate Void already
     // has (pos.tsx), which Refund was missing entirely (audit finding P4).
     if (
-      !confirm(
-        `Refund LKR ${refundAmount.toLocaleString()} on ${invoice.id}? This cannot be undone.`,
-      )
+      !confirm(`Refund ${formatCurrency(refundAmount)} on ${invoice.id}? This cannot be undone.`)
     ) {
       return;
     }
@@ -211,7 +210,7 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
       staffName: staff?.name ?? "",
       at: new Date().toISOString(),
     });
-    toast.success(`LKR ${refundAmount.toLocaleString()} refunded on ${invoice.id}`);
+    toast.success(`${formatCurrency(refundAmount)} refunded on ${invoice.id}`);
     setSaving(false);
     onClose();
   }
@@ -234,7 +233,7 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
         </div>
 
         <div className="mb-4 text-sm text-muted-foreground">
-          {invoice.customerName} · Total LKR {invoice.total.toLocaleString()}
+          {invoice.customerName} · Total {formatCurrency(invoice.total)}
         </div>
 
         {!openShift && (
@@ -257,7 +256,7 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
         ) : (
           <div className="space-y-4">
             <div className="text-xs text-muted-foreground">
-              Refundable up to LKR {refundable.toLocaleString()}
+              Refundable up to {formatCurrency(refundable)}
             </div>
             <label className="block">
               <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -307,7 +306,7 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
               disabled={saving || !openShift}
               className="min-h-11 w-full rounded-md bg-primary py-2.5 text-sm font-bold uppercase tracking-wider text-primary-foreground hover:opacity-95 disabled:opacity-50"
             >
-              Refund LKR {refundAmount.toLocaleString()}
+              Refund {formatCurrency(refundAmount)}
             </button>
           </div>
         )}

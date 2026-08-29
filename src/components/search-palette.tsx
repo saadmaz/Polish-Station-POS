@@ -11,6 +11,7 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import { useStore } from "@/lib/store";
+import { formatCurrency } from "@/lib/currency";
 
 interface SearchPaletteProps {
   open: boolean;
@@ -116,7 +117,7 @@ export function SearchPalette({ open, onOpenChange }: SearchPaletteProps) {
                 <span className="font-medium">{i.id}</span>
                 <span className="ml-2 text-sm">{i.customerName}</span>
                 <span className="ml-2 text-xs text-muted-foreground">
-                  LKR {i.total.toLocaleString()} · {i.status}
+                  {formatCurrency(i.total)} · {i.status}
                 </span>
               </CommandItem>
             ))}

@@ -7,6 +7,7 @@ import { AccessPanel } from "@/components/access-panel";
 import { useStore } from "@/lib/store";
 import * as db from "@/lib/db";
 import type { BusinessInfo, Service, ServiceCategory } from "@/lib/db";
+import { formatCurrency } from "@/lib/currency";
 import {
   Building2,
   Tag,
@@ -327,7 +328,7 @@ function CatalogPanel() {
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-3">
-              <span className="font-mono font-semibold">LKR {s.price.toLocaleString()}</span>
+              <span className="font-mono font-semibold">{formatCurrency(s.price)}</span>
               <button
                 onClick={() => openEdit(s)}
                 className="rounded-md p-2 text-xs text-primary hover:bg-accent"
@@ -368,7 +369,7 @@ function CatalogPanel() {
                 <td className="py-3 text-muted-foreground">{s.category}</td>
                 <td className="py-3 text-right font-mono">{s.durationMin}m</td>
                 <td className="py-3 text-right font-mono font-semibold">
-                  LKR {s.price.toLocaleString()}
+                  {formatCurrency(s.price)}
                 </td>
                 <td className="py-3 text-right flex gap-2 justify-end">
                   <button

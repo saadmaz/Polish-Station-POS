@@ -40,8 +40,8 @@ import {
   sanitizeBusinessInfo,
   sanitizeBays,
   setBusinessInfoCache,
-  getPayments,
   getAmountPaid,
+  sumShiftPaymentsByMethod,
   type BusinessInfo,
 } from "./db";
 import { synthesizeWalkInJob } from "./job-linking";
@@ -702,24 +702,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const { expenses: exps, invoices: invs } = S.current;
     const shiftExps = exps.filter((e) => e.sessionId === shiftId);
 
-    let cashIn = 0;
-    let cardIn = 0;
-    for (const inv of invs) {
-      for (const p of getPayments(inv)) {
-        if (p.sessionId !== shiftId) continue;
-        if (p.method === "Cash") cashIn += p.amount;
-        else cardIn += p.amount;
-      }
-      for (const r of inv.refunds ?? []) {
-        if (r.sessionId !== shiftId) continue;
-        if (r.method === "Cash") cashIn -= r.amount;
-        else cardIn -= r.amount;
-      }
-    }
+    const {
+      cash: cashIn,
+      card: cardIn,
+      transfer: transferIn,
+    } = sumShiftPaymentsByMethod(invs, shiftId);
 
     patch("shifts", shiftId, {
       cashSales: cashIn,
       cardSales: cardIn,
+      transferSales: transferIn,
       totalExpenses: shiftExps
         .filter((e) => e.type === "EXPENSE")
         .reduce((s, e) => s + e.amount, 0),
@@ -1064,6 +1056,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         closingDenominations: null,
         cashSales: 0,
         cardSales: 0,
+        transferSales: 0,
         totalExpenses: 0,
         totalDeposits: 0,
         variance: null,

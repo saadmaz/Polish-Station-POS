@@ -305,30 +305,61 @@ export interface PaymentMethodTotals {
 }
 
 // Exhaustive by construction (the `never` check fails to compile if
-// PaymentMethod ever grows a fourth value): Reports used to bucket revenue
-// with `method === "Cash" ? cash : card`, written independently in two
-// places, which silently counted every Transfer payment as Card (audit
-// finding R1). Both call sites now share this instead of re-deriving the
-// split.
+// PaymentMethod ever grows a fourth value): both Reports (finding R1) and
+// the shift cash-drawer reconciliation independently bucketed revenue with
+// `method === "Cash" ? cash : card`, which silently counted every Transfer
+// payment/refund as Card. Every call site that buckets by payment method
+// now goes through this instead of re-deriving the split.
+function applyPaymentMethodDelta(
+  totals: PaymentMethodTotals,
+  method: PaymentMethod,
+  delta: number,
+): void {
+  switch (method) {
+    case "Cash":
+      totals.cash += delta;
+      break;
+    case "Card":
+      totals.card += delta;
+      break;
+    case "Transfer":
+      totals.transfer += delta;
+      break;
+    default: {
+      const exhaustive: never = method;
+      throw new Error(`Unhandled payment method: ${exhaustive}`);
+    }
+  }
+}
+
 export function sumPaymentsByMethod(invoices: Invoice[]): PaymentMethodTotals {
   const totals: PaymentMethodTotals = { cash: 0, card: 0, transfer: 0 };
   for (const inv of invoices) {
     for (const p of getPayments(inv)) {
-      switch (p.method) {
-        case "Cash":
-          totals.cash += p.amount;
-          break;
-        case "Card":
-          totals.card += p.amount;
-          break;
-        case "Transfer":
-          totals.transfer += p.amount;
-          break;
-        default: {
-          const exhaustive: never = p.method;
-          throw new Error(`Unhandled payment method: ${exhaustive}`);
-        }
-      }
+      applyPaymentMethodDelta(totals, p.method, p.amount);
+    }
+  }
+  return totals;
+}
+
+// Same split, scoped to one till session: payments add, refunds subtract --
+// both matched by `sessionId`, not by which invoice they originally belonged
+// to (a balance collected or refunded during this shift affects this drawer
+// regardless of which shift the original sale happened in). Used by both
+// the live shift-close preview and the persisted recalculation after close.
+export function sumShiftPaymentsByMethod(
+  invoices: Invoice[],
+  sessionId: string,
+): PaymentMethodTotals {
+  const totals: PaymentMethodTotals = { cash: 0, card: 0, transfer: 0 };
+  for (const inv of invoices) {
+    for (const p of getPayments(inv)) {
+      if (p.sessionId !== sessionId) continue;
+      applyPaymentMethodDelta(totals, p.method, p.amount);
+    }
+    for (const r of inv.refunds ?? []) {
+      if (r.sessionId !== sessionId) continue;
+      applyPaymentMethodDelta(totals, r.method, -r.amount);
     }
   }
   return totals;
@@ -398,6 +429,7 @@ export interface Shift {
   closingDenominations: Record<string, number> | null;
   cashSales: number;
   cardSales: number;
+  transferSales: number;
   totalExpenses: number;
   totalDeposits: number;
   variance: number | null;

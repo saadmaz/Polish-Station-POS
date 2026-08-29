@@ -8,6 +8,7 @@ import { Plus, Pencil, Trash2, Minus, X, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { InventoryItem } from "@/lib/db";
 import { newId } from "@/lib/db";
+import { formatCurrency } from "@/lib/currency";
 
 export const Route = createFileRoute("/_app/inventory")({
   head: () => ({ meta: [{ title: "Inventory · Polish Station OS" }] }),
@@ -277,7 +278,7 @@ function Inventory() {
     <div className="p-6">
       <PageHeader
         title="Inventory"
-        subtitle={`${inventory.length} SKUs · LKR ${totalValue.toLocaleString()} on hand`}
+        subtitle={`${inventory.length} SKUs · ${formatCurrency(totalValue)} on hand`}
         actions={
           <>
             <button
@@ -296,7 +297,7 @@ function Inventory() {
           { label: "Total SKUs", value: inventory.length, tone: "" },
           { label: "Low Stock", value: lowCount, tone: "text-warning" },
           { label: "Out of Stock", value: outCount, tone: "text-primary" },
-          { label: "Stock Value", value: `LKR ${totalValue.toLocaleString()}`, tone: "" },
+          { label: "Stock Value", value: formatCurrency(totalValue), tone: "" },
         ].map((s) => (
           <div key={s.label} className="rounded-xl border border-border bg-card p-4 shadow-card">
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
@@ -383,7 +384,7 @@ function Inventory() {
                   <td className="px-3 py-3 text-right font-mono text-muted-foreground">
                     {i.reorder}
                   </td>
-                  <td className="px-3 py-3 text-right font-mono">LKR {i.cost.toLocaleString()}</td>
+                  <td className="px-3 py-3 text-right font-mono">{formatCurrency(i.cost)}</td>
                   <td className="px-3 py-3 text-muted-foreground">{i.supplier}</td>
                   <td className="px-3 py-3">
                     <StatusChip variant={st.variant}>{st.label}</StatusChip>

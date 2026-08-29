@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import { isManagerOrAbove } from "@/lib/permissions";
+import { formatCurrency } from "@/lib/currency";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
 import {
@@ -251,7 +252,7 @@ function CustomerDetailPanel({
             {customer.loyaltyPoints.toLocaleString()} pts
           </span>
           <span className="text-xs text-muted-foreground">
-            (≈ LKR {customer.loyaltyPoints.toLocaleString()} redeemable)
+            (≈ {formatCurrency(customer.loyaltyPoints)} redeemable)
           </span>
         </div>
       </div>
@@ -285,7 +286,7 @@ function CustomerDetailPanel({
             {history.map((inv) => (
               <div key={inv.id} className="flex items-center justify-between text-sm">
                 <span className="font-mono text-xs text-muted-foreground">{inv.id}</span>
-                <span className="font-mono font-semibold">LKR {inv.total.toLocaleString()}</span>
+                <span className="font-mono font-semibold">{formatCurrency(inv.total)}</span>
                 <span className="text-xs text-muted-foreground">
                   {new Date(inv.createdAt).toLocaleDateString()}
                 </span>
@@ -333,7 +334,7 @@ function CustomerRow({
         <td className="px-3 py-3 font-mono text-xs text-muted-foreground">{customer.phone}</td>
         <td className="px-3 py-3 text-right font-mono">{customer.visits}</td>
         <td className="px-3 py-3 text-right font-mono font-semibold">
-          LKR {customer.spend.toLocaleString()}
+          {formatCurrency(customer.spend)}
         </td>
         <td className="px-3 py-3 text-muted-foreground text-xs">
           {customer.lastVisit
@@ -445,7 +446,7 @@ function CustomerCard({
           <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             <span>{customer.visits} visits</span>
             <span className="font-mono font-semibold text-foreground">
-              LKR {customer.spend.toLocaleString()}
+              {formatCurrency(customer.spend)}
             </span>
             <span className="inline-flex items-center gap-1">
               <Car className="h-3 w-3" /> {customer.vehicles.length}
@@ -697,9 +698,7 @@ function CouponsPanel() {
                 </StatusChip>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                <span>
-                  {c.type === "percent" ? `${c.value}%` : `LKR ${c.value.toLocaleString()}`} off
-                </span>
+                <span>{c.type === "percent" ? `${c.value}%` : formatCurrency(c.value)} off</span>
                 <span>
                   Expires{" "}
                   {c.expiresAt
@@ -768,7 +767,7 @@ function CouponsPanel() {
                 <tr key={c.id} className="hover:bg-muted/40">
                   <td className="px-5 py-2.5 font-mono font-semibold">{c.code}</td>
                   <td className="px-3 py-2.5">
-                    {c.type === "percent" ? `${c.value}%` : `LKR ${c.value.toLocaleString()}`} off
+                    {c.type === "percent" ? `${c.value}%` : formatCurrency(c.value)} off
                   </td>
                   <td className="px-3 py-2.5 text-muted-foreground text-xs">
                     {c.expiresAt

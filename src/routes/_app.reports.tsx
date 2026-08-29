@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/page-header";
 import { Download } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { sumPaymentsByMethod, describePaymentMethods, type Invoice } from "@/lib/db";
+import { formatCurrency } from "@/lib/currency";
 import {
   todayBusinessDate,
   addBusinessDays,
@@ -155,9 +156,9 @@ function Reports() {
   const reports = [
     {
       name: "Revenue Summary",
-      desc: `Cash LKR ${cashRevenue.toLocaleString()} · Card LKR ${cardRevenue.toLocaleString()} · Transfer LKR ${transferRevenue.toLocaleString()}`,
-      metric: totalRevenue > 0 ? `LKR ${totalRevenue.toLocaleString()}` : "LKR 0",
-      delta: `Avg invoice LKR ${avgInvoice.toLocaleString()}`,
+      desc: `Cash ${formatCurrency(cashRevenue)} · Card ${formatCurrency(cardRevenue)} · Transfer ${formatCurrency(transferRevenue)}`,
+      metric: formatCurrency(totalRevenue),
+      delta: `Avg invoice ${formatCurrency(avgInvoice)}`,
       color: "text-success",
       exportFn: () =>
         exportCSV(
@@ -175,8 +176,8 @@ function Reports() {
     },
     {
       name: "Profit & Loss",
-      desc: `Revenue LKR ${totalRevenue.toLocaleString()} − Expenses LKR ${totalExpenseAmt.toLocaleString()}`,
-      metric: `LKR ${netProfit.toLocaleString()}`,
+      desc: `Revenue ${formatCurrency(totalRevenue)} − Expenses ${formatCurrency(totalExpenseAmt)}`,
+      metric: formatCurrency(netProfit),
       delta: netProfit >= 0 ? "Net profit" : "Net loss",
       color: netProfit >= 0 ? "text-success" : "text-destructive",
       exportFn: () =>
@@ -229,9 +230,9 @@ function Reports() {
     {
       name: "Customer Lifetime Value",
       desc: topCustomer
-        ? `Top: ${topCustomer.name} · LKR ${topCustomer.spend.toLocaleString()}`
+        ? `Top: ${topCustomer.name} · ${formatCurrency(topCustomer.spend)}`
         : "No repeat customers yet",
-      metric: `LKR ${avgCLV.toLocaleString()}`,
+      metric: formatCurrency(avgCLV),
       delta: "Average lifetime spend",
       color: "text-primary",
       exportFn: () =>
@@ -244,7 +245,7 @@ function Reports() {
     {
       name: "Inventory Report",
       desc: `${lowCount} low · ${outCount} out of stock`,
-      metric: `LKR ${stockValue.toLocaleString()}`,
+      metric: formatCurrency(stockValue),
       delta: `${inventory.length} SKUs on file`,
       color: "text-warning",
       exportFn: () =>
@@ -264,7 +265,7 @@ function Reports() {
     },
     {
       name: "Shift Summary",
-      desc: `${closedShifts.length} shifts closed · avg variance LKR ${avgVariance}`,
+      desc: `${closedShifts.length} shifts closed · avg variance ${formatCurrency(avgVariance)}`,
       metric: `${shifts.length} shifts`,
       delta:
         shifts.filter((s) => s.status === "OPEN").length > 0 ? "1 shift open" : "No open shift",
@@ -278,6 +279,7 @@ function Reports() {
             "Closed",
             "Cash Sales",
             "Card Sales",
+            "Transfer Sales",
             "Expenses",
             "Variance",
           ],
@@ -288,6 +290,7 @@ function Reports() {
             s.closedAt?.slice(0, 16) ?? "",
             s.cashSales,
             s.cardSales,
+            s.transferSales,
             s.totalExpenses,
             s.variance ?? "",
           ]),
@@ -403,7 +406,7 @@ function Reports() {
             />
             <Tooltip
               formatter={(val: number, name: string) => [
-                `LKR ${val.toLocaleString()}`,
+                formatCurrency(val),
                 name === "cash" ? "Cash" : name === "card" ? "Card" : "Transfer",
               ]}
               contentStyle={{ fontSize: 12, borderRadius: 8 }}
@@ -452,12 +455,10 @@ function Reports() {
               <div className="min-w-0">
                 <div className="font-medium truncate">{c.name}</div>
                 <div className="text-xs text-muted-foreground">
-                  {c.visits} visits · {c.tier} · avg LKR {c.avgOrderValue.toLocaleString()}
+                  {c.visits} visits · {c.tier} · avg {formatCurrency(c.avgOrderValue)}
                 </div>
               </div>
-              <span className="shrink-0 font-mono font-semibold">
-                LKR {c.spend.toLocaleString()}
-              </span>
+              <span className="shrink-0 font-mono font-semibold">{formatCurrency(c.spend)}</span>
             </div>
           ))}
           {rankedCustomers.length === 0 && (
@@ -485,10 +486,10 @@ function Reports() {
                   <td className="px-5 py-2.5 font-medium">{c.name}</td>
                   <td className="px-3 py-2.5 text-right font-mono">{c.visits}</td>
                   <td className="px-3 py-2.5 text-right font-mono font-semibold">
-                    LKR {c.spend.toLocaleString()}
+                    {formatCurrency(c.spend)}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono">
-                    LKR {c.avgOrderValue.toLocaleString()}
+                    {formatCurrency(c.avgOrderValue)}
                   </td>
                   <td className="px-3 py-2.5">{c.tier}</td>
                 </tr>

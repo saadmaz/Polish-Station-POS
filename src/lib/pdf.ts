@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import type { Invoice, InvoiceLine, PurchaseOrder } from "./db";
 import { getPayments, getAmountRefunded, getBusinessInfo } from "./db";
+import { formatCurrency } from "./currency";
 import { LOGO_PNG_BASE64 } from "./logo-asset";
 
 // Letterhead details come from the settings/business Firestore doc (cached in
@@ -32,9 +33,12 @@ const CW = PW - ML * 2;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmt(n: number) {
-  return "LKR " + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+// Used to always force 2 decimal places here (LKR 1,234.00), independent of
+// every other screen in the app (LKR 1,234) -- see src/lib/currency.ts's
+// header comment for why that was the actual bug (CC-currency), not a
+// deliberate PDF convention. Delegating puts this document on the same
+// formatting everywhere else already uses.
+const fmt = formatCurrency;
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", {

@@ -11,6 +11,7 @@ import {
   SheetFooter,
 } from "@/components/ui/sheet";
 import { Search, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { formatCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
 interface BookingSheetProps {
@@ -218,7 +219,7 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
     });
 
     const depositNote = form.requireDeposit
-      ? ` · Deposit LKR ${form.depositAmount.toLocaleString()} required`
+      ? ` · Deposit ${formatCurrency(form.depositAmount)} required`
       : "";
 
     toast.success("Booking confirmed", {
@@ -365,7 +366,7 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
               <option value="">Select a service…</option>
               {services.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name} · LKR {s.price.toLocaleString()} ({s.durationMin}m)
+                  {s.name} · {formatCurrency(s.price)} ({s.durationMin}m)
                 </option>
               ))}
             </select>
@@ -496,8 +497,8 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
                   )}
                 </div>
                 <div className="text-[11px] text-muted-foreground">
-                  Balance due at pickup: LKR{" "}
-                  {((selectedService?.price ?? 0) - form.depositAmount).toLocaleString()}
+                  Balance due at pickup:{" "}
+                  {formatCurrency((selectedService?.price ?? 0) - form.depositAmount)}
                 </div>
               </div>
             )}

@@ -11,8 +11,9 @@ import { useAuth } from "@/lib/auth";
 import { isManagerOrAbove } from "@/lib/permissions";
 import { useStaffList } from "@/lib/use-staff-list";
 import { cn } from "@/lib/utils";
-import { getPayments } from "@/lib/db";
+import { sumShiftPaymentsByMethod } from "@/lib/db";
 import type { Shift } from "@/lib/db";
+import { formatCurrency } from "@/lib/currency";
 
 // ─── Denomination definitions ─────────────────────────────────────────────────
 
@@ -54,7 +55,7 @@ function DenomCounter({
               onChange={(e) => onChange(d.key, Number(e.target.value) || 0)}
             />
             <span className="hidden text-xs text-muted-foreground font-mono w-28 text-right sm:inline">
-              = LKR {((denoms[d.key] ?? 0) * d.value).toLocaleString()}
+              = {formatCurrency((denoms[d.key] ?? 0) * d.value)}
             </span>
           </div>
         </div>
@@ -96,7 +97,7 @@ function OpenShiftPanel({ onClose }: { onClose: () => void }) {
         notes,
       });
       toast.success("Shift opened", {
-        description: `Opening balance: LKR ${balance.toLocaleString()}`,
+        description: `Opening balance: ${formatCurrency(balance)}`,
       });
       onClose();
     } catch {
@@ -134,7 +135,7 @@ function OpenShiftPanel({ onClose }: { onClose: () => void }) {
       <div className="rounded-lg bg-muted/50 border border-border px-4 py-3 flex items-center justify-between">
         <span className="text-sm font-semibold">Total Opening Cash</span>
         <span className="font-display text-xl font-extrabold text-success">
-          LKR {balance.toLocaleString()}
+          {formatCurrency(balance)}
         </span>
       </div>
 
@@ -181,25 +182,16 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
     (e) => e.sessionId === shift.id && e.type === "DEPOSIT",
   );
 
-  // Cash/card totals mirror recalcShift in store.tsx: sum payments/refunds
-  // tagged with THIS shift's sessionId across all invoices, not just
-  // invoices opened during this shift: a balance collected or refunded
-  // during this shift affects this drawer regardless of which shift the
-  // original sale happened in.
-  let cashSales = 0;
-  let cardSales = 0;
-  for (const inv of invoicesList) {
-    for (const p of getPayments(inv)) {
-      if (p.sessionId !== shift.id) continue;
-      if (p.method === "Cash") cashSales += p.amount;
-      else cardSales += p.amount;
-    }
-    for (const r of inv.refunds ?? []) {
-      if (r.sessionId !== shift.id) continue;
-      if (r.method === "Cash") cashSales -= r.amount;
-      else cardSales -= r.amount;
-    }
-  }
+  // Mirrors recalcShift in store.tsx (shared via sumShiftPaymentsByMethod):
+  // sum payments/refunds tagged with THIS shift's sessionId across all
+  // invoices, not just invoices opened during this shift -- a balance
+  // collected or refunded during this shift affects this drawer regardless
+  // of which shift the original sale happened in.
+  const {
+    cash: cashSales,
+    card: cardSales,
+    transfer: transferSales,
+  } = sumShiftPaymentsByMethod(invoicesList, shift.id);
   const totalExp = sessionExpenses.reduce((s, e) => s + e.amount, 0);
   const totalDep = sessionDeposits.reduce((s, e) => s + e.amount, 0);
 
@@ -218,7 +210,7 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
       return;
     }
     if (needsNote) {
-      toast.error(`Variance is LKR ${absVariance.toLocaleString()}, please add an explanation`);
+      toast.error(`Variance is ${formatCurrency(absVariance)}, please add an explanation`);
       return;
     }
     setBusy(true);
@@ -231,7 +223,7 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
         variance,
       });
       toast.success("Shift closed", {
-        description: `Variance: LKR ${variance >= 0 ? "+" : ""}${variance.toLocaleString()}`,
+        description: `Variance: ${variance >= 0 ? "+" : ""}${formatCurrency(variance)}`,
       });
       onClose();
     } catch {
@@ -244,11 +236,12 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
   return (
     <div className="space-y-5">
       {/* Summary row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {[
           { label: "Opening", value: shift.openingBalance, color: "" },
           { label: "Cash Sales", value: cashSales, color: "text-success" },
           { label: "Card Sales", value: cardSales, color: "text-info" },
+          { label: "Transfer Sales", value: transferSales, color: "text-warning" },
           { label: "Expenses", value: totalExp + totalDep, color: "text-primary" },
         ].map((s) => (
           <div
@@ -259,7 +252,7 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
               {s.label}
             </div>
             <div className={cn("font-display text-base font-bold mt-1", s.color)}>
-              LKR {s.value.toLocaleString()}
+              {formatCurrency(s.value)}
             </div>
           </div>
         ))}
@@ -276,9 +269,7 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
           <div className="text-[11px] text-muted-foreground uppercase tracking-wider">
             Expected Cash
           </div>
-          <div className="font-display text-lg font-bold mt-1">
-            LKR {expectedCash.toLocaleString()}
-          </div>
+          <div className="font-display text-lg font-bold mt-1">{formatCurrency(expectedCash)}</div>
         </div>
         <div
           className={cn(
@@ -297,8 +288,8 @@ function CloseShiftPanel({ shift, onClose }: { shift: Shift; onClose: () => void
               variance < 0 ? "text-primary" : variance > 0 ? "text-success" : "",
             )}
           >
-            LKR {variance >= 0 ? "+" : ""}
-            {variance.toLocaleString()}
+            {variance >= 0 ? "+" : ""}
+            {formatCurrency(variance)}
           </div>
         </div>
       </div>
@@ -399,23 +390,29 @@ export function ShiftModal({ open, onOpenChange }: ShiftModalProps) {
                     minute: "2-digit",
                   })}
                 </div>
-                <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+                <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
                   <div>
                     <div className="text-[11px] text-muted-foreground">Cash Sales</div>
                     <div className="font-mono font-semibold">
-                      LKR {openShift.cashSales.toLocaleString()}
+                      {formatCurrency(openShift.cashSales)}
                     </div>
                   </div>
                   <div>
                     <div className="text-[11px] text-muted-foreground">Card Sales</div>
                     <div className="font-mono font-semibold">
-                      LKR {openShift.cardSales.toLocaleString()}
+                      {formatCurrency(openShift.cardSales)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] text-muted-foreground">Transfer Sales</div>
+                    <div className="font-mono font-semibold">
+                      {formatCurrency(openShift.transferSales)}
                     </div>
                   </div>
                   <div>
                     <div className="text-[11px] text-muted-foreground">Expenses</div>
                     <div className="font-mono font-semibold">
-                      LKR {openShift.totalExpenses.toLocaleString()}
+                      {formatCurrency(openShift.totalExpenses)}
                     </div>
                   </div>
                 </div>
@@ -477,7 +474,7 @@ export function ShiftModal({ open, onOpenChange }: ShiftModalProps) {
                         </div>
                         <div className="flex items-center gap-3">
                           <span className="font-mono text-xs">
-                            LKR {(s.cashSales + s.cardSales).toLocaleString()}
+                            {formatCurrency(s.cashSales + s.cardSales + s.transferSales)}
                           </span>
                           <span
                             className={cn(

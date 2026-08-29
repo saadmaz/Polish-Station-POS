@@ -15,6 +15,7 @@ import {
   Check,
 } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { formatCurrency } from "@/lib/currency";
 import { todayBusinessDate, addBusinessDays } from "@/lib/business-day";
 import { BookingSheet } from "@/components/booking-sheet";
 import { StatusChip, statusVariant } from "@/components/status-chip";
@@ -91,7 +92,7 @@ function BookingCard({
           <span className="text-muted-foreground">Tech:</span> {booking.tech}
         </div>
         <div>
-          <span className="text-muted-foreground">Price:</span> LKR {booking.price.toLocaleString()}
+          <span className="text-muted-foreground">Price:</span> {formatCurrency(booking.price)}
         </div>
         {booking.notes && (
           <div>
@@ -113,7 +114,7 @@ function BookingCard({
           <div className="flex items-center gap-1.5">
             <Banknote className="h-3.5 w-3.5" />
             <span className="font-semibold">
-              Deposit LKR {(booking.depositAmount ?? 0).toLocaleString()}
+              Deposit {formatCurrency(booking.depositAmount ?? 0)}
             </span>
             <span>·</span>
             <span>{depositPaid ? "Paid" : "Required"}</span>
@@ -500,7 +501,7 @@ function Bookings() {
                       <td className="px-3 py-3">{b.serviceName}</td>
                       <td className="px-3 py-3 text-muted-foreground">{b.tech}</td>
                       <td className="px-3 py-3 text-right font-mono font-semibold">
-                        LKR {b.price.toLocaleString()}
+                        {formatCurrency(b.price)}
                       </td>
                       <td className="px-3 py-3">
                         {b.depositStatus && b.depositStatus !== "none" && (
