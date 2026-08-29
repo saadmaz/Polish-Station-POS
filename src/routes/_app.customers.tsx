@@ -5,6 +5,7 @@ import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import { isManagerOrAbove } from "@/lib/permissions";
 import { formatCurrency } from "@/lib/currency";
+import { formatDate } from "@/lib/date-format";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
 import {
@@ -287,9 +288,7 @@ function CustomerDetailPanel({
               <div key={inv.id} className="flex items-center justify-between text-sm">
                 <span className="font-mono text-xs text-muted-foreground">{inv.id}</span>
                 <span className="font-mono font-semibold">{formatCurrency(inv.total)}</span>
-                <span className="text-xs text-muted-foreground">
-                  {new Date(inv.createdAt).toLocaleDateString()}
-                </span>
+                <span className="text-xs text-muted-foreground">{formatDate(inv.createdAt)}</span>
               </div>
             ))}
           </div>
@@ -337,13 +336,7 @@ function CustomerRow({
           {formatCurrency(customer.spend)}
         </td>
         <td className="px-3 py-3 text-muted-foreground text-xs">
-          {customer.lastVisit
-            ? new Date(customer.lastVisit).toLocaleDateString([], {
-                day: "numeric",
-                month: "short",
-                year: "numeric",
-              })
-            : "Never"}
+          {customer.lastVisit ? formatDate(customer.lastVisit) : "Never"}
         </td>
         <td className="px-3 py-3 text-right">
           <div className="inline-flex items-center gap-1 text-muted-foreground">
@@ -699,16 +692,7 @@ function CouponsPanel() {
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                 <span>{c.type === "percent" ? `${c.value}%` : formatCurrency(c.value)} off</span>
-                <span>
-                  Expires{" "}
-                  {c.expiresAt
-                    ? new Date(c.expiresAt).toLocaleDateString([], {
-                        day: "numeric",
-                        month: "short",
-                        year: "numeric",
-                      })
-                    : "Never"}
-                </span>
+                <span>Expires {c.expiresAt ? formatDate(c.expiresAt) : "Never"}</span>
                 <span className="font-mono">
                   {c.redeemedCount}
                   {c.maxRedemptions != null ? ` / ${c.maxRedemptions}` : ""} redeemed
@@ -770,13 +754,7 @@ function CouponsPanel() {
                     {c.type === "percent" ? `${c.value}%` : formatCurrency(c.value)} off
                   </td>
                   <td className="px-3 py-2.5 text-muted-foreground text-xs">
-                    {c.expiresAt
-                      ? new Date(c.expiresAt).toLocaleDateString([], {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })
-                      : "Never"}
+                    {c.expiresAt ? formatDate(c.expiresAt) : "Never"}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono">
                     {c.redeemedCount}

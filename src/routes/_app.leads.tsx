@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
 import { Search, Mail, Phone, Car, Calendar, UserPlus, Archive, CheckCircle2 } from "lucide-react";
 import type { Lead, LeadStatus, LeadType } from "@/lib/db";
+import { formatDate } from "@/lib/date-format";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/leads")({
@@ -82,12 +83,7 @@ function LeadCard({
             <StatusChip variant={STATUS_TONE[lead.status]}>{lead.status}</StatusChip>
           </div>
           <div className="mt-0.5 text-[11px] uppercase tracking-wider text-muted-foreground">
-            {TYPE_LABEL[lead.type]} ·{" "}
-            {new Date(lead.createdAt).toLocaleDateString([], {
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-            })}
+            {TYPE_LABEL[lead.type]} · {formatDate(lead.createdAt)}
           </div>
         </div>
       </div>
@@ -279,11 +275,7 @@ function Leads() {
                     )}
                   </td>
                   <td className="px-3 py-3 text-xs text-muted-foreground">
-                    {new Date(l.createdAt).toLocaleDateString([], {
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric",
-                    })}
+                    {formatDate(l.createdAt)}
                   </td>
                   <td className="px-3 py-3">
                     <StatusChip variant={STATUS_TONE[l.status]}>{l.status}</StatusChip>

@@ -7,6 +7,7 @@ import { StatusChip, statusVariant } from "@/components/status-chip";
 import { PageHeader } from "@/components/page-header";
 import { ShiftModal } from "@/components/shift-modal";
 import { formatCurrency } from "@/lib/currency";
+import { formatTime } from "@/lib/date-format";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/dashboard")({
@@ -172,12 +173,7 @@ function Dashboard() {
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Opened</span>
-                <span className="font-mono">
-                  {new Date(openShift.openedAt).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
+                <span className="font-mono">{formatTime(openShift.openedAt)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Cash Sales</span>

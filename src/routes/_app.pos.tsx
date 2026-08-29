@@ -5,6 +5,7 @@ import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import { isManagerOrAbove } from "@/lib/permissions";
 import { formatCurrency } from "@/lib/currency";
+import { formatDateTime } from "@/lib/date-format";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip, statusVariant } from "@/components/status-chip";
 import {
@@ -815,14 +816,7 @@ function POS() {
                         <StatusChip variant={statusVariant(i.status)}>{i.status}</StatusChip>
                       </div>
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>
-                          {new Date(i.createdAt).toLocaleString([], {
-                            day: "numeric",
-                            month: "short",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
+                        <span>{formatDateTime(i.createdAt)}</span>
                         <span>{describePaymentMethods(i)}</span>
                       </div>
                       <div className="flex items-baseline justify-between">
@@ -869,12 +863,7 @@ function POS() {
                           <td className="px-4 py-2.5 font-mono text-xs">{i.id}</td>
                           <td className="px-3 py-2.5 font-medium">{i.customerName}</td>
                           <td className="px-3 py-2.5 text-muted-foreground text-xs">
-                            {new Date(i.createdAt).toLocaleString([], {
-                              day: "numeric",
-                              month: "short",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
+                            {formatDateTime(i.createdAt)}
                           </td>
                           <td className="px-3 py-2.5 text-right font-mono font-semibold">
                             {formatCurrency(i.total)}

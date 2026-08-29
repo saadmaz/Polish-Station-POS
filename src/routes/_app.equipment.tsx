@@ -19,6 +19,7 @@ import { useStore } from "@/lib/store";
 import type { Equipment, MaintenanceLog, MaintenanceType, EquipmentStatus } from "@/lib/db";
 import { newId } from "@/lib/db";
 import { formatCurrency } from "@/lib/currency";
+import { formatDate } from "@/lib/date-format";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/equipment")({
@@ -55,13 +56,7 @@ const EQ_TYPES = [
 const MAINT_TYPES: MaintenanceType[] = ["Service", "Repair", "Inspection", "Replacement"];
 const STATUS_OPTIONS: EquipmentStatus[] = ["Active", "In Maintenance", "Retired"];
 
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
+const fmtDate = formatDate;
 // ─── Equipment Form ──────────────────────────────────────────────────────────
 
 const BLANK_EQ: Omit<Equipment, "id" | "createdAt"> = {

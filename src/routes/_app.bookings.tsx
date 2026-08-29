@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { formatCurrency } from "@/lib/currency";
+import { formatDateWithWeekday, formatWeekRange } from "@/lib/date-format";
 import { todayBusinessDate, addBusinessDays } from "@/lib/business-day";
 import { BookingSheet } from "@/components/booking-sheet";
 import { StatusChip, statusVariant } from "@/components/status-chip";
@@ -38,13 +39,7 @@ const CAT_COLORS: Record<string, string> = {
   Coating: "var(--charcoal)",
 };
 
-function formatDate(dateStr: string): string {
-  return new Date(dateStr + "T00:00:00").toLocaleDateString([], {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  });
-}
+const formatDate = formatDateWithWeekday;
 
 // ─── Booking detail popover ───────────────────────────────────────────────────
 
@@ -200,6 +195,11 @@ function Bookings() {
   const weekDayIndex = new Date(`${currentDate}T12:00:00.000Z`).getUTCDay(); // 0=Sun
   const weekMonday = addBusinessDays(currentDate, -((weekDayIndex + 6) % 7));
   const weekDates = Array.from({ length: 7 }, (_, i) => addBusinessDays(weekMonday, i));
+  // Audit finding B4: Week view kept the single-day header/subtitle even
+  // though it displays all 7 days — this is what the header/subtitle
+  // actually need once `view === "week"`.
+  const weekDatesSet = new Set(weekDates);
+  const weekBookings = bookings.filter((b) => weekDatesSet.has(b.date));
 
   function handleStatusChange(id: string, status: BookingStatus) {
     const b = bookings.find((x) => x.id === id);
@@ -329,7 +329,11 @@ function Bookings() {
     <div className="p-6">
       <PageHeader
         title="Bookings"
-        subtitle={`${todayBookings.length} bookings for ${formatDate(currentDate)}`}
+        subtitle={
+          view === "week"
+            ? `${weekBookings.length} bookings for ${formatWeekRange(weekDates[0], weekDates[6])}`
+            : `${todayBookings.length} bookings for ${formatDate(currentDate)}`
+        }
         actions={
           <>
             <div className="inline-flex rounded-md border border-input bg-background p-0.5 text-xs font-medium">
@@ -377,7 +381,11 @@ function Bookings() {
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <div className="font-display font-bold">{formatDate(currentDate)}</div>
+            <div className="font-display font-bold">
+              {view === "week"
+                ? formatWeekRange(weekDates[0], weekDates[6])
+                : formatDate(currentDate)}
+            </div>
             <button
               onClick={() => setCurrentDate((d) => addBusinessDays(d, view === "week" ? 7 : 1))}
               className="rounded-md p-1.5 hover:bg-muted"

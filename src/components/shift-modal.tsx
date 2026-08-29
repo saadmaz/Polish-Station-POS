@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { sumShiftPaymentsByMethod } from "@/lib/db";
 import type { Shift } from "@/lib/db";
 import { formatCurrency } from "@/lib/currency";
+import { formatTime, formatShortDate } from "@/lib/date-format";
 
 // ─── Denomination definitions ─────────────────────────────────────────────────
 
@@ -385,10 +386,7 @@ export function ShiftModal({ open, onOpenChange }: ShiftModalProps) {
                 </div>
                 <div className="text-sm text-muted-foreground">
                   Opened by <strong>{openShift.staffName}</strong> at{" "}
-                  {new Date(openShift.openedAt).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                  {formatTime(openShift.openedAt)}
                 </div>
                 <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
                   <div>
@@ -431,12 +429,8 @@ export function ShiftModal({ open, onOpenChange }: ShiftModalProps) {
                 </div>
                 {recentClosed && (
                   <div className="text-sm text-muted-foreground">
-                    Last shift closed at{" "}
-                    {new Date(recentClosed.closedAt!).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}{" "}
-                    by {recentClosed.staffName}
+                    Last shift closed at {formatTime(recentClosed.closedAt!)} by{" "}
+                    {recentClosed.staffName}
                   </div>
                 )}
                 <button
@@ -466,10 +460,7 @@ export function ShiftModal({ open, onOpenChange }: ShiftModalProps) {
                         <div>
                           <span className="font-medium">{s.staffName}</span>
                           <span className="text-muted-foreground ml-2">
-                            {new Date(s.openedAt).toLocaleDateString([], {
-                              day: "numeric",
-                              month: "short",
-                            })}
+                            {formatShortDate(s.openedAt)}
                           </span>
                         </div>
                         <div className="flex items-center gap-3">

@@ -8,6 +8,7 @@ import { useStore } from "@/lib/store";
 import * as db from "@/lib/db";
 import type { BusinessInfo, Service, ServiceCategory } from "@/lib/db";
 import { formatCurrency } from "@/lib/currency";
+import { formatDateTime } from "@/lib/date-format";
 import {
   Building2,
   Tag,
@@ -731,12 +732,7 @@ function AuditPanel() {
                   {e.entityId ? ` · ${e.entityId}` : ""}
                 </div>
                 <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-                  {new Date(e.createdAt).toLocaleString([], {
-                    day: "numeric",
-                    month: "short",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                  {formatDateTime(e.createdAt)}
                 </div>
               </div>
             ))}
@@ -757,12 +753,7 @@ function AuditPanel() {
                 {events.slice(0, 50).map((e) => (
                   <tr key={e.id}>
                     <td className="py-2.5 font-mono text-xs text-muted-foreground whitespace-nowrap">
-                      {new Date(e.createdAt).toLocaleString([], {
-                        day: "numeric",
-                        month: "short",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
+                      {formatDateTime(e.createdAt)}
                     </td>
                     <td className="py-2.5 font-medium">{e.staffName || e.staffId || "—"}</td>
                     <td className="py-2.5">

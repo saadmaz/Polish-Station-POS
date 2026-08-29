@@ -7,6 +7,7 @@ import { ShiftModal } from "@/components/shift-modal";
 import { ExpenseModal } from "@/components/expense-modal";
 import { MobileNavSheet } from "@/components/app-sidebar";
 import { useStore } from "@/lib/store";
+import { formatTime, formatDateWithWeekday } from "@/lib/date-format";
 import { cn } from "@/lib/utils";
 
 export function TopBar() {
@@ -111,14 +112,8 @@ export function TopBar() {
             suppressHydrationWarning
             className="hidden lg:block border-l border-border pl-3 text-right text-xs leading-tight min-w-20"
           >
-            <div className="font-mono font-semibold">
-              {now ? now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "--:--"}
-            </div>
-            <div className="text-muted-foreground">
-              {now
-                ? now.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })
-                : ""}
-            </div>
+            <div className="font-mono font-semibold">{now ? formatTime(now) : "--:--"}</div>
+            <div className="text-muted-foreground">{now ? formatDateWithWeekday(now) : ""}</div>
           </div>
         </div>
       </header>

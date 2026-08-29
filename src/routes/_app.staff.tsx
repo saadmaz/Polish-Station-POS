@@ -7,6 +7,7 @@ import { isManagerOrAbove } from "@/lib/permissions";
 import { PageHeader } from "@/components/page-header";
 import { ChevronLeft, ChevronRight, Trash2, X } from "lucide-react";
 import type { RotaShift } from "@/lib/db";
+import { formatWeekRange, formatFullDate } from "@/lib/date-format";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/staff")({
@@ -138,10 +139,7 @@ function RotaPanel() {
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <span className="text-muted-foreground">
-            {days[0].toLocaleDateString([], { day: "numeric", month: "short" })} –{" "}
-            {days[6].toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}
-          </span>
+          <span className="text-muted-foreground">{formatWeekRange(days[0], days[6])}</span>
           <button
             onClick={() => setWeekStart((w) => addDays(w, 7))}
             className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -325,14 +323,7 @@ function RotaShiftModal({
             <X className="h-4 w-4" />
           </button>
         </div>
-        <p className="mb-4 text-sm text-muted-foreground">
-          {new Date(date).toLocaleDateString([], {
-            weekday: "long",
-            day: "numeric",
-            month: "short",
-            year: "numeric",
-          })}
-        </p>
+        <p className="mb-4 text-sm text-muted-foreground">{formatFullDate(date)}</p>
 
         <div className="grid grid-cols-2 gap-3 mb-3">
           <div>

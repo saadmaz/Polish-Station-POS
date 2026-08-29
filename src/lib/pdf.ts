@@ -2,6 +2,7 @@ import jsPDF from "jspdf";
 import type { Invoice, InvoiceLine, PurchaseOrder } from "./db";
 import { getPayments, getAmountRefunded, getBusinessInfo } from "./db";
 import { formatCurrency } from "./currency";
+import { formatDate } from "./date-format";
 import { LOGO_PNG_BASE64 } from "./logo-asset";
 
 // Letterhead details come from the settings/business Firestore doc (cached in
@@ -40,13 +41,7 @@ const CW = PW - ML * 2;
 // formatting everywhere else already uses.
 const fmt = formatCurrency;
 
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
+const fmtDate = formatDate;
 
 function rule(doc: jsPDF, y: number, color = RULE) {
   doc.setDrawColor(...color);
@@ -706,11 +701,7 @@ export function downloadQuotationPDF(opts: {
     docType: "QUOTATION",
     docId: opts.id,
     docDate: new Date().toISOString(),
-    validUntil: validDate.toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    }),
+    validUntil: formatDate(validDate),
     customerName: opts.customerName,
     phone: opts.phone,
     plate: opts.plate,

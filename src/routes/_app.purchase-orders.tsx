@@ -19,6 +19,7 @@ import { useStore } from "@/lib/store";
 import type { PurchaseOrder, POLine, POStatus } from "@/lib/db";
 import { downloadPOPDF } from "@/lib/pdf";
 import { formatCurrency } from "@/lib/currency";
+import { formatDate } from "@/lib/date-format";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/purchase-orders")({
@@ -27,13 +28,7 @@ export const Route = createFileRoute("/_app/purchase-orders")({
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
+const fmtDate = formatDate;
 function poTotal(po: PurchaseOrder) {
   return po.lines.reduce((s, l) => s + l.unitCost * l.qtyOrdered, 0);
 }

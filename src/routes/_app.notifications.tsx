@@ -15,6 +15,7 @@ import {
 import { useStore } from "@/lib/store";
 import type { NotificationSettings } from "@/lib/db";
 import { buildWALink, buildSMSLink, fillTemplate, TEMPLATE_VARS } from "@/lib/notifications";
+import { formatDate } from "@/lib/date-format";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/notifications")({
@@ -30,13 +31,7 @@ function daysSince(iso: string | null): number {
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
 }
 
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
+const fmtDate = formatDate;
 
 // ─── Send Button ─────────────────────────────────────────────────────────────
 
