@@ -52,17 +52,6 @@ export function formatDateWithWeekday(value: string | Date): string {
   });
 }
 
-/** "Thursday, 27 Aug 2026" -- a day header where the weekday is the point
- *  (a rota/schedule view for one specific day). */
-export function formatFullDate(value: string | Date): string {
-  return toDate(value).toLocaleDateString("en-GB", {
-    weekday: "long",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
 /** "02:35 PM" */
 export function formatTime(value: string | Date): string {
   return upperMeridiem(
@@ -88,10 +77,9 @@ export function formatDateTime(value: string | Date): string {
   );
 }
 
-/** "24 Aug – 30 Aug 2026" -- an inclusive week range (a rota or calendar
- *  week header). Audit finding B4: Bookings' Week view kept a single-day
- *  header/subtitle instead of adopting this, even though the Staff rota
- *  (right next to it in the nav) already had it. */
+/** "24 Aug – 30 Aug 2026" -- an inclusive week range (a calendar week
+ *  header). Audit finding B4: Bookings' Week view kept a single-day
+ *  header/subtitle instead of adopting this. */
 export function formatWeekRange(startValue: string | Date, endValue: string | Date): string {
   const start = toDate(startValue).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
   const end = toDate(endValue).toLocaleDateString("en-GB", {

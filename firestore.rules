@@ -263,17 +263,5 @@ service cloud.firestore {
       allow read:  if hasModule("leads");
       allow write: if false;
     }
-
-    // ── Staff rota ────────────────────────────────────────────────────────
-    // Distinct from `shifts` (the till/cash-drawer session) above — this is
-    // "who's scheduled to work when". Read is open (a technician viewing the
-    // week's schedule isn't sensitive); only Manager+ holding the staff
-    // module may create/edit/delete entries.
-    match /rotaShifts/{shiftId} {
-      allow read:   if isAuth();
-      allow create: if hasModule("staff") && isManagerOrAbove();
-      allow update: if hasModule("staff") && isManagerOrAbove();
-      allow delete: if hasModule("staff") && isManagerOrAbove();
-    }
   }
 }

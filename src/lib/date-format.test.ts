@@ -3,7 +3,6 @@ import {
   formatShortDate,
   formatDate,
   formatDateWithWeekday,
-  formatFullDate,
   formatTime,
   formatDateTime,
   formatWeekRange,
@@ -22,10 +21,6 @@ describe("date-format (CC-date: no shared formatter, 6+ inconsistent shapes acro
 
   it("formatDateWithWeekday: weekday, day and month, no year", () => {
     expect(formatDateWithWeekday(ISO)).toBe("Thu 27 Aug");
-  });
-
-  it("formatFullDate: full weekday name, day, month and year", () => {
-    expect(formatFullDate(ISO)).toBe("Thursday, 27 Aug 2026");
   });
 
   it("formatTime: 12-hour clock with an uppercase AM/PM regardless of locale casing", () => {

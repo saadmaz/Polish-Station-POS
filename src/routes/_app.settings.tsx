@@ -721,8 +721,8 @@ function AuditPanel() {
           <h2 className="font-display text-lg font-bold">Audit Log</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
             Sales, shifts, bookings, customers, coupons, services, inventory, equipment, purchase
-            orders, expenses, and business/bay settings are all recorded immutably below. Rota
-            scheduling, notification settings, and staff accounts aren't logged yet.
+            orders, expenses, and business/bay settings are all recorded immutably below.
+            Notification settings and staff accounts aren't logged yet.
           </p>
         </div>
         {events.length > 0 && (

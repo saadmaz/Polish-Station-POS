@@ -41,7 +41,6 @@ const COLLECTIONS = [
   "maintenanceLogs",
   "purchaseOrders",
   "sentNotifications",
-  "rotaShifts",
 ];
 
 const BATCH_SIZE = 400; // stay under Firestore's 500-write batch limit

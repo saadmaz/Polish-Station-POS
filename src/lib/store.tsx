@@ -65,7 +65,6 @@ import type {
   POStatus,
   PurchaseOrder,
   RefundRecord,
-  RotaShift,
   SentNotification,
   Service,
   Shift,
@@ -134,7 +133,6 @@ interface Store {
   maintenanceLogsList: MaintenanceLog[];
   purchaseOrdersList: PurchaseOrder[];
   auditList: AuditLog[];
-  rotaShiftsList: RotaShift[];
   leads: Lead[];
 
   // computed
@@ -183,11 +181,6 @@ interface Store {
   addCoupon: (c: Omit<Coupon, "id" | "createdAt" | "redeemedCount">) => Coupon;
   updateCoupon: (c: Coupon) => void;
   deleteCoupon: (id: string) => void;
-
-  // Rota
-  addRotaShift: (s: Omit<RotaShift, "id" | "createdAt">) => RotaShift;
-  updateRotaShift: (s: RotaShift) => void;
-  deleteRotaShift: (id: string) => void;
 
   // Bookings
   addBooking: (b: Omit<Booking, "id" | "createdAt">) => Promise<Booking>;
@@ -324,7 +317,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [equipmentList, setEquipmentList] = useState<Equipment[]>([]);
   const [maintenanceLogsList, setMaintenanceLogsList] = useState<MaintenanceLog[]>([]);
   const [purchaseOrdersList, setPurchaseOrdersList] = useState<PurchaseOrder[]>([]);
-  const [rotaShiftsList, setRotaShiftsList] = useState<RotaShift[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [notificationSettingsData, setNotificationSettingsData] = useState<NotificationSettings>(
     DEFAULT_NOTIFICATION_SETTINGS,
@@ -457,16 +449,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           done();
         },
         fail("coupons"),
-      ),
-    );
-    add(() =>
-      onSnapshot(
-        fs("rotaShifts"),
-        (s) => {
-          setRotaShiftsList(s.docs.map((d) => ({ id: d.id, ...d.data() }) as RotaShift));
-          done();
-        },
-        fail("rotaShifts"),
       ),
     );
     add(() =>
@@ -830,17 +812,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       after: null,
     });
   }, []);
-
-  // ── Rota mutations ──────────────────────────────────────────────────────────
-  const addRotaShift = useCallback((data: Omit<RotaShift, "id" | "createdAt">): RotaShift => {
-    const s: RotaShift = { ...data, id: newId(), createdAt: new Date().toISOString() };
-    write("rotaShifts", s);
-    return s;
-  }, []);
-
-  const updateRotaShift = useCallback((s: RotaShift) => write("rotaShifts", s), []);
-
-  const deleteRotaShift = useCallback((id: string) => remove("rotaShifts", id), []);
 
   // ── Booking mutations ──────────────────────────────────────────────────────
   const addBooking = useCallback(
@@ -1523,7 +1494,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     maintenanceLogsList,
     purchaseOrdersList,
     auditList,
-    rotaShiftsList,
     leads,
     openShift,
     lowStockItems,
@@ -1552,9 +1522,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addCoupon,
     updateCoupon,
     deleteCoupon,
-    addRotaShift,
-    updateRotaShift,
-    deleteRotaShift,
     addBooking,
     updateBooking,
     deleteBooking,
