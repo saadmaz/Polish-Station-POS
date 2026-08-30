@@ -328,12 +328,16 @@ function buildDoc(opts: DocOptions): jsPDF {
     doc.text(fmt(lineTotal), C5, y, { align: "right" });
 
     const thisRowH = descLines.length > 1 ? rowH + 4 : rowH;
-    rule(doc, y - ROW_TOP_PAD + thisRowH);
+    // Skip the light per-row divider under the last item — the heavier
+    // closing rule lands 1mm below it, and the two together previously read
+    // as a stray doubled line rather than one deliberate border.
+    if (idx < opts.lines.length - 1) {
+      rule(doc, y - ROW_TOP_PAD + thisRowH);
+    }
     y += thisRowH;
   });
 
-  // A heavier rule right under the last row's light one marks the definitive
-  // end of the table, rather than reading as just another row divider.
+  // A heavier rule marks the definitive end of the table.
   y += 1;
   rule(doc, y, CHARCOAL);
   y += 8;
@@ -372,11 +376,11 @@ function buildDoc(opts: DocOptions): jsPDF {
   if (opts.tip && opts.tip > 0) totalRow("Tip / Gratuity", fmt(opts.tip));
 
   y += 1;
-  // Total box — right edge lands exactly on TV (not TV + extra padding), so
-  // it stays flush with the rest of the page's right margin instead of
-  // overhanging past it.
+  // Total box spans exactly TL to TV — the same left/right bounds as the
+  // "Subtotal" row's label and value above it — rather than extending 4mm
+  // further left than the label it's directly under.
   doc.setFillColor(...RED);
-  doc.roundedRect(TL - 4, y - 5.5, TV - TL + 4, 10, 1.5, 1.5, "F");
+  doc.roundedRect(TL, y - 5.5, TV - TL, 10, 1.5, 1.5, "F");
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
@@ -492,6 +496,8 @@ function buildDoc(opts: DocOptions): jsPDF {
   }
 
   // ── Footer ───────────────────────────────────────────────────────────────────
+  // Always pinned at the bottom of the page, regardless of content — that's
+  // what makes it read as a footer rather than just the last block of content.
   const footerY = 277;
   rule(doc, footerY - 5);
 
@@ -685,11 +691,11 @@ export function downloadPOPDF(po: PurchaseOrder) {
   rule(doc, y, CHARCOAL);
   y += 8;
 
-  // Total box — right edge flush at TV, matching the fix in buildDoc().
+  // Total box spans exactly TL to TV, matching the fix in buildDoc().
   const TV = RCOL;
   const TL = TV - 78;
   doc.setFillColor(...RED);
-  doc.roundedRect(TL - 4, y - 5.5, TV - TL + 4, 10, 1.5, 1.5, "F");
+  doc.roundedRect(TL, y - 5.5, TV - TL, 10, 1.5, 1.5, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.setTextColor(...WHITE);
