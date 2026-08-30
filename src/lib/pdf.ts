@@ -12,7 +12,13 @@ import { LOGO_PNG_BASE64 } from "./logo-asset";
 const WEBSITE_URL = "https://www.polishstation.lk";
 const WEBSITE_LABEL = "www.polishstation.lk";
 const CONTACT_PHONE_1 = "+94 76 788 5404";
-const CONTACT_PHONE_2 = "+94 11 788 5252";
+const CONTACT_PHONE_2 = "+94 7 11 88 5252";
+
+// Business bank account, shown on the payment box whenever the tender was a
+// bank Transfer — customers paying that way need the account to pay into.
+const BANK_ACCOUNT_NO = "1000 923 474";
+const BANK_ACCOUNT_NAME = "STOPWASH PVT LTD";
+const BANK_NAME = "Commercial Bank";
 
 // Header: address + clickable website only, no phone number.
 function drawHeaderContact(doc: jsPDF, x: number, y: number) {
@@ -379,7 +385,12 @@ function buildDoc(opts: DocOptions): jsPDF {
         : opts.method
           ? [{ method: opts.method, amount: opts.total, reference: "" }]
           : [];
-    const boxH = 9 + pays.length * 4.5;
+    // A bank Transfer tender needs the account to pay into printed alongside
+    // it — extra block appended once below the payment rows, not per-row,
+    // since a split payment only has one bank account to point to.
+    const hasTransfer = pays.some((p) => p.method === "Transfer");
+    const BANK_BLOCK_H = 19;
+    const boxH = 9 + pays.length * 4.5 + (hasTransfer ? BANK_BLOCK_H : 0);
     doc.setFillColor(...ROW_ALT);
     doc.roundedRect(ML, y - 5, 95, boxH, 1.5, 1.5, "F");
 
@@ -402,6 +413,21 @@ function buildDoc(opts: DocOptions): jsPDF {
       doc.text(fmt(p.amount), ML + 91, py, { align: "right" });
       py += 4.5;
     });
+
+    if (hasTransfer) {
+      py += 3.5;
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10.5);
+      doc.setTextColor(...CHARCOAL);
+      doc.text(BANK_ACCOUNT_NO, ML + 4, py);
+      py += 5;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(...SLATE);
+      doc.text(BANK_ACCOUNT_NAME, ML + 4, py);
+      py += 4;
+      doc.text(BANK_NAME, ML + 4, py);
+    }
 
     y += boxH + 4;
 
