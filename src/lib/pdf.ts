@@ -6,18 +6,15 @@ import { formatDate } from "./date-format";
 import { LOGO_PNG_BASE64 } from "./logo-asset";
 
 // Letterhead details come from the settings/business Firestore doc (cached in
-// db.ts by the store) so documents always print what Settings → Business says.
-const contactLine = () => {
-  const b = getBusinessInfo();
-  return `${b.address}  ·  ${b.phone}  ·  ${b.email}`;
-};
-
-// Header banner shows address + a clickable website link only — no phone
-// number, per the client's request. The footer keeps the full contact line
-// (phone + email) since that wasn't part of the ask.
+// db.ts by the store), except the website and the two landline/mobile
+// numbers below: those aren't part of the Settings → Business model, so — matching
+// how the header's website link was already handled — they're fixed here.
 const WEBSITE_URL = "https://www.polishstation.lk";
 const WEBSITE_LABEL = "www.polishstation.lk";
+const CONTACT_PHONE_1 = "+94 76 788 5404";
+const CONTACT_PHONE_2 = "+94 11 788 5252";
 
+// Header: address + clickable website only, no phone number.
 function drawHeaderContact(doc: jsPDF, x: number, y: number) {
   const addressPart = `${getBusinessInfo().address}  ·  `;
   doc.setFont("helvetica", "normal");
@@ -25,6 +22,35 @@ function drawHeaderContact(doc: jsPDF, x: number, y: number) {
   doc.setTextColor(255, 220, 220);
   doc.text(addressPart, x, y);
   doc.textWithLink(WEBSITE_LABEL, x + doc.getTextWidth(addressPart), y, { url: WEBSITE_URL });
+}
+
+// Footer: address, clickable website, and both contact numbers — no email.
+// Built as a sequence of segments (each measured before the next is placed)
+// rather than one joined string, so the pipe separators land at consistent
+// gaps regardless of how wide any one segment renders.
+function drawFooterContact(doc: jsPDF, x: number, y: number, color: [number, number, number]) {
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  let cx = x;
+  const sep = "   |   ";
+
+  const put = (text: string, isLink = false) => {
+    doc.setTextColor(...color);
+    if (isLink) {
+      doc.textWithLink(text, cx, y, { url: WEBSITE_URL });
+    } else {
+      doc.text(text, cx, y);
+    }
+    cx += doc.getTextWidth(text);
+  };
+
+  put(getBusinessInfo().address);
+  put(sep);
+  put(WEBSITE_LABEL, true);
+  put(sep);
+  put(CONTACT_PHONE_1);
+  put(sep);
+  put(CONTACT_PHONE_2);
 }
 
 // ─── Brand colours (RGB) ─────────────────────────────────────────────────────
@@ -436,11 +462,10 @@ function buildDoc(opts: DocOptions): jsPDF {
   doc.setTextColor(...RED);
   doc.text("POLISH STATION", ML, footerY);
 
+  drawFooterContact(doc, ML, footerY + 5, SLATE);
+
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
-  doc.setTextColor(...SLATE);
-  doc.text(contactLine(), ML, footerY + 5);
-
   doc.setTextColor(...MUTED);
   doc.text(
     `Thank you for choosing ${getBusinessInfo().trading}, Sri Lanka's premier car care destination.`,
@@ -683,10 +708,9 @@ export function downloadPOPDF(po: PurchaseOrder) {
   doc.setFontSize(8);
   doc.setTextColor(...RED);
   doc.text("POLISH STATION", ML, footerY);
+  drawFooterContact(doc, ML, footerY + 5, SLATE);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
-  doc.setTextColor(...SLATE);
-  doc.text(contactLine(), ML, footerY + 5);
   doc.setTextColor(...MUTED);
   doc.text("Please retain a signed copy for your records.", ML, footerY + 10);
   doc.setFontSize(7);
