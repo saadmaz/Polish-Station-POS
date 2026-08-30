@@ -78,6 +78,11 @@ const PW = 210;
 const ML = 16;
 const MR = PW - ML;
 const CW = PW - ML * 2;
+// Every right-aligned number (table totals, totals-block values, the
+// TOTAL DUE/ORDER TOTAL box) stops here — 2mm shy of MR — rather than
+// flush at MR itself, mirroring the ~2mm left inset already used on the
+// row-number column so both edges of the table read as evenly padded.
+const RCOL = MR - 2;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -252,19 +257,24 @@ function buildDoc(opts: DocOptions): jsPDF {
   doc.setFontSize(7.5);
   doc.setTextColor(...WHITE);
 
-  const C1 = ML + 3; // description start
-  const C2 = ML + 94; // qty
-  const C3 = ML + 124; // unit price
-  const C4 = ML + 150; // discount
-  const C5 = MR; // total (right-aligned)
+  // DISCOUNT is dropped from the table entirely when no line item actually
+  // carries one — a header with nothing under it in every row read as an
+  // unfinished table rather than a deliberate empty column, and dropping it
+  // gives DESCRIPTION/QTY/UNIT PRICE the room back.
+  const hasDiscount = opts.lines.some((l) => l.discount > 0);
 
   const C0 = ML + 2; // row number, shared x with the header "#"
+  const C1 = ML + 3; // description start
+  const C5 = RCOL; // total (right-aligned) — every column below is relative to this
+  const C3 = hasDiscount ? C5 - 70 : C5 - 40; // unit price
+  const C4 = hasDiscount ? C5 - 44 : 0; // discount (unused when !hasDiscount)
+  const C2 = hasDiscount ? C5 - 100 : C5 - 74; // qty
 
   doc.text("#", C0, y, { align: "left" });
   doc.text("DESCRIPTION", C1 + 6, y);
   doc.text("QTY", C2, y, { align: "right" });
   doc.text("UNIT PRICE", C3, y, { align: "right" });
-  doc.text("DISCOUNT", C4, y, { align: "right" });
+  if (hasDiscount) doc.text("DISCOUNT", C4, y, { align: "right" });
   doc.text("TOTAL", C5, y, { align: "right" });
 
   // The header bar's bottom edge sits 3mm below this y (rect drawn at y-5,
@@ -329,8 +339,8 @@ function buildDoc(opts: DocOptions): jsPDF {
   y += 8;
 
   // ── Totals ────────────────────────────────────────────────────────────────────
-  const TL = MR - 78; // totals label start
-  const TV = MR; // totals value (right-aligned)
+  const TV = RCOL; // totals value (right-aligned) — lines up with the table's TOTAL column
+  const TL = TV - 78; // totals label start
 
   function totalRow(
     label: string,
@@ -362,9 +372,11 @@ function buildDoc(opts: DocOptions): jsPDF {
   if (opts.tip && opts.tip > 0) totalRow("Tip / Gratuity", fmt(opts.tip));
 
   y += 1;
-  // Total box
+  // Total box — right edge lands exactly on TV (not TV + extra padding), so
+  // it stays flush with the rest of the page's right margin instead of
+  // overhanging past it.
   doc.setFillColor(...RED);
-  doc.roundedRect(TL - 4, y - 5.5, TV - TL + 8, 10, 1.5, 1.5, "F");
+  doc.roundedRect(TL - 4, y - 5.5, TV - TL + 4, 10, 1.5, 1.5, "F");
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
@@ -615,13 +627,12 @@ export function downloadPOPDF(po: PurchaseOrder) {
   doc.setFontSize(7.5);
   doc.setTextColor(...WHITE);
 
-  const C1 = ML + 3;
-  const C2 = ML + 85;
-  const C3 = ML + 110;
-  const C4 = ML + 135;
-  const C5 = MR;
-
   const C0 = ML + 2;
+  const C1 = ML + 3;
+  const C5 = RCOL;
+  const C4 = C5 - 59; // unit cost
+  const C3 = C5 - 84; // qty
+  const C2 = C5 - 109; // unit
 
   doc.text("#", C0, y, { align: "left" });
   doc.text("DESCRIPTION / SKU", C1 + 6, y);
@@ -674,16 +685,17 @@ export function downloadPOPDF(po: PurchaseOrder) {
   rule(doc, y, CHARCOAL);
   y += 8;
 
-  // Total box
-  const TL = MR - 78;
+  // Total box — right edge flush at TV, matching the fix in buildDoc().
+  const TV = RCOL;
+  const TL = TV - 78;
   doc.setFillColor(...RED);
-  doc.roundedRect(TL - 4, y - 5.5, MR - TL + 8, 10, 1.5, 1.5, "F");
+  doc.roundedRect(TL - 4, y - 5.5, TV - TL + 4, 10, 1.5, 1.5, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.setTextColor(...WHITE);
   doc.text("ORDER TOTAL", TL, y);
   doc.setFontSize(11);
-  doc.text(fmt(grandTotal), MR, y, { align: "right" });
+  doc.text(fmt(grandTotal), TV, y, { align: "right" });
   y += 16;
 
   // Notes
