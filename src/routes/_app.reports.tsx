@@ -72,7 +72,7 @@ function buildDailyData(
 }
 
 function Reports() {
-  const { invoices, bookings, customers, inventory, shifts, expenses, listenerErrors } = useStore();
+  const { invoices, bookings, customers, inventory, expenses, listenerErrors } = useStore();
   const expensesErrored = listenerErrors.has("expenses");
   const [period, setPeriod] = useState<Period>("30d");
 
@@ -122,15 +122,6 @@ function Reports() {
   const stockValue = inventory.reduce((s, i) => s + i.stock * i.cost, 0);
   const lowCount = inventory.filter((i) => i.stock > 0 && i.stock <= i.reorder).length;
   const outCount = inventory.filter((i) => i.stock === 0).length;
-
-  // Shift stats
-  const closedShifts = shifts.filter((s) => s.status === "CLOSED");
-  const avgVariance =
-    closedShifts.length > 0
-      ? Math.round(
-          closedShifts.reduce((s, sh) => s + Math.abs(sh.variance ?? 0), 0) / closedShifts.length,
-        )
-      : 0;
 
   // Customer lifetime value: ranked by total spend, with average order
   // value (spend / visits) so a customer with one big-ticket visit reads
@@ -275,39 +266,6 @@ function Reports() {
             i.stock * i.cost,
           ]),
           "inventory-report",
-        ),
-    },
-    {
-      name: "Shift Summary",
-      desc: `${closedShifts.length} shifts closed · avg variance ${formatCurrency(avgVariance)}`,
-      metric: `${shifts.length} shifts`,
-      delta:
-        shifts.filter((s) => s.status === "OPEN").length > 0 ? "1 shift open" : "No open shift",
-      exportFn: () =>
-        exportCSV(
-          [
-            "Shift ID",
-            "Staff",
-            "Opened",
-            "Closed",
-            "Cash Sales",
-            "Card Sales",
-            "Transfer Sales",
-            "Expenses",
-            "Variance",
-          ],
-          shifts.map((s) => [
-            s.id,
-            s.staffName,
-            s.openedAt.slice(0, 16),
-            s.closedAt?.slice(0, 16) ?? "",
-            s.cashSales,
-            s.cardSales,
-            s.transferSales,
-            s.totalExpenses,
-            s.variance ?? "",
-          ]),
-          "shift-summary",
         ),
     },
   ];

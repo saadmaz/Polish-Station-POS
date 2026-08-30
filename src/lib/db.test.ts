@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sumPaymentsByMethod, sumShiftPaymentsByMethod, type Invoice } from "./db";
+import { sumPaymentsByMethod, type Invoice } from "./db";
 
 function invoiceWithMethod(id: string, total: number, method: Invoice["method"]): Invoice {
   return {
@@ -12,7 +12,6 @@ function invoiceWithMethod(id: string, total: number, method: Invoice["method"])
     total,
     method,
     status: "Paid",
-    sessionId: null,
     createdAt: "2026-08-27T08:00:00.000Z",
   };
 }
@@ -46,7 +45,6 @@ describe("sumPaymentsByMethod (audit R1: Transfer was being counted as Card)", (
           method: "Cash",
           amount: 2000,
           reference: "",
-          sessionId: null,
           staffName: "",
           at: "",
         },
@@ -55,7 +53,6 @@ describe("sumPaymentsByMethod (audit R1: Transfer was being counted as Card)", (
           method: "Transfer",
           amount: 3000,
           reference: "",
-          sessionId: null,
           staffName: "",
           at: "",
         },
@@ -69,57 +66,5 @@ describe("sumPaymentsByMethod (audit R1: Transfer was being counted as Card)", (
 
   it("returns all-zero totals for no invoices", () => {
     expect(sumPaymentsByMethod([])).toEqual({ cash: 0, card: 0, transfer: 0 });
-  });
-});
-
-describe("sumShiftPaymentsByMethod (same bug found a 3rd time, this time in the till/cash-drawer reconciliation, not just Reports)", () => {
-  function invoiceWithPayment(
-    id: string,
-    sessionId: string | null,
-    method: Invoice["method"],
-    amount: number,
-  ): Invoice {
-    return {
-      ...invoiceWithMethod(id, amount, method),
-      payments: [
-        { id: `${id}-p1`, method, amount, reference: "", sessionId, staffName: "", at: "" },
-      ],
-    };
-  }
-
-  it("scopes totals to one shift's sessionId, bucketing Transfer separately from Card", () => {
-    const invoices = [
-      invoiceWithPayment("INV-1", "shift-A", "Cash", 5000),
-      invoiceWithPayment("INV-2", "shift-A", "Transfer", 3000),
-      invoiceWithPayment("INV-3", "shift-B", "Card", 9000), // different shift, excluded
-    ];
-
-    expect(sumShiftPaymentsByMethod(invoices, "shift-A")).toEqual({
-      cash: 5000,
-      card: 0,
-      transfer: 3000,
-    });
-  });
-
-  it("subtracts a refund from the method it was actually refunded through", () => {
-    const invoice: Invoice = {
-      ...invoiceWithMethod("INV-4", 3000, "Transfer"),
-      refunds: [
-        {
-          id: "r1",
-          amount: 1000,
-          method: "Transfer",
-          reason: "test",
-          sessionId: "shift-A",
-          staffName: "",
-          at: "",
-        },
-      ],
-    };
-
-    const totals = sumShiftPaymentsByMethod([invoice], "shift-A");
-
-    expect(totals.transfer).toBe(-1000); // no payment for this session, only the refund
-    expect(totals.card).toBe(0);
   });
 });

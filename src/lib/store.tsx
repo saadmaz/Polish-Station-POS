@@ -17,7 +17,6 @@ import {
   doc,
   setDoc,
   deleteDoc,
-  updateDoc,
   onSnapshot,
   writeBatch,
   addDoc,
@@ -41,7 +40,6 @@ import {
   sanitizeBays,
   setBusinessInfoCache,
   getAmountPaid,
-  sumShiftPaymentsByMethod,
   type BusinessInfo,
 } from "./db";
 import { synthesizeWalkInJob } from "./job-linking";
@@ -59,7 +57,6 @@ import type {
   Lead,
   MaintenanceLog,
   NotificationSettings,
-  PaymentMethod,
   PaymentRecord,
   POLine,
   POStatus,
@@ -67,7 +64,6 @@ import type {
   RefundRecord,
   SentNotification,
   Service,
-  Shift,
 } from "./db";
 
 // ── ID helpers ────────────────────────────────────────────────────────────────
@@ -128,7 +124,6 @@ interface Store {
   invoices: Invoice[];
   inventory: InventoryItem[];
   expenses: Expense[];
-  shifts: Shift[];
   equipmentList: Equipment[];
   maintenanceLogsList: MaintenanceLog[];
   purchaseOrdersList: PurchaseOrder[];
@@ -136,7 +131,6 @@ interface Store {
   leads: Lead[];
 
   // computed
-  openShift: Shift | undefined;
   lowStockItems: InventoryItem[];
   overdueEquipment: Equipment[];
 
@@ -220,23 +214,6 @@ interface Store {
   // Expenses
   addExpense: (e: Omit<Expense, "id" | "createdAt">) => Expense;
   deleteExpense: (id: string) => void;
-
-  // Shifts
-  openShiftFn: (data: {
-    staffId: string;
-    staffName: string;
-    openingBalance: number;
-    openingDenominations: Record<string, number>;
-    notes: string;
-  }) => Promise<Shift>;
-  closeShiftFn: (data: {
-    closingBalance: number;
-    closingDenominations: Record<string, number>;
-    notes: string;
-    verifiedBy: string;
-    variance: number;
-  }) => Promise<void>;
-  addSaleToShift: (invoiceId: string, method: PaymentMethod, amount: number) => void;
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -253,12 +230,6 @@ function fd(path: string, id: string) {
 function write<T extends { id: string }>(collPath: string, item: T): void {
   setDoc(fd(collPath, item.id), item).catch((err) =>
     console.error(`[store] write ${collPath}/${item.id}:`, err),
-  );
-}
-
-function patch(collPath: string, id: string, data: Record<string, unknown>): void {
-  updateDoc(fd(collPath, id), data).catch((err) =>
-    console.error(`[store] patch ${collPath}/${id}:`, err),
   );
 }
 
@@ -313,7 +284,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [shifts, setShifts] = useState<Shift[]>([]);
   const [equipmentList, setEquipmentList] = useState<Equipment[]>([]);
   const [maintenanceLogsList, setMaintenanceLogsList] = useState<MaintenanceLog[]>([]);
   const [purchaseOrdersList, setPurchaseOrdersList] = useState<PurchaseOrder[]>([]);
@@ -339,7 +309,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     bookings,
     jobs,
     invoices,
-    shifts,
     expenses,
     inventory,
     equipmentList,
@@ -358,7 +327,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       bookings,
       jobs,
       invoices,
-      shifts,
       expenses,
       inventory,
       equipmentList,
@@ -376,7 +344,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     bookings,
     jobs,
     invoices,
-    shifts,
     expenses,
     inventory,
     equipmentList,
@@ -489,16 +456,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           done();
         },
         fail("expenses"),
-      ),
-    );
-    add(() =>
-      onSnapshot(
-        newestFirst("shifts", "openedAt", 400),
-        (s) => {
-          setShifts(s.docs.map((d) => ({ id: d.id, ...d.data() }) as Shift).reverse());
-          done();
-        },
-        fail("shifts"),
       ),
     );
     add(() =>
@@ -661,7 +618,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // are computed by the Dashboard route itself via computeDashboardMetrics(),
   // not here — a single call site for all four is what keeps them from
   // drifting out of sync again.
-  const openShift = shifts.find((s) => s.status === "OPEN");
   const lowStockItems = inventory.filter((i) => i.stock <= i.reorder);
   const overdueEquipment = equipmentList.filter((eq) => {
     if (eq.status === "Retired" || !eq.lastServiceDate) return false;
@@ -679,35 +635,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           notificationSettingsData.reminderIntervalDays * 86400000,
     );
   });
-
-  // ── Shift total recalculation ──────────────────────────────────────────────
-  // Sums payments/refunds tagged with this shift's sessionId, across ALL
-  // invoices, not just invoices originally opened in this shift. This is
-  // what makes "collect the rest of a bill next week" and "refund today for
-  // a sale from last month" reconcile against the *current* drawer, not the
-  // invoice's original one.
-  const recalcShift = useCallback((shiftId: string) => {
-    const { expenses: exps, invoices: invs } = S.current;
-    const shiftExps = exps.filter((e) => e.sessionId === shiftId);
-
-    const {
-      cash: cashIn,
-      card: cardIn,
-      transfer: transferIn,
-    } = sumShiftPaymentsByMethod(invs, shiftId);
-
-    patch("shifts", shiftId, {
-      cashSales: cashIn,
-      cardSales: cardIn,
-      transferSales: transferIn,
-      totalExpenses: shiftExps
-        .filter((e) => e.type === "EXPENSE")
-        .reduce((s, e) => s + e.amount, 0),
-      totalDeposits: shiftExps
-        .filter((e) => e.type === "DEPOSIT")
-        .reduce((s, e) => s + e.amount, 0),
-    });
-  }, []);
 
   // ── Customer mutations ─────────────────────────────────────────────────────
   const addCustomer = useCallback(
@@ -1064,13 +991,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         before: null,
         after: inv,
       });
-      // Recalc shift totals after Firestore write settles, for every shift
-      // touched by this invoice's tender lines (normally just the open shift).
-      const shiftIds = new Set(payments.map((p) => p.sessionId).filter((x): x is string => !!x));
-      shiftIds.forEach((id) => setTimeout(() => recalcShift(id), 500));
       return inv;
     },
-    [recalcShift, services],
+    [services],
   );
 
   const updateInvoice = useCallback((inv: Invoice) => {
@@ -1117,10 +1040,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ...updated,
         status: amountPaid >= inv.total ? "Paid" : "Partially Paid",
       });
-      const shiftIds = new Set(newPayments.map((p) => p.sessionId).filter((x): x is string => !!x));
-      shiftIds.forEach((id) => setTimeout(() => recalcShift(id), 500));
     },
-    [recalcShift],
+    [],
   );
 
   const refundInvoicePayment = useCallback(
@@ -1151,9 +1072,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         before: inv,
         after: { refund },
       });
-      if (refund.sessionId) setTimeout(() => recalcShift(refund.sessionId!), 500);
     },
-    [recalcShift],
+    [],
   );
 
   // ── Expense mutations ──────────────────────────────────────────────────────
@@ -1168,109 +1088,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         before: null,
         after: e,
       });
-      if (data.sessionId) setTimeout(() => recalcShift(data.sessionId), 500);
       return e;
     },
-    [recalcShift],
-  );
-
-  const deleteExpense = useCallback(
-    (id: string) => {
-      const e = S.current.expenses.find((x) => x.id === id);
-      remove("expenses", id);
-      logAudit(actorRef.current, {
-        action: "DELETE_EXPENSE",
-        entity: "Expense",
-        entityId: id,
-        before: e ?? null,
-        after: null,
-      });
-      if (e?.sessionId) setTimeout(() => recalcShift(e.sessionId), 500);
-    },
-    [recalcShift],
-  );
-
-  // ── Shift mutations ────────────────────────────────────────────────────────
-  const openShiftFn = useCallback(
-    // Awaits the write directly (bypassing the fire-and-forget `write()` helper)
-    // so the caller can tell whether the shift actually opened before showing
-    // a success toast: this gates cash reconciliation, so a silent failure
-    // here is a real operational risk.
-    async (data: {
-      staffId: string;
-      staffName: string;
-      openingBalance: number;
-      openingDenominations: Record<string, number>;
-      notes: string;
-    }): Promise<Shift> => {
-      const s: Shift = {
-        id: newId(),
-        ...data,
-        status: "OPEN",
-        openedAt: new Date().toISOString(),
-        closedAt: null,
-        closingBalance: null,
-        closingDenominations: null,
-        cashSales: 0,
-        cardSales: 0,
-        transferSales: 0,
-        totalExpenses: 0,
-        totalDeposits: 0,
-        variance: null,
-        verifiedBy: null,
-      };
-      await setDoc(fd("shifts", s.id), s);
-      logAudit(actorRef.current, {
-        action: "OPEN_SHIFT",
-        entity: "Shift",
-        entityId: s.id,
-        before: null,
-        after: s,
-      });
-      return s;
-    },
     [],
   );
 
-  const closeShiftFn = useCallback(
-    // Same reasoning as openShiftFn: awaits the write directly so a failure
-    // doesn't get reported to the till operator as a successful close.
-    async (data: {
-      closingBalance: number;
-      closingDenominations: Record<string, number>;
-      notes: string;
-      verifiedBy: string;
-      variance: number;
-    }) => {
-      const open = S.current.shifts.find((s) => s.status === "OPEN");
-      if (!open) return;
-      const updated = {
-        ...open,
-        ...data,
-        status: "CLOSED" as const,
-        closedAt: new Date().toISOString(),
-      };
-      await setDoc(fd("shifts", updated.id), updated);
-      // Attributed to the actor closing the shift, which may legitimately be a
-      // manager rather than the cashier who opened it.
-      logAudit(actorRef.current, {
-        action: "CLOSE_SHIFT",
-        entity: "Shift",
-        entityId: open.id,
-        before: open,
-        after: updated,
-      });
-    },
-    [],
-  );
-
-  const addSaleToShift = useCallback(
-    (_invoiceId: string, _method: PaymentMethod, _amount: number) => {
-      const open = S.current.shifts.find((s) => s.status === "OPEN");
-      if (open) setTimeout(() => recalcShift(open.id), 500);
-    },
-    [recalcShift],
-  );
+  const deleteExpense = useCallback((id: string) => {
+    const e = S.current.expenses.find((x) => x.id === id);
+    remove("expenses", id);
+    logAudit(actorRef.current, {
+      action: "DELETE_EXPENSE",
+      entity: "Expense",
+      entityId: id,
+      before: e ?? null,
+      after: null,
+    });
+  }, []);
 
   // ── Equipment mutations ────────────────────────────────────────────────────
   const upsertEquipment = useCallback((eq: Equipment) => {
@@ -1489,13 +1322,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     invoices,
     inventory,
     expenses,
-    shifts,
     equipmentList,
     maintenanceLogsList,
     purchaseOrdersList,
     auditList,
     leads,
-    openShift,
     lowStockItems,
     overdueEquipment,
     upsertEquipment,
@@ -1539,9 +1370,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     refundInvoicePayment,
     addExpense,
     deleteExpense,
-    openShiftFn,
-    closeShiftFn,
-    addSaleToShift,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

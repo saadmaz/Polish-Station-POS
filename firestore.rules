@@ -97,14 +97,6 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ── Shifts (cash drawer — part of the POS module) ─────────────────────
-    match /shifts/{shiftId} {
-      allow read:   if isAuth();
-      allow create: if hasModule("pos") && (isManagerOrAbove() || role() == "Cashier");
-      allow update: if hasModule("pos") && (isManagerOrAbove() || role() == "Cashier");
-      allow delete: if isAdmin();
-    }
-
     // ── Expenses ──────────────────────────────────────────────────────────
     match /expenses/{expenseId} {
       allow read:   if isAuth();

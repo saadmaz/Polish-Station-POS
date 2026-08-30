@@ -148,9 +148,8 @@ async function main() {
 // A realistic-hostile dataset sized and shaped to stress the UI, not just
 // exercise the happy path: mixed scripts and punctuation in names, mixed
 // phone/plate formats, a calendar day with 25+ bookings, timezone-boundary
-// booking times, extreme invoice amounts, zero/below-reorder stock, an
-// overdue equipment service, and a shift with a large negative cash
-// variance. Every doc id is prefixed "UI-"/"U..." so this can be told apart
+// booking times, extreme invoice amounts, zero/below-reorder stock, and an
+// overdue equipment service. Every doc id is prefixed "UI-"/"U..." so this can be told apart
 // from the minimal TEST_STAFF/TEST_SERVICES fixture at a glance.
 // ─────────────────────────────────────────────────────────────────────────
 
@@ -529,7 +528,6 @@ async function seedUiTestData() {
       total,
       method: opts.method ?? pick(METHODS),
       status: opts.status ?? "Paid",
-      sessionId: null,
       createdAt: opts.createdAt ?? isoDaysFromNow(-ri(0, 90)),
       jobId: null,
       bookingId: null,
@@ -560,7 +558,6 @@ async function seedUiTestData() {
         amount: inv.total,
         method: inv.method,
         reason: "Customer complaint — redo required",
-        sessionId: null,
         staffName: "Chamari Rodrigo",
         at: isoDaysFromNow(-ri(0, 5)),
       },
@@ -577,7 +574,6 @@ async function seedUiTestData() {
         method: inv.method,
         amount: paidAmount,
         reference: "",
-        sessionId: null,
         staffName: "Kasun Bandara",
         at: inv.createdAt,
       },
@@ -660,83 +656,6 @@ async function seedUiTestData() {
     Manager: ["dashboard", "bookings", "customers", "leads", "inventory", "equipment", "purchase-orders", "notifications", "pos", "staff", "reports"],
     Cashier: ["dashboard", "bookings", "customers", "pos"],
   };
-
-  // ── Shifts (open + closed, one with a large negative cash variance) ────
-  const DENOMS = [5000, 2000, 1000, 500, 100, 50, 20, 10, 5, 2, 1];
-  function denomsFor(total) {
-    const d = {};
-    let rem = Math.max(0, Math.round(total));
-    for (const v of DENOMS) {
-      const count = Math.floor(rem / v);
-      if (count > 0) {
-        d[String(v)] = count;
-        rem -= count * v;
-      }
-    }
-    return d;
-  }
-
-  const shifts = [];
-  for (let d = 9; d >= 1; d--) {
-    const staff = pick(UI_STAFF);
-    const opening = pick([10000, 15000, 20000]);
-    const cashSales = ri(5000, 60000);
-    const cardSales = ri(5000, 80000);
-    const transferSales = ri(0, 20000);
-    const totalExpenses = ri(0, 5000);
-    const totalDeposits = ri(0, 3000);
-    const expectedCash = opening + cashSales - totalExpenses - totalDeposits;
-    let closingBalance = expectedCash + ri(-200, 200);
-    let notes = "";
-    if (d === 4) {
-      closingBalance = Math.max(0, expectedCash - 45000); // large negative variance
-      notes = "Till short at close — cash drawer discrepancy, reported to management";
-    }
-    shifts.push({
-      id: `UI-SHIFT-${d}`,
-      staffId: staff.id,
-      staffName: staff.name,
-      status: "CLOSED",
-      openedAt: isoDaysFromNow(-d),
-      closedAt: isoDaysFromNow(-d + 0.4),
-      openingBalance: opening,
-      openingDenominations: denomsFor(opening),
-      closingBalance,
-      closingDenominations: denomsFor(closingBalance),
-      cashSales,
-      cardSales,
-      transferSales,
-      totalExpenses,
-      totalDeposits,
-      variance: closingBalance - expectedCash,
-      notes,
-      verifiedBy: pick(UI_STAFF).name,
-    });
-  }
-  {
-    const staff = UI_STAFF[2];
-    const opening = 15000;
-    shifts.push({
-      id: "UI-SHIFT-OPEN",
-      staffId: staff.id,
-      staffName: staff.name,
-      status: "OPEN",
-      openedAt: isoDaysFromNow(0),
-      closedAt: null,
-      openingBalance: opening,
-      openingDenominations: denomsFor(opening),
-      closingBalance: null,
-      closingDenominations: null,
-      cashSales: ri(2000, 15000),
-      cardSales: ri(2000, 15000),
-      transferSales: ri(0, 5000),
-      totalExpenses: ri(0, 1000),
-      totalDeposits: 0,
-      variance: null,
-      notes: "",
-      verifiedBy: null,
-    });
-  }
 
   // ── Leads (30, every source and status) ─────────────────────────────
   const LEAD_SOURCES = ["polishstation.lk", "walk-in", "phone", "referral", "instagram", "facebook", "google"];
@@ -852,7 +771,6 @@ async function seedUiTestData() {
   await writeAll("equipment", equipment);
   await writeAll("purchaseOrders", purchaseOrders);
   await writeAll("leads", leads);
-  await writeAll("shifts", shifts);
   // Bookings above are assigned across all of BAYS, so the settings/bays doc
   // has to list them all too -- otherwise Day view's grid only renders
   // columns for whatever `bays` the store falls back to (just "Bay 1"),
@@ -907,7 +825,6 @@ async function seedUiTestData() {
   console.log(`  equipment              ${equipment.length}  (overdue: ${equipment[OVERDUE_INDEX].name})`);
   console.log(`  purchase orders        ${purchaseOrders.length}`);
   console.log(`  leads                  ${leads.length}`);
-  console.log(`  shifts                 ${shifts.length}  (1 open, 1 with a large negative variance)`);
   console.log("\nStaff accounts (username / PIN):");
   for (const s of UI_STAFF) {
     console.log(`  ${s.role.padEnd(10)} ${s.username} / ${s.pin}`);

@@ -25,7 +25,6 @@ const COLLECTIONS = [
   "counters",
   "settings",
   "invoices",
-  "shifts",
   "expenses",
   "bookings",
   "jobs",

@@ -30,7 +30,6 @@ function legacyInvoice(id: string, total: number): Invoice {
     total,
     method: "Cash",
     status: "Paid",
-    sessionId: null,
     createdAt: CREATED_AT,
   };
 }

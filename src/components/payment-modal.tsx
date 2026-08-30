@@ -143,7 +143,7 @@ interface PaymentModalProps {
 }
 
 export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
-  const { openShift, recordInvoicePayment, refundInvoicePayment } = useStore();
+  const { recordInvoicePayment, refundInvoicePayment } = useStore();
   const { staff } = useAuth();
 
   const amountPaid = getAmountPaid(invoice);
@@ -159,10 +159,6 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
   const { confirm, ConfirmDialog } = useConfirm();
 
   function handleCollect() {
-    if (!openShift) {
-      toast.error("Open a shift first");
-      return;
-    }
     const tendered = lines.filter((l) => l.amount > 0);
     if (tendered.length === 0) {
       toast.error("Enter at least one payment amount");
@@ -176,7 +172,6 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
         method: l.method,
         amount: l.amount,
         reference: l.reference,
-        sessionId: openShift.id,
         staffName: staff?.name ?? "",
         at,
       })),
@@ -187,10 +182,6 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
   }
 
   async function handleRefund() {
-    if (!openShift) {
-      toast.error("Open a shift first");
-      return;
-    }
     // NaN passes both comparisons below (NaN <= 0 and NaN > x are both false),
     // and Firestore will store it, poisoning every derived total after that.
     if (!Number.isFinite(refundAmount) || refundAmount <= 0 || refundAmount > refundable) {
@@ -214,7 +205,6 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
       amount: refundAmount,
       method: refundMethod,
       reason: refundReason.trim(),
-      sessionId: openShift.id,
       staffName: staff?.name ?? "",
       at: new Date().toISOString(),
     });
@@ -245,18 +235,12 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
           {invoice.customerName} · Total {formatCurrency(invoice.total)}
         </div>
 
-        {!openShift && (
-          <p className="mb-4 text-sm text-warning">
-            No active shift. Open a shift before collecting or refunding.
-          </p>
-        )}
-
         {mode === "collect" ? (
           <>
             <TenderLineEditor lines={lines} onChange={setLines} remaining={balanceDue} />
             <button
               onClick={handleCollect}
-              disabled={saving || !openShift || lines.length === 0}
+              disabled={saving || lines.length === 0}
               className="mt-4 min-h-11 w-full rounded-md gradient-brand py-2.5 text-sm font-bold uppercase tracking-wider text-primary-foreground shadow-red hover:opacity-95 disabled:opacity-50"
             >
               Record Payment
@@ -312,7 +296,7 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
             </label>
             <button
               onClick={handleRefund}
-              disabled={saving || !openShift}
+              disabled={saving}
               className="min-h-11 w-full rounded-md bg-primary py-2.5 text-sm font-bold uppercase tracking-wider text-primary-foreground hover:opacity-95 disabled:opacity-50"
             >
               Refund {formatCurrency(refundAmount)}

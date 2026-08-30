@@ -37,7 +37,6 @@ function walkInInvoice(id: string, total: number, jobId: string): { invoice: Inv
     total,
     method: "Cash",
     status: "Paid",
-    sessionId: null,
     createdAt: CREATED_AT,
     jobId,
   };
@@ -148,7 +147,6 @@ describe("Revenue Today and Today's Timeline can never disagree", () => {
       total: 2500,
       method: "Cash",
       status: "Paid",
-      sessionId: null,
       createdAt: CREATED_AT,
       jobId: prebooked.id,
     };

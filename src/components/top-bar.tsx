@@ -1,24 +1,21 @@
-import { Search, Plus, MapPin, Activity, Banknote, Menu } from "lucide-react";
+import { Search, Plus, MapPin, Banknote, Menu } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SearchPalette } from "@/components/search-palette";
 import { BookingSheet } from "@/components/booking-sheet";
 import { NotificationsPopover } from "@/components/notifications-popover";
-import { ShiftModal } from "@/components/shift-modal";
 import { ExpenseModal } from "@/components/expense-modal";
 import { MobileNavSheet } from "@/components/app-sidebar";
 import { useStore } from "@/lib/store";
 import { formatTime, formatDateWithWeekday } from "@/lib/date-format";
-import { cn } from "@/lib/utils";
 
 export function TopBar() {
   const [now, setNow] = useState<Date | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [bookingOpen, setBookingOpen] = useState(false);
-  const [shiftOpen, setShiftOpen] = useState(false);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  const { openShift, lowStockItems } = useStore();
+  const { lowStockItems } = useStore();
 
   useEffect(() => {
     setNow(new Date());
@@ -66,29 +63,13 @@ export function TopBar() {
         </button>
 
         <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Shift status pill */}
           <button
-            onClick={() => setShiftOpen(true)}
-            className={cn(
-              "hidden sm:inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors",
-              openShift
-                ? "bg-success/15 text-success hover:bg-success/25"
-                : "bg-muted text-muted-foreground hover:bg-muted/70",
-            )}
+            onClick={() => setExpenseOpen(true)}
+            title="Record cash out / bank deposit"
+            className="hidden sm:inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
           >
-            <Activity className="h-3.5 w-3.5" />
-            {openShift ? `Shift Open · ${openShift.staffName.split(" ")[0]}` : "No Shift"}
+            <Banknote className="h-3.5 w-3.5" /> Cash Out
           </button>
-
-          {openShift && (
-            <button
-              onClick={() => setExpenseOpen(true)}
-              title="Record cash out / bank deposit"
-              className="hidden sm:inline-flex items-center gap-1 rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              <Banknote className="h-3.5 w-3.5" /> Cash Out
-            </button>
-          )}
 
           {lowStockItems.length > 0 && (
             <span
@@ -120,7 +101,6 @@ export function TopBar() {
 
       <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
       <BookingSheet open={bookingOpen} onOpenChange={setBookingOpen} />
-      <ShiftModal open={shiftOpen} onOpenChange={setShiftOpen} />
       <ExpenseModal open={expenseOpen} onClose={() => setExpenseOpen(false)} />
       <MobileNavSheet open={mobileNavOpen} onOpenChange={setMobileNavOpen} />
     </>

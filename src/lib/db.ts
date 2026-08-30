@@ -14,7 +14,6 @@ export type PaymentMethod = "Cash" | "Card" | "Transfer";
 export type CustomerTier = "Bronze" | "Silver" | "Gold" | "Platinum";
 export type ServiceCategory =
   "Exterior" | "Interior" | "Full Detail" | "Paint Protection" | "Coating";
-export type ShiftStatus = "OPEN" | "CLOSED";
 
 export interface Service {
   id: string;
@@ -117,7 +116,6 @@ export interface PaymentRecord {
   method: PaymentMethod;
   amount: number;
   reference: string; // optional free-text: last 4 digits, bank slip #, etc.
-  sessionId: string | null; // shift that collected it: may differ from the invoice's original shift
   staffName: string;
   at: string;
 }
@@ -127,7 +125,6 @@ export interface RefundRecord {
   amount: number;
   method: PaymentMethod;
   reason: string;
-  sessionId: string | null; // shift that processed the refund
   staffName: string;
   at: string;
 }
@@ -149,7 +146,6 @@ export interface Invoice {
   total: number;
   method: PaymentMethod;
   status: InvoiceStatus;
-  sessionId: string | null;
   createdAt: string;
   // The Job this revenue belongs to. Every invoice created through
   // addInvoice() now has one: it's stamped to an existing job if one was
@@ -274,7 +270,6 @@ function legacyPayments(inv: Invoice): PaymentRecord[] {
       method: inv.method,
       amount,
       reference: "",
-      sessionId: inv.sessionId,
       staffName: "",
       at: inv.createdAt,
     },
@@ -312,11 +307,11 @@ export interface PaymentMethodTotals {
 }
 
 // Exhaustive by construction (the `never` check fails to compile if
-// PaymentMethod ever grows a fourth value): both Reports (finding R1) and
-// the shift cash-drawer reconciliation independently bucketed revenue with
-// `method === "Cash" ? cash : card`, which silently counted every Transfer
-// payment/refund as Card. Every call site that buckets by payment method
-// now goes through this instead of re-deriving the split.
+// PaymentMethod ever grows a fourth value): Reports (finding R1) used to
+// bucket revenue with `method === "Cash" ? cash : card`, which silently
+// counted every Transfer payment/refund as Card. Every call site that
+// buckets by payment method now goes through this instead of re-deriving
+// the split.
 function applyPaymentMethodDelta(
   totals: PaymentMethodTotals,
   method: PaymentMethod,
@@ -344,29 +339,6 @@ export function sumPaymentsByMethod(invoices: Invoice[]): PaymentMethodTotals {
   for (const inv of invoices) {
     for (const p of getPayments(inv)) {
       applyPaymentMethodDelta(totals, p.method, p.amount);
-    }
-  }
-  return totals;
-}
-
-// Same split, scoped to one till session: payments add, refunds subtract --
-// both matched by `sessionId`, not by which invoice they originally belonged
-// to (a balance collected or refunded during this shift affects this drawer
-// regardless of which shift the original sale happened in). Used by both
-// the live shift-close preview and the persisted recalculation after close.
-export function sumShiftPaymentsByMethod(
-  invoices: Invoice[],
-  sessionId: string,
-): PaymentMethodTotals {
-  const totals: PaymentMethodTotals = { cash: 0, card: 0, transfer: 0 };
-  for (const inv of invoices) {
-    for (const p of getPayments(inv)) {
-      if (p.sessionId !== sessionId) continue;
-      applyPaymentMethodDelta(totals, p.method, p.amount);
-    }
-    for (const r of inv.refunds ?? []) {
-      if (r.sessionId !== sessionId) continue;
-      applyPaymentMethodDelta(totals, r.method, -r.amount);
     }
   }
   return totals;
@@ -414,34 +386,12 @@ export interface InventoryItem {
 
 export interface Expense {
   id: string;
-  sessionId: string;
   type: "EXPENSE" | "DEPOSIT";
   amount: number;
   category: string;
   paidTo: string;
   description: string;
   createdAt: string;
-}
-
-export interface Shift {
-  id: string;
-  staffId: string;
-  staffName: string;
-  status: ShiftStatus;
-  openedAt: string;
-  closedAt: string | null;
-  openingBalance: number;
-  openingDenominations: Record<string, number>;
-  closingBalance: number | null;
-  closingDenominations: Record<string, number> | null;
-  cashSales: number;
-  cardSales: number;
-  transferSales: number;
-  totalExpenses: number;
-  totalDeposits: number;
-  variance: number | null;
-  notes: string;
-  verifiedBy: string | null;
 }
 
 export interface AuditLog {
@@ -538,7 +488,6 @@ const KEYS = {
   invoices: "ps_invoices",
   inventory: "ps_inventory",
   expenses: "ps_expenses",
-  shifts: "ps_shifts",
   audit: "ps_audit",
   equipment: "ps_equipment",
   maintenanceLogs: "ps_maintenance_logs",
@@ -1056,7 +1005,6 @@ export function seedIfNeeded(): void {
   save(KEYS.bookings, SEED_BOOKINGS);
   save(KEYS.invoices, []);
   save(KEYS.expenses, []);
-  save(KEYS.shifts, []);
   save(KEYS.audit, []);
   window.localStorage.setItem(KEYS.seeded, "1");
 }
@@ -1199,8 +1147,6 @@ export const inventory = {
 
 export const expenses = {
   list: (): Expense[] => load<Expense>(KEYS.expenses, []),
-  listBySession: (sessionId: string): Expense[] =>
-    expenses.list().filter((e) => e.sessionId === sessionId),
   upsert: (e: Expense): void => {
     const all = expenses.list();
     const idx = all.findIndex((x) => x.id === e.id);
@@ -1213,36 +1159,6 @@ export const expenses = {
       KEYS.expenses,
       expenses.list().filter((e) => e.id !== id),
     ),
-};
-
-// ─── Shifts ──────────────────────────────────────────────────────────────────
-
-export const shifts = {
-  list: (): Shift[] => load<Shift>(KEYS.shifts, []),
-  get: (id: string): Shift | undefined => shifts.list().find((s) => s.id === id),
-  getOpen: (): Shift | undefined => shifts.list().find((s) => s.status === "OPEN"),
-  upsert: (s: Shift): void => {
-    const all = shifts.list();
-    const idx = all.findIndex((x) => x.id === s.id);
-    if (idx >= 0) all[idx] = s;
-    else all.push(s);
-    save(KEYS.shifts, all);
-  },
-  updateTotals: (id: string): void => {
-    const shift = shifts.get(id);
-    if (!shift) return;
-    const exps = expenses.listBySession(id);
-    const totalExpenses = exps
-      .filter((e) => e.type === "EXPENSE")
-      .reduce((s, e) => s + e.amount, 0);
-    const totalDeposits = exps
-      .filter((e) => e.type === "DEPOSIT")
-      .reduce((s, e) => s + e.amount, 0);
-    const invs = invoices.list().filter((i) => i.sessionId === id);
-    const cashSales = invs.filter((i) => i.method === "Cash").reduce((s, i) => s + i.total, 0);
-    const cardSales = invs.filter((i) => i.method !== "Cash").reduce((s, i) => s + i.total, 0);
-    shifts.upsert({ ...shift, cashSales, cardSales, totalExpenses, totalDeposits });
-  },
 };
 
 // ─── Audit ───────────────────────────────────────────────────────────────────

@@ -58,7 +58,6 @@ function POS() {
     customers,
     coupons,
     invoices,
-    openShift,
     addInvoice,
     voidInvoice,
     notificationSettingsData,
@@ -211,7 +210,6 @@ function POS() {
         subtotal,
         tip,
         total,
-        sessionId: openShift?.id ?? null,
         // Omit the key entirely rather than setting it to `undefined`:
         // Firestore's client SDK batch.set() throws on an explicit undefined
         // field value (this previously broke every checkout with no deposit).
@@ -228,7 +226,6 @@ function POS() {
           method: l.method,
           amount: l.amount,
           reference: l.reference,
-          sessionId: openShift?.id ?? null,
           staffName: staff?.name ?? "",
           at: now,
         })),
@@ -554,12 +551,6 @@ function POS() {
         >
           <FileText className="h-4 w-4" /> Download Quotation PDF
         </button>
-
-        {!openShift && (
-          <p className="mt-2 text-center text-[11px] text-warning">
-            No active shift, open a shift first
-          </p>
-        )}
       </>
     );
   }
@@ -568,10 +559,7 @@ function POS() {
     <div className="grid grid-cols-1 gap-6 p-4 pb-28 sm:p-6 lg:h-full lg:grid-cols-[1fr_400px] lg:pb-6">
       {ConfirmDialog}
       <div className="space-y-6">
-        <PageHeader
-          title="POS / Checkout"
-          subtitle={openShift ? `Shift active · ${openShift.staffName}` : "No active shift"}
-        />
+        <PageHeader title="POS / Checkout" />
 
         {/* Customer selector */}
         <div className="rounded-xl border border-border bg-card shadow-card p-4">

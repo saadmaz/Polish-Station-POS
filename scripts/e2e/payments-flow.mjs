@@ -1,44 +1,13 @@
 // Regression check for split-tender / partial-payment / refund checkout
 // (src/routes/_app.pos.tsx, src/lib/store.tsx, src/components/payment-modal.tsx).
-// Seeds an OPEN shift directly via the Admin SDK (shift-opening UI isn't
-// under test here) then drives the full checkout → collect → refund cycle
-// through the browser, verifying both the UI and the underlying Firestore
-// invoice document at each step.
+// Drives the full checkout → collect → refund cycle through the browser,
+// verifying both the UI and the underlying Firestore invoice document at
+// each step.
 import { chromium } from "playwright";
 import { BASE_URL, adminDb, check, assert, summarize, loginAs } from "./_shared.mjs";
 import { TEST_STAFF } from "../seed-emulator.mjs";
 
 console.log("Payments flow (split tender / partial collect / refund):");
-
-// The app only ever shows one shift as "open" at a time (whichever the
-// store's onSnapshot listener happens to surface first), and the real UI
-// never lets two be open concurrently. Clear out any stray OPEN shifts
-// left over from other test runs so this script's own shift is
-// unambiguously the one the app picks up.
-const staleOpen = await adminDb.collection("shifts").where("status", "==", "OPEN").get();
-await Promise.all(staleOpen.docs.map((d) => d.ref.delete()));
-
-const shiftId = `e2e-shift-${Date.now()}`;
-await adminDb.collection("shifts").doc(shiftId).set({
-  id: shiftId,
-  staffId: TEST_STAFF.staffId,
-  staffName: "E2E Admin",
-  status: "OPEN",
-  openedAt: new Date().toISOString(),
-  closedAt: null,
-  openingBalance: 0,
-  openingDenominations: {},
-  closingBalance: null,
-  closingDenominations: null,
-  cashSales: 0,
-  cardSales: 0,
-  transferSales: 0,
-  totalExpenses: 0,
-  totalDeposits: 0,
-  variance: null,
-  notes: "",
-  verifiedBy: null,
-});
 
 const browser = await chromium.launch();
 const page = await (await browser.newContext()).newPage();
@@ -56,9 +25,9 @@ await check("login", async () => {
   await page.waitForURL(/dashboard/, { timeout: 20000 });
 });
 
-await check("POS page loads with an open shift", async () => {
+await check("POS page loads", async () => {
   await page.goto(`${BASE_URL}/pos`, { waitUntil: "domcontentloaded", timeout: 30000 });
-  await page.waitForSelector("text=Shift active", { timeout: 15000 });
+  await page.waitForSelector("text=POS / Checkout", { timeout: 15000 });
 });
 
 await check("manual billing: enter customer + custom line item", async () => {
@@ -99,7 +68,6 @@ await check("split tender: partial Cash payment marks invoice Partially Paid", a
   assert(inv.status === "Partially Paid", `expected status Partially Paid, got ${inv.status}`);
   assert(inv.payments?.length === 1, "expected exactly 1 payment record");
   assert(inv.payments[0].amount === partial, "payment amount should equal the tendered partial");
-  assert(inv.payments[0].sessionId === shiftId, "payment should be tagged with the open shift id");
 });
 
 await check("Collect Payment completes the balance and marks invoice Paid", async () => {

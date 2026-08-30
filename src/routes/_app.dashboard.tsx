@@ -1,13 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { AlertTriangle, Activity } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { computeDashboardMetrics } from "@/lib/dashboard-metrics";
 import { StatusChip, statusVariant } from "@/components/status-chip";
 import { PageHeader } from "@/components/page-header";
-import { ShiftModal } from "@/components/shift-modal";
 import { formatCurrency } from "@/lib/currency";
-import { formatTime } from "@/lib/date-format";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/dashboard")({
@@ -16,8 +13,7 @@ export const Route = createFileRoute("/_app/dashboard")({
 });
 
 function Dashboard() {
-  const { invoices, jobs, listenerErrors, openShift, inventory, lowStockItems } = useStore();
-  const [shiftOpen, setShiftOpen] = useState(false);
+  const { invoices, jobs, listenerErrors, inventory, lowStockItems } = useStore();
 
   // The one computation every KPI card and the timeline both read from —
   // see src/lib/dashboard-metrics.ts for why this replaced four separate
@@ -52,26 +48,7 @@ function Dashboard() {
 
   return (
     <div className="p-6">
-      <PageHeader
-        title="Operations Dashboard"
-        subtitle="Live snapshot"
-        actions={
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShiftOpen(true)}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold border transition-colors",
-                openShift
-                  ? "border-success/40 bg-success/10 text-success hover:bg-success/20"
-                  : "border-border bg-muted text-muted-foreground hover:bg-muted/70",
-              )}
-            >
-              <Activity className="h-3.5 w-3.5" />
-              {openShift ? `Shift · ${openShift.staffName.split(" ")[0]}` : "Open Shift"}
-            </button>
-          </div>
-        }
-      />
+      <PageHeader title="Operations Dashboard" subtitle="Live snapshot" />
 
       {/* KPIs */}
       {/* No trend delta or sparkline here: neither has a real day-over-day
@@ -94,9 +71,7 @@ function Dashboard() {
         ))}
       </div>
 
-      <div
-        className={cn("grid grid-cols-1 gap-6", openShift ? "md:grid-cols-3" : "md:grid-cols-2")}
-      >
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         {/* Today's job timeline */}
         <div className="rounded-xl border border-border bg-card shadow-card">
           <div className="px-5 py-3 border-b border-border">
@@ -156,53 +131,7 @@ function Dashboard() {
             )}
           </div>
         </div>
-
-        {/* Shift summary */}
-        {openShift && (
-          <div className="rounded-xl border border-success/30 bg-success/5 shadow-card p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Activity className="h-4 w-4 text-success" />
-              <h2 className="font-display text-base font-bold text-success">Active Shift</h2>
-            </div>
-            <div className="space-y-1.5 text-sm">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Staff</span>
-                <span className="font-semibold">{openShift.staffName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Opened</span>
-                <span className="font-mono">{formatTime(openShift.openedAt)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Cash Sales</span>
-                <span className="font-mono font-semibold">
-                  {formatCurrency(openShift.cashSales)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Card Sales</span>
-                <span className="font-mono font-semibold">
-                  {formatCurrency(openShift.cardSales)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Transfer Sales</span>
-                <span className="font-mono font-semibold">
-                  {formatCurrency(openShift.transferSales)}
-                </span>
-              </div>
-            </div>
-            <button
-              onClick={() => setShiftOpen(true)}
-              className="mt-3 w-full text-center text-xs text-success hover:underline"
-            >
-              Manage shift →
-            </button>
-          </div>
-        )}
       </div>
-
-      <ShiftModal open={shiftOpen} onOpenChange={setShiftOpen} />
     </div>
   );
 }
