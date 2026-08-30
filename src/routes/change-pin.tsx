@@ -61,9 +61,20 @@ function ChangePin() {
       // otherwise hang the "busy" state forever instead of ever surfacing an
       // error, and this screen is exactly where a just-reset PIN forces
       // someone through right after a deploy's cold start.
+      //
+      // Wider per-attempt budget than the 10s default: changeOwnPinFn now
+      // also provisions/updates the caller's Firebase Auth password + claims
+      // (syncAuthUser, see src/server/staff-admin.ts) on top of the original
+      // verifyIdToken + Firestore round trips, so a cold worker's genuinely
+      // slower-but-still-working response needs more room before the client
+      // abandons the attempt and retries from scratch -- the 10s default was
+      // tuned for the smaller pre-migration version of this call and was
+      // cutting off attempts that would have succeeded a few seconds later.
       const result = await retryTransient(
         () => changeOwnPinFn({ data: { idToken, currentPin, newPin } }),
         "change-pin",
+        6,
+        20_000,
       );
 
       if (result.success) {
