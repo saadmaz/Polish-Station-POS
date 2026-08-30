@@ -44,7 +44,7 @@ interface AuthState {
   logout: () => Promise<void>;
   touchActivity: () => void;
   /** Clears the forced-PIN-change gate after a successful change. */
-  clearMustChangePin: () => Promise<void>;
+  clearMustChangePin: () => void;
   /** Module access for the signed-in user. SuperAdmins always pass. */
   can: (moduleKey: ModuleKey) => boolean;
 }
@@ -176,11 +176,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const touchActivity = useCallback(() => resetTimer(), [resetTimer]);
 
-  // changeOwnPinFn already awaits setCustomUserClaims before returning
-  // success, so a forced refresh here is guaranteed to pick up the cleared
-  // claim -- this re-fires onIdTokenChanged, which updates `mustChangePin`.
-  const clearMustChangePin = useCallback(async () => {
-    await firebaseAuth.currentUser?.getIdToken(true);
+  // changeOwnPinFn now applies its Firebase Auth claims update best-effort,
+  // NOT awaited before it responds (see that function's comment -- awaiting
+  // it there made a routine PIN change fail on this host's slow identitytoolkit
+  // connections). So a forced token refresh here can't be relied on to have
+  // anything new to fetch yet. The Firestore write it's paired with already
+  // confirmed the change synchronously, which is enough to unblock the
+  // current session locally; the claim itself catches up in the background
+  // for whenever this person's session/token next refreshes for real.
+  const clearMustChangePin = useCallback(() => {
+    setMustChangePin(false);
   }, []);
 
   // Sync with Firebase Auth session. onIdTokenChanged (rather than

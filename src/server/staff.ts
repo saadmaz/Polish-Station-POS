@@ -291,9 +291,17 @@ export const setStaffActiveFn = createServerFn({ method: "POST" })
       return batch.commit();
     }, "set-active commit");
 
-    // The real gate: Firebase Auth itself refuses sign-in for a disabled
-    // user, so this is awaited rather than best-effort.
-    await syncAuthUser({ staffId: data.targetStaffId, disabled: !data.active });
+    // Best-effort, not awaited: an identitytoolkit call this host can stall
+    // on for tens of seconds (confirmed live -- see the equivalent call in
+    // changeOwnPinFn, which awaiting broke). Not the only gate regardless:
+    // client-side auth.tsx already re-checks staff_public.active in the
+    // background after every sign-in and signs a deactivated user straight
+    // back out, independent of whether this Firebase Auth `disabled` flag
+    // ever lands. This closes the gap faster when it succeeds promptly, but
+    // deactivation doesn't depend on it succeeding at all.
+    void syncAuthUser({ staffId: data.targetStaffId, disabled: !data.active }).catch((err) =>
+      console.error(`[staff] syncAuthUser(${data.targetStaffId}) disable sync failed:`, err),
+    );
 
     // Deactivation must end any session already open on a shop tablet.
     if (!data.active) revokeBestEffort(data.targetStaffId);

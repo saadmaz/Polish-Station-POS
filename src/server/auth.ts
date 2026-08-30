@@ -99,7 +99,19 @@ export const changeOwnPinFn = createServerFn({ method: "POST" })
       "pin change write",
     );
 
-    await syncAuthUser({
+    // Best-effort, not awaited: adminAuth.updateUser/setCustomUserClaims are
+    // identitytoolkit calls this shared host is prone to stalling on for tens
+    // of seconds (the whole reason revokeBestEffort elsewhere in this file's
+    // callers is fire-and-forget too) -- awaiting them here made a routine
+    // PIN change fail with "Couldn't reach the server" even inside a widened
+    // client retry budget. The Firestore write above already recorded the
+    // change (the source of truth for "did this succeed"); the caller stays
+    // signed in on their current session regardless, and clearMustChangePin
+    // on the client clears the forced-change gate locally rather than
+    // waiting on this claim to propagate. A password/claims sync that's
+    // still catching up only matters for a *future* login, which this same
+    // retried-with-backoff call should have long since completed by then.
+    void syncAuthUser({
       staffId: uid,
       password: toStaffPassword(newPin),
       claims: {
@@ -108,7 +120,7 @@ export const changeOwnPinFn = createServerFn({ method: "POST" })
         name: staff.name as string,
         mustChangePin: false,
       },
-    });
+    }).catch((err) => console.error(`[auth] syncAuthUser(${uid}) after PIN change failed:`, err));
 
     return { success: true };
   });

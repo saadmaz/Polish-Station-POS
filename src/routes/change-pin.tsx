@@ -78,7 +78,7 @@ function ChangePin() {
       );
 
       if (result.success) {
-        await clearMustChangePin();
+        clearMustChangePin();
         toast.success("PIN updated");
         navigate({ to: "/dashboard" });
         return;
