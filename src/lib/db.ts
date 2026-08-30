@@ -136,6 +136,13 @@ export interface Invoice {
   id: string;
   customerId: string | null;
   customerName: string;
+  // Snapshot of the customer's contact/vehicle at the moment of sale (not a
+  // live join to Customer.vehicles) so the printed invoice always matches
+  // what the customer actually saw, even if their profile changes later.
+  // Optional: guest/manual-entry sales at the till may have neither.
+  phone?: string;
+  plate?: string;
+  vehicleModel?: string;
   lines: InvoiceLine[];
   subtotal: number;
   tip: number;

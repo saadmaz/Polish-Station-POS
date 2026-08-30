@@ -217,6 +217,13 @@ function POS() {
         // field value (this previously broke every checkout with no deposit).
         ...(appliedCoupon ? { couponCode: appliedCoupon.code, couponDiscount } : {}),
         ...(pointsRedeemed > 0 ? { pointsRedeemed, pointsRedeemedValue: pointsValue } : {}),
+        ...(selectedCustomer?.phone ? { phone: selectedCustomer.phone } : {}),
+        ...(selectedCustomer?.vehicles[0]?.plate
+          ? { plate: selectedCustomer.vehicles[0].plate }
+          : {}),
+        ...(selectedCustomer?.vehicles[0]?.model
+          ? { vehicleModel: selectedCustomer.vehicles[0].model }
+          : {}),
         payments: validTenders.map((l) => ({
           method: l.method,
           amount: l.amount,

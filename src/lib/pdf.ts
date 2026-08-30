@@ -172,22 +172,19 @@ function buildDoc(opts: DocOptions): jsPDF {
   doc.setTextColor(...MUTED);
   doc.text("BILL TO", ML, y);
 
-  // Status badge (right)
+  // Status badge (right) — Draft/Issued read as plainly "UNPAID" rather than
+  // a raw status word, since the ask here is a quick paid/not-paid glance;
+  // Partially Paid, Void, Refunded and ESTIMATE stay as themselves since
+  // collapsing those into "unpaid" would lose real information.
+  const statusLabel =
+    opts.status === "Draft" || opts.status === "Issued" ? "UNPAID" : opts.status.toUpperCase();
   const statusColor =
     opts.status === "Paid"
       ? SUCCESS
       : opts.status === "Void" || opts.status === "Refunded"
         ? SLATE
-        : opts.status === "ESTIMATE"
-          ? AMBER
-          : SLATE;
-  badge(
-    doc,
-    opts.status.toUpperCase(),
-    MR - doc.getTextWidth(opts.status.toUpperCase()) - 8,
-    y + 0.5,
-    statusColor,
-  );
+        : AMBER;
+  badge(doc, statusLabel, MR - doc.getTextWidth(statusLabel) - 8, y + 0.5, statusColor);
 
   y += 6;
   doc.setFont("helvetica", "bold");
@@ -199,14 +196,14 @@ function buildDoc(opts: DocOptions): jsPDF {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(...SLATE);
-  if (opts.phone) {
-    doc.text(opts.phone, ML, y);
+  if (opts.plate || opts.vehicleModel) {
+    const vehicleLine = [opts.vehicleModel, opts.plate].filter(Boolean).join("  ·  ");
+    doc.text(`Vehicle:  ${vehicleLine}`, ML, y);
     y += 4.5;
   }
 
-  if (opts.plate || opts.vehicleModel) {
-    const vehicleLine = [opts.plate, opts.vehicleModel].filter(Boolean).join("  ·  ");
-    doc.text(`Vehicle:  ${vehicleLine}`, ML, y);
+  if (opts.phone) {
+    doc.text(`Contact:  ${opts.phone}`, ML, y);
     y += 4.5;
   }
 
@@ -260,8 +257,10 @@ function buildDoc(opts: DocOptions): jsPDF {
     doc.setTextColor(...CHARCOAL);
     doc.text(String(idx + 1), C0, y, { align: "left" });
 
-    // Wrap long description (kept clear of the QTY column that starts at C2)
-    const descLines = doc.splitTextToSize(line.name, 68);
+    // Wrap long description, using the full width up to the QTY column (with
+    // a small gutter) rather than a much narrower fixed guess — the old 68mm
+    // wrapped early and left a dead gap of blank space before QTY.
+    const descLines = doc.splitTextToSize(line.name, C2 - (C1 + 6) - 4);
     doc.text(descLines[0], C1 + 6, y);
     if (descLines[1]) {
       doc.setFontSize(7.5);
@@ -464,6 +463,9 @@ export function downloadInvoicePDF(invoice: Invoice) {
     docId: invoice.id,
     docDate: invoice.createdAt,
     customerName: invoice.customerName,
+    phone: invoice.phone,
+    plate: invoice.plate,
+    vehicleModel: invoice.vehicleModel,
     lines: invoice.lines,
     subtotal: invoice.subtotal,
     couponCode: invoice.couponCode,
