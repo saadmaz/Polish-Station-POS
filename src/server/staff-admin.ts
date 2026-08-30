@@ -9,6 +9,57 @@ import { adminAuth, adminDb } from "./firebase-admin";
 import { withRetry, withTimeout } from "./retry";
 import { isAdmin, isManagerOrAbove, type StaffRole } from "@/lib/permissions";
 
+interface AuthUserSync {
+  staffId: string;
+  email?: string; // only needed the first time an account is provisioned
+  password?: string; // only when setting or resetting the PIN
+  disabled?: boolean;
+  claims?: { role: StaffRole; perms: string[]; name: string; mustChangePin: boolean };
+}
+
+/**
+ * Provisions or updates the Firebase Auth account backing a staff member, and
+ * persists role/perms/name/mustChangePin as custom claims -- the same values
+ * firestore.rules reads via request.auth.token.*, now set here (rarely, at
+ * account create/edit time) instead of embedded in a per-login custom token.
+ *
+ * No Firebase Auth user is guaranteed to exist yet: historically an account
+ * only sprang into existence, passwordless and claimless, the first time
+ * someone signed in with a custom token for that uid. updateUser() 404s for
+ * anyone who predates this, so fall back to createUser() with the same uid.
+ *
+ * Unlike revokeBestEffort below, this is awaited at every call site: it IS
+ * the operation (the account that can or can't sign in), not a best-effort
+ * side effect -- but still time-boxed like every other identitytoolkit call
+ * this host is prone to stalling on.
+ */
+export async function syncAuthUser({ staffId, email, password, disabled, claims }: AuthUserSync) {
+  const patch: Record<string, unknown> = {};
+  if (email !== undefined) patch.email = email;
+  if (password !== undefined) patch.password = password;
+  if (disabled !== undefined) patch.disabled = disabled;
+
+  if (Object.keys(patch).length) {
+    try {
+      await withRetry(() => adminAuth.updateUser(staffId, patch), "auth user update");
+    } catch (err) {
+      if ((err as { code?: string }).code === "auth/user-not-found") {
+        await withRetry(
+          () =>
+            adminAuth.createUser({ uid: staffId, email, password, disabled: disabled ?? false }),
+          "auth user create",
+        );
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  if (claims) {
+    await withRetry(() => adminAuth.setCustomUserClaims(staffId, claims), "auth claims set");
+  }
+}
+
 export interface Caller {
   uid: string;
   role: StaffRole;

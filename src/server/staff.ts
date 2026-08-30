@@ -2,10 +2,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { adminDb } from "./firebase-admin";
-import { USERNAME_RE, PIN_RE, usernameKey } from "./auth";
+import { adminAuth, adminDb } from "./firebase-admin";
+import { USERNAME_RE, PIN_RE } from "./auth";
 import { withRetry } from "./retry";
 import { invalidateStaffCache } from "./staff-cache";
+import { usernameKey, toStaffEmail, toStaffPassword } from "@/lib/staff-auth";
 import {
   requireAdmin,
   requireManager,
@@ -13,6 +14,7 @@ import {
   otherActiveSuperAdmins,
   nameTaken,
   claimUsername,
+  syncAuthUser,
   type Caller,
 } from "./staff-admin";
 import {
@@ -149,6 +151,25 @@ export const createStaffFn = createServerFn({ method: "POST" })
       throw err;
     }
 
+    try {
+      await syncAuthUser({
+        staffId,
+        email: toStaffEmail(data.username),
+        password: toStaffPassword(data.pin),
+        disabled: false,
+        claims: { role: data.role, perms: permissions, name: data.name, mustChangePin: false },
+      });
+    } catch (err) {
+      // The staff doc is useless without a matching Auth account (nobody
+      // could ever sign in): roll everything back rather than strand it.
+      await Promise.all([
+        adminDb.collection("staff").doc(staffId).delete(),
+        adminDb.collection("staff_public").doc(staffId).delete(),
+        adminDb.collection("usernames").doc(key).delete(),
+      ]).catch(() => {});
+      throw err;
+    }
+
     await invalidateStaffCache();
     return { success: true, staffId };
   });
@@ -215,6 +236,20 @@ export const updateStaffFn = createServerFn({ method: "POST" })
     // best-effort: the staff doc is already updated and re-checked server-side.
     revokeBestEffort(data.targetStaffId);
 
+    // Same best-effort treatment as the revoke above: the staff doc (the
+    // authoritative source server-side) is already updated, so a stalled
+    // claims sync here just means the client's rules-level access lags until
+    // the next successful update or login.
+    void syncAuthUser({
+      staffId: data.targetStaffId,
+      claims: {
+        role: data.role,
+        perms: permissions,
+        name: data.name,
+        mustChangePin: target.mustChangePin ?? false,
+      },
+    }).catch((err) => console.error(`[staff] syncAuthUser(${data.targetStaffId}) failed:`, err));
+
     await invalidateStaffCache();
     return { success: true };
   });
@@ -255,6 +290,10 @@ export const setStaffActiveFn = createServerFn({ method: "POST" })
       });
       return batch.commit();
     }, "set-active commit");
+
+    // The real gate: Firebase Auth itself refuses sign-in for a disabled
+    // user, so this is awaited rather than best-effort.
+    await syncAuthUser({ staffId: data.targetStaffId, disabled: !data.active });
 
     // Deactivation must end any session already open on a shop tablet.
     if (!data.active) revokeBestEffort(data.targetStaffId);
@@ -301,6 +340,18 @@ export const resetPinFn = createServerFn({ method: "POST" })
         }),
       "pin reset write",
     );
+
+    const targetData = snap.data()!;
+    await syncAuthUser({
+      staffId: data.targetStaffId,
+      password: toStaffPassword(data.newPin),
+      claims: {
+        role: targetRole,
+        perms: sanitizePermissions(targetData.permissions),
+        name: targetData.name,
+        mustChangePin: false,
+      },
+    });
 
     revokeBestEffort(data.targetStaffId);
 
@@ -353,6 +404,18 @@ export const deleteStaffFn = createServerFn({ method: "POST" })
       }
       return batch.commit();
     }, "staff delete commit");
+
+    // The Firestore docs are already gone and this can't be rolled back at
+    // this point, but a surviving Auth account would keep working on its
+    // still-valid claims -- retry hard, and log loudly rather than swallow a
+    // failure that leaves a "deleted" user able to sign in.
+    await withRetry(
+      () =>
+        adminAuth.deleteUser(data.targetStaffId).catch((err) => {
+          if ((err as { code?: string }).code !== "auth/user-not-found") throw err;
+        }),
+      "auth user delete",
+    ).catch((err) => console.error(`[staff] deleteUser(${data.targetStaffId}) failed:`, err));
 
     revokeBestEffort(data.targetStaffId);
 

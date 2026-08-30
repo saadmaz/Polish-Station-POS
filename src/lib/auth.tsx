@@ -8,11 +8,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { signInWithCustomToken, signOut, onIdTokenChanged } from "firebase/auth";
+import { signInWithEmailAndPassword, signOut, onIdTokenChanged } from "firebase/auth";
 import { toast } from "sonner";
 import { doc, getDoc } from "firebase/firestore";
 import { auth as firebaseAuth, db } from "./firebase";
-import { loginFn, type LoginResult } from "@/server/auth";
+import { toStaffEmail, toStaffPassword } from "./staff-auth";
 import { hasModule, sanitizePermissions, type ModuleKey, type StaffRole } from "./permissions";
 
 // Re-exported so the many `import { type StaffRole } from "@/lib/auth"` call
@@ -36,10 +36,6 @@ export type LoginError =
   | { code: "inactive" }
   | { code: "unknown"; message: string };
 
-export interface LoginSuccess {
-  mustChangePin: boolean;
-}
-
 interface AuthState {
   staff: StaffProfile | null;
   loading: boolean;
@@ -48,7 +44,7 @@ interface AuthState {
   logout: () => Promise<void>;
   touchActivity: () => void;
   /** Clears the forced-PIN-change gate after a successful change. */
-  clearMustChangePin: () => void;
+  clearMustChangePin: () => Promise<void>;
   /** Module access for the signed-in user. SuperAdmins always pass. */
   can: (moduleKey: ModuleKey) => boolean;
 }
@@ -57,7 +53,6 @@ interface AuthState {
 
 const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15-minute inactivity timeout
 const ACTIVITY_KEY = "ps_last_activity";
-const MUST_CHANGE_KEY = "ps_must_change_pin";
 
 // ── Context ───────────────────────────────────────────────────────────────────
 
@@ -87,28 +82,70 @@ export function withClientTimeout<T>(p: Promise<T>, ms: number, what: string): P
  * Retrying is safe here because a *logical* result (wrong PIN, locked,
  * inactive, wrong current PIN, etc.) always comes back well under the
  * per-attempt timeout and is returned immediately without retrying; only a
- * genuine timeout/network error triggers another attempt.
+ * genuine timeout/network error triggers another attempt. `changeOwnPinFn`
+ * meets that contract by resolving with a `{success:false}` payload instead
+ * of throwing, so the default `shouldRetry` (retry everything that throws)
+ * is correct there. `signInWithEmailAndPassword` does NOT meet it -- it
+ * throws for a wrong PIN just like it does for a network stall -- so its
+ * caller passes a `shouldRetry` that excludes Firebase's definitive auth
+ * error codes, or a single mistyped PIN would retry up to 8 times.
  */
 export async function retryTransient<T>(
   attempt: () => Promise<T>,
   what: string,
   attempts = 8,
   perAttemptMs = 10_000,
+  shouldRetry: (err: unknown) => boolean = () => true,
 ): Promise<T> {
   let lastErr: unknown;
   for (let i = 0; i < attempts; i++) {
     try {
       return await withClientTimeout(attempt(), perAttemptMs, what);
     } catch (err) {
-      lastErr = err; // transient stall / cold start, so pause and try again
+      lastErr = err;
+      if (!shouldRetry(err)) throw err; // a definitive answer, not a stall
       if (i < attempts - 1) await new Promise((r) => setTimeout(r, 1500));
     }
   }
   throw lastErr instanceof Error ? lastErr : new Error(`${what} failed`);
 }
 
-async function loginWithRetry(username: string, pin: string): Promise<LoginResult> {
-  return retryTransient(() => loginFn({ data: { username, pin } }), "login");
+/** Firebase Auth error codes that represent a definitive answer (wrong PIN,
+ *  disabled account, rate-limited, etc.), not a network/timeout stall --
+ *  retrying these wastes ~12s and hammers Firebase's own rate limiter for no
+ *  benefit, since the same credentials will fail the same way every time. */
+const DEFINITIVE_AUTH_ERROR_CODES = new Set([
+  "auth/user-not-found",
+  "auth/wrong-password",
+  "auth/invalid-credential",
+  "auth/invalid-email",
+  "auth/user-disabled",
+  "auth/too-many-requests",
+]);
+
+/**
+ * Firebase's own errors already merge "no such user" and "wrong password"
+ * into auth/invalid-credential, so the enumeration-safety the old server-side
+ * 200ms-delay hack existed for comes for free here.
+ */
+function mapFirebaseAuthError(err: unknown): LoginError {
+  const code = err instanceof Error ? (err as { code?: string }).code : undefined;
+
+  switch (code) {
+    case "auth/user-not-found":
+    case "auth/wrong-password":
+    case "auth/invalid-credential":
+    case "auth/invalid-email":
+      return { code: "invalid_credentials" };
+    case "auth/user-disabled":
+      return { code: "inactive" };
+    case "auth/too-many-requests":
+      // Firebase doesn't expose the real remaining cooldown; this is a fixed
+      // estimate for the existing countdown UI, not an exact value.
+      return { code: "locked", remainingSec: 60 };
+    default:
+      return { code: "unknown", message: err instanceof Error ? err.message : "Login failed" };
+  }
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -118,16 +155,15 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [staff, setStaff] = useState<StaffProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  // Survives the remount caused by signInWithCustomToken → onIdTokenChanged.
-  const [mustChangePin, setMustChangePin] = useState(
-    () => typeof window !== "undefined" && sessionStorage.getItem(MUST_CHANGE_KEY) === "1",
-  );
+  // Comes from the same ID-token claims as role/perms (see onIdTokenChanged
+  // below), so it's always consistent with `staff` -- no separate channel to
+  // race against the route guard the way a pre-login-response value would.
+  const [mustChangePin, setMustChangePin] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const logout = useCallback(async () => {
     if (timerRef.current) clearTimeout(timerRef.current);
     localStorage.removeItem(ACTIVITY_KEY);
-    sessionStorage.removeItem(MUST_CHANGE_KEY);
     setMustChangePin(false);
     await signOut(firebaseAuth);
   }, []);
@@ -140,9 +176,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const touchActivity = useCallback(() => resetTimer(), [resetTimer]);
 
-  const clearMustChangePin = useCallback(() => {
-    sessionStorage.removeItem(MUST_CHANGE_KEY);
-    setMustChangePin(false);
+  // changeOwnPinFn already awaits setCustomUserClaims before returning
+  // success, so a forced refresh here is guaranteed to pick up the cleared
+  // claim -- this re-fires onIdTokenChanged, which updates `mustChangePin`.
+  const clearMustChangePin = useCallback(async () => {
+    await firebaseAuth.currentUser?.getIdToken(true);
   }, []);
 
   // Sync with Firebase Auth session. onIdTokenChanged (rather than
@@ -176,6 +214,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             color: "oklch(0.55 0.21 27)", // brand default until the doc arrives
             permissions: sanitizePermissions(claims.perms),
           });
+          setMustChangePin(!!claims.mustChangePin);
           resetTimer();
 
           // Cosmetics + deactivation sweep off the critical path: fetch the
@@ -261,40 +300,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (username: string, pin: string): Promise<LoginError | null> => {
     try {
-      const result: LoginResult = await loginWithRetry(username, pin);
-
-      if (!result.success) {
-        if (result.error === "locked") return { code: "locked", remainingSec: result.remainingSec };
-        if (result.error === "inactive") return { code: "inactive" };
-        return { code: "invalid_credentials" };
-      }
-
-      // Set before sign-in: onIdTokenChanged fires synchronously enough that a
-      // later setState could lose the race with the route guard.
-      if (result.mustChangePin) sessionStorage.setItem(MUST_CHANGE_KEY, "1");
-      setMustChangePin(result.mustChangePin);
-
-      // signInWithCustomToken is a *separate* network call straight to Google's
-      // identitytoolkit — not our server, so loginWithRetry's resilience above
-      // doesn't cover it. It used to be time-boxed but never actually retried
-      // despite the comment claiming otherwise, leaving exactly one 15s shot:
-      // any blip reaching Google's auth domain specifically (a shop router/DNS
-      // hiccup, while everything else including our own server stays fine)
-      // failed here with no second chance. Retrying is safe: the custom token
-      // is short-lived but reusable, so signing in again with the same token
-      // after a stalled attempt is not a fresh login.
+      // Talks straight to Google's identitytoolkit -- our own server is never
+      // touched during login, which is the whole point: the shared host's
+      // cold starts used to be exactly what "Couldn't reach the server" meant
+      // here. Still retried: a shop router/DNS hiccup reaching Google's auth
+      // domain specifically is possible even when everything else is fine.
       await retryTransient(
-        () => signInWithCustomToken(firebaseAuth, result.customToken),
+        () =>
+          signInWithEmailAndPassword(firebaseAuth, toStaffEmail(username), toStaffPassword(pin)),
         "sign-in",
-        4,
+        8,
         10_000,
+        (err) =>
+          !DEFINITIVE_AUTH_ERROR_CODES.has((err as { code?: string } | undefined)?.code ?? ""),
       );
-      return null; // null = success
+      return null; // null = success; onIdTokenChanged picks up staff/mustChangePin
     } catch (err) {
-      return {
-        code: "unknown",
-        message: err instanceof Error ? err.message : "Login failed",
-      };
+      return mapFirebaseAuthError(err);
     }
   }, []);
 

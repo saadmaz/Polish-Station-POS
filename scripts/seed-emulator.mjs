@@ -7,6 +7,7 @@
 //   firebase emulators:exec --only firestore,auth "node scripts/seed-emulator.mjs && node ..."
 //
 import { initializeApp, getApps } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 import bcrypt from "bcryptjs";
 import { pathToFileURL } from "node:url";
@@ -21,6 +22,28 @@ if (getApps().length === 0) {
 }
 
 const db = getFirestore();
+const auth = getAuth();
+
+// Plain node (no TS loader) runs this script, so it can't import
+// src/lib/staff-auth.ts directly -- these must be kept byte-for-byte in sync
+// with that file's derivation, or a seeded login won't resolve.
+const usernameKey = (u) => u.trim().toLowerCase();
+const toStaffEmail = (username) => `${usernameKey(username)}@staff.polishstation.internal`;
+const toStaffPassword = (pin) => `ps-pin-${pin}`;
+
+/** Provisions the Firebase Auth account (email/password + custom claims)
+ *  backing a seeded staff fixture, mirroring syncAuthUser in
+ *  src/server/staff-admin.ts. The emulator starts empty every run, so this
+ *  is always a fresh create, not an update-or-create fallback. */
+async function seedAuthUser({ staffId, username, pin, role, perms, name }) {
+  await auth.createUser({
+    uid: staffId,
+    email: toStaffEmail(username),
+    password: toStaffPassword(pin),
+    disabled: false,
+  });
+  await auth.setCustomUserClaims(staffId, { role, perms, name, mustChangePin: false });
+}
 
 export const TEST_STAFF = { username: "e2e_admin", pin: "4242", staffId: "e2e-admin" };
 export const TEST_SERVICES = [
@@ -82,6 +105,28 @@ async function main() {
   }
 
   await batch.commit();
+
+  await seedAuthUser({
+    staffId: TEST_STAFF.staffId,
+    username: TEST_STAFF.username,
+    pin: TEST_STAFF.pin,
+    role: "SuperAdmin",
+    perms: [
+      "dashboard",
+      "bookings",
+      "customers",
+      "inventory",
+      "equipment",
+      "purchase-orders",
+      "notifications",
+      "pos",
+      "staff",
+      "reports",
+      "settings",
+    ],
+    name: "E2E Admin",
+  });
+
   console.log(
     "✅ Emulator seeded:",
     TEST_STAFF.username,
@@ -839,6 +884,17 @@ async function seedUiTestData() {
     staffBatch.set(db.collection("usernames").doc(s.username.toLowerCase()), { staffId: s.id });
   }
   await staffBatch.commit();
+
+  for (const s of UI_STAFF) {
+    await seedAuthUser({
+      staffId: s.id,
+      username: s.username,
+      pin: s.pin,
+      role: s.role,
+      perms: ROLE_PERMISSIONS[s.role],
+      name: s.name,
+    });
+  }
 
   const busyDate = dateStrDaysFromNow(BUSY_DAY_OFFSET);
   console.log("\n──────────────────────────────────────────────────");

@@ -1,8 +1,10 @@
 import "dotenv/config";
 import { initializeApp, getApps, cert } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 import bcrypt from "bcryptjs";
 import { ALL_MODULES } from "../src/lib/permissions";
+import { usernameKey, toStaffEmail, toStaffPassword } from "../src/lib/staff-auth";
 import { requireEmulatorOrExplicitProduction } from "./_require-emulator";
 
 // Bootstraps the one account the whole system starts from: the super admin.
@@ -26,6 +28,7 @@ if (getApps().length === 0) {
 }
 
 const adminDb = getFirestore();
+const adminAuth = getAuth();
 
 const STAFF_ID = "superadmin";
 const USERNAME = (process.env.SUPERADMIN_USERNAME ?? "ADMIN").trim();
@@ -42,7 +45,7 @@ async function main() {
     process.exit(1);
   }
 
-  const usernameKey = USERNAME.toLowerCase();
+  const key = usernameKey(USERNAME);
   const staffRef = adminDb.collection("staff").doc(STAFF_ID);
   const existing = await staffRef.get();
 
@@ -81,9 +84,35 @@ async function main() {
     { merge: true },
   );
 
-  batch.set(adminDb.collection("usernames").doc(usernameKey), { staffId: STAFF_ID });
+  batch.set(adminDb.collection("usernames").doc(key), { staffId: STAFF_ID });
 
   await batch.commit();
+
+  // Only set a password on first seed: a re-run must never overwrite a PIN
+  // someone has since changed, and the hashed pinHash above can't be
+  // reversed to recover the current plaintext PIN anyway.
+  const email = toStaffEmail(USERNAME);
+  const authPatch: { email: string; password?: string; disabled: boolean } = {
+    email,
+    disabled: false,
+  };
+  if (!existing.exists) authPatch.password = toStaffPassword(PIN);
+
+  try {
+    await adminAuth.updateUser(STAFF_ID, authPatch);
+  } catch (err) {
+    if ((err as { code?: string }).code === "auth/user-not-found") {
+      await adminAuth.createUser({ uid: STAFF_ID, ...authPatch, password: toStaffPassword(PIN) });
+    } else {
+      throw err;
+    }
+  }
+  await adminAuth.setCustomUserClaims(STAFF_ID, {
+    role: "SuperAdmin",
+    perms: [...ALL_MODULES],
+    name: "Super Admin",
+    mustChangePin,
+  });
 
   console.log("✅ Super admin ready");
   console.log(`   Username : ${USERNAME}`);

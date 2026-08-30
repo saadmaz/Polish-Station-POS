@@ -5,7 +5,7 @@
 // through the browser, verifying both the UI and the underlying Firestore
 // invoice document at each step.
 import { chromium } from "playwright";
-import { BASE_URL, adminDb, check, assert, summarize } from "./_shared.mjs";
+import { BASE_URL, adminDb, check, assert, summarize, loginAs } from "./_shared.mjs";
 import { TEST_STAFF } from "../seed-emulator.mjs";
 
 console.log("Payments flow (split tender / partial collect / refund):");
@@ -52,9 +52,7 @@ const unitPrice = 10000;
 
 await check("login", async () => {
   await page.goto(BASE_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
-  await page.waitForSelector("#username", { timeout: 15000 });
-  await page.fill("#username", TEST_STAFF.username);
-  for (const d of TEST_STAFF.pin) await page.click(`button:has-text("${d}")`);
+  await loginAs(page, TEST_STAFF.username, TEST_STAFF.pin);
   await page.waitForURL(/dashboard/, { timeout: 20000 });
 });
 

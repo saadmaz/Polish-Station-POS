@@ -4,7 +4,7 @@
 // second setDoc() in a session silently overwrote the first equipment
 // record in Firestore. See src/routes/_app.equipment.tsx.
 import { chromium } from "playwright";
-import { BASE_URL, adminDb, check, assert, summarize } from "./_shared.mjs";
+import { BASE_URL, adminDb, check, assert, summarize, loginAs } from "./_shared.mjs";
 import { TEST_STAFF } from "../seed-emulator.mjs";
 
 console.log("Equipment add: ID collision / data-loss check:");
@@ -16,9 +16,7 @@ const nameB = `E2E Polisher ${Date.now()}`;
 
 await check("log in and reach the Equipment page", async () => {
   await page.goto(BASE_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
-  await page.waitForSelector("#username", { timeout: 15000 });
-  await page.fill("#username", TEST_STAFF.username);
-  for (const d of TEST_STAFF.pin) await page.click(`button:has-text("${d}")`);
+  await loginAs(page, TEST_STAFF.username, TEST_STAFF.pin);
   await page.waitForURL(/dashboard/, { timeout: 20000 });
   await page.goto(`${BASE_URL}/equipment`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector("text=Add Equipment", { timeout: 15000 });

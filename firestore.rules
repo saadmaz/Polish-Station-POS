@@ -3,9 +3,12 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ── Identity ──────────────────────────────────────────────────────────
-    // `role` and `perms` are custom-token claims minted by loginFn. They are
-    // re-minted on every login, and updateStaffFn revokes refresh tokens so a
-    // demoted user cannot keep trading on a stale claim.
+    // `role` and `perms` are custom claims set via adminAuth.setCustomUserClaims
+    // (see syncAuthUser in src/server/staff-admin.ts) whenever a staff account
+    // is created or edited -- not re-minted per login, since login itself is a
+    // plain client-side signInWithEmailAndPassword with no server involved.
+    // updateStaffFn revokes refresh tokens so a demoted user cannot keep
+    // trading on a stale claim.
     function isAuth()            { return request.auth != null; }
     function role()              { return request.auth.token.role; }
 
@@ -42,9 +45,12 @@ service cloud.firestore {
       allow write: if false; // Admin SDK only
     }
 
-    // Username → staffId index. Resolved server-side by the Admin SDK during
-    // login; no client ever needs it, and exposing it would re-open the
-    // employee enumeration hole that staff_public used to have.
+    // Username → staffId index, used server-side (Admin SDK only) to enforce
+    // username uniqueness on staff create/delete. Login itself no longer
+    // resolves through this index (it derives a Firebase Auth email straight
+    // from the typed username instead); no client ever needs it, and
+    // exposing it would re-open the employee enumeration hole that
+    // staff_public used to have.
     match /usernames/{username} {
       allow read, write: if false;
     }
