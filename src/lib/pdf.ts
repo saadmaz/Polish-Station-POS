@@ -12,6 +12,21 @@ const contactLine = () => {
   return `${b.address}  ·  ${b.phone}  ·  ${b.email}`;
 };
 
+// Header banner shows address + a clickable website link only — no phone
+// number, per the client's request. The footer keeps the full contact line
+// (phone + email) since that wasn't part of the ask.
+const WEBSITE_URL = "https://www.polishstation.lk";
+const WEBSITE_LABEL = "www.polishstation.lk";
+
+function drawHeaderContact(doc: jsPDF, x: number, y: number) {
+  const addressPart = `${getBusinessInfo().address}  ·  `;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.setTextColor(255, 220, 220);
+  doc.text(addressPart, x, y);
+  doc.textWithLink(WEBSITE_LABEL, x + doc.getTextWidth(addressPart), y, { url: WEBSITE_URL });
+}
+
 // ─── Brand colours (RGB) ─────────────────────────────────────────────────────
 // Neutral grays (equal-ish R/G/B) on purpose: the previous slate/blue-gray
 // tones (Tailwind slate-*) read as distinctly blue on a white invoice, which
@@ -130,9 +145,7 @@ function buildDoc(opts: DocOptions): jsPDF {
   doc.text("Professional Car Detailing & Protection", TX, 22);
 
   // Contact line
-  doc.setFontSize(7);
-  doc.setTextColor(255, 220, 220);
-  doc.text(contactLine(), TX, 28);
+  drawHeaderContact(doc, TX, 28);
 
   // Doc type (right side)
   doc.setFont("helvetica", "bold");
@@ -491,9 +504,7 @@ export function downloadPOPDF(po: PurchaseOrder) {
   doc.setFontSize(7.5);
   doc.setTextColor(255, 200, 200);
   doc.text("Professional Car Detailing & Protection", TX, 22);
-  doc.setFontSize(7);
-  doc.setTextColor(255, 220, 220);
-  doc.text(contactLine(), TX, 28);
+  drawHeaderContact(doc, TX, 28);
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(22);
