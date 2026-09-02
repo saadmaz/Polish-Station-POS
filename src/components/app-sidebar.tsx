@@ -15,6 +15,7 @@ import {
   ShoppingCart,
   Bell,
   Inbox,
+  WifiOff,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
@@ -115,7 +116,7 @@ function UserRow({
   collapsed?: boolean;
   onAfterLock?: () => void;
 }) {
-  const { staff, logout } = useAuth();
+  const { staff, isOffline, logout } = useAuth();
   const navigate = useNavigate();
   if (!staff) return null;
   return (
@@ -123,17 +124,22 @@ function UserRow({
       <div
         className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-semibold text-primary-foreground"
         style={{ background: staff.color }}
+        title={isOffline ? "Offline session" : undefined}
       >
-        {staff.name
-          .split(" ")
-          .map((p) => p[0])
-          .join("")}
+        {isOffline ? (
+          <WifiOff className="h-3.5 w-3.5" />
+        ) : (
+          staff.name
+            .split(" ")
+            .map((p) => p[0])
+            .join("")
+        )}
       </div>
       {!collapsed && (
         <div className="min-w-0 flex-1 leading-tight">
           <div className="truncate text-sm font-semibold">{staff.name}</div>
           <div className="text-[11px] uppercase tracking-wider text-sidebar-foreground/60">
-            {staff.role}
+            {isOffline ? "Offline" : staff.role}
           </div>
         </div>
       )}

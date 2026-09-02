@@ -15,6 +15,7 @@ import {
   nameTaken,
   claimUsername,
   syncAuthUser,
+  offlineBlobFields,
   type Caller,
 } from "./staff-admin";
 import {
@@ -110,6 +111,13 @@ export const createStaffFn = createServerFn({ method: "POST" })
     // Hashed once, outside the retry: re-hashing per attempt would burn CPU and
     // is pointless (any of the hashes verifies the same PIN).
     const pinHash = await bcrypt.hash(data.pin, 10);
+    const offlineFields = await offlineBlobFields(data.pin, {
+      staffId,
+      role: data.role,
+      perms: permissions,
+      name: data.name,
+      mustChangePin: false,
+    });
 
     try {
       // The batch is rebuilt inside the retry: a Firestore WriteBatch can only
@@ -124,6 +132,7 @@ export const createStaffFn = createServerFn({ method: "POST" })
           color: data.color,
           permissions,
           pinHash,
+          ...offlineFields,
           active: true,
           // The admin-issued PIN IS the working credential: users sign in with
           // exactly what the admin gives them and are never forced to change it.
@@ -336,10 +345,19 @@ export const resetPinFn = createServerFn({ method: "POST" })
 
     // Hashed once, outside the retry (re-hashing per attempt is wasted CPU).
     const newPinHash = await bcrypt.hash(data.newPin, 10);
+    const targetData = snap.data()!;
+    const offlineFields = await offlineBlobFields(data.newPin, {
+      staffId: data.targetStaffId,
+      role: targetRole,
+      perms: sanitizePermissions(targetData.permissions),
+      name: targetData.name,
+      mustChangePin: false,
+    });
     await withRetry(
       () =>
         targetRef.update({
           pinHash: newPinHash,
+          ...offlineFields,
           // The admin sets the PIN and the user signs in with exactly that: no
           // forced change on next login.
           mustChangePin: false,
@@ -349,7 +367,6 @@ export const resetPinFn = createServerFn({ method: "POST" })
       "pin reset write",
     );
 
-    const targetData = snap.data()!;
     await syncAuthUser({
       staffId: data.targetStaffId,
       password: toStaffPassword(data.newPin),

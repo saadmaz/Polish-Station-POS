@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs";
 import { adminAuth, adminDb } from "./firebase-admin";
 import { withTimeout } from "./retry";
 import { toStaffPassword } from "@/lib/staff-auth";
-import { syncAuthUser } from "./staff-admin";
+import { syncAuthUser, offlineBlobFields } from "./staff-admin";
 import { sanitizePermissions, type StaffRole } from "@/lib/permissions";
 
 // ── Shared vocabulary ─────────────────────────────────────────────────────────
@@ -88,9 +88,18 @@ export const changeOwnPinFn = createServerFn({ method: "POST" })
       return { success: false, error: "wrong_pin" };
     }
 
+    const offlineFields = await offlineBlobFields(newPin, {
+      staffId: uid,
+      role: staff.role as StaffRole,
+      perms: sanitizePermissions(staff.permissions),
+      name: staff.name as string,
+      mustChangePin: false,
+    });
+
     await withTimeout(
       staffRef.update({
         pinHash: await bcrypt.hash(newPin, 10),
+        ...offlineFields,
         mustChangePin: false,
         failCount: 0,
         lockedUntil: null,

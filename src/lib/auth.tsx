@@ -14,6 +14,12 @@ import { doc, getDoc } from "firebase/firestore";
 import { auth as firebaseAuth, db } from "./firebase";
 import { toStaffEmail, toStaffPassword } from "./staff-auth";
 import { hasModule, sanitizePermissions, type ModuleKey, type StaffRole } from "./permissions";
+import {
+  attemptOfflineUnlock,
+  checkDeviceRevocation,
+  fetchAndCacheOfflineCredential,
+  isDeviceEnrolled,
+} from "./offline-auth";
 
 // Re-exported so the many `import { type StaffRole } from "@/lib/auth"` call
 // sites keep working; permissions.ts is the definition.
@@ -40,7 +46,17 @@ interface AuthState {
   staff: StaffProfile | null;
   loading: boolean;
   mustChangePin: boolean;
-  login: (username: string, pin: string) => Promise<LoginError | null>;
+  /** True when `staff` came from a local offline-PIN unlock, not a real
+   *  Firebase session -- see src/lib/offline-auth.ts. No real ID token backs
+   *  this session, so every Firestore write is rejected regardless of any
+   *  UI-level gating; consumers use this flag to keep the UI honest about it
+   *  (an "Offline" badge, restricting nav to read-only screens). */
+  isOffline: boolean;
+  /** `staffId` is optional for API compatibility but should always be passed
+   *  by callers that have it (the login screen's staff picker always does):
+   *  it's what lets the offline fallback find this account's cached
+   *  credential when Firebase itself is unreachable. */
+  login: (username: string, pin: string, staffId?: string) => Promise<LoginError | null>;
   logout: () => Promise<void>;
   touchActivity: () => void;
   /** Clears the forced-PIN-change gate after a successful change. */
@@ -159,13 +175,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // below), so it's always consistent with `staff` -- no separate channel to
   // race against the route guard the way a pre-login-response value would.
   const [mustChangePin, setMustChangePin] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const logout = useCallback(async () => {
     if (timerRef.current) clearTimeout(timerRef.current);
     localStorage.removeItem(ACTIVITY_KEY);
     setMustChangePin(false);
-    await signOut(firebaseAuth);
+    setIsOffline(false);
+    // An offline session has no real Firebase user to sign out of.
+    if (firebaseAuth.currentUser) await signOut(firebaseAuth);
+    else setStaff(null);
   }, []);
 
   const resetTimer = useCallback(() => {
@@ -220,6 +240,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             permissions: sanitizePermissions(claims.perms),
           });
           setMustChangePin(!!claims.mustChangePin);
+          setIsOffline(false); // a real token always supersedes any offline session
           resetTimer();
 
           // Cosmetics + deactivation sweep off the critical path: fetch the
@@ -298,32 +319,81 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
         })
         .catch(() => {});
+    // Riding along on the same interval: while online, confirm this specific
+    // till hasn't been revoked (Settings → Devices). A revoked till wipes its
+    // own offline cache the next time it happens to check -- see
+    // src/lib/offline-auth.ts -- there's no way to push that to an already-
+    // offline device.
     ping(); // once on mount too, not only after the first interval
-    const t = setInterval(ping, 4 * 60 * 1000);
+    void checkDeviceRevocation();
+    const t = setInterval(
+      () => {
+        ping();
+        void checkDeviceRevocation();
+      },
+      4 * 60 * 1000,
+    );
     return () => clearInterval(t);
   }, [staff]);
 
-  const login = useCallback(async (username: string, pin: string): Promise<LoginError | null> => {
-    try {
-      // Talks straight to Google's identitytoolkit -- our own server is never
-      // touched during login, which is the whole point: the shared host's
-      // cold starts used to be exactly what "Couldn't reach the server" meant
-      // here. Still retried: a shop router/DNS hiccup reaching Google's auth
-      // domain specifically is possible even when everything else is fine.
-      await retryTransient(
-        () =>
-          signInWithEmailAndPassword(firebaseAuth, toStaffEmail(username), toStaffPassword(pin)),
-        "sign-in",
-        8,
-        10_000,
-        (err) =>
-          !DEFINITIVE_AUTH_ERROR_CODES.has((err as { code?: string } | undefined)?.code ?? ""),
-      );
-      return null; // null = success; onIdTokenChanged picks up staff/mustChangePin
-    } catch (err) {
-      return mapFirebaseAuthError(err);
-    }
-  }, []);
+  const login = useCallback(
+    async (username: string, pin: string, staffId?: string): Promise<LoginError | null> => {
+      try {
+        // Talks straight to Google's identitytoolkit -- our own server is never
+        // touched during login, which is the whole point: the shared host's
+        // cold starts used to be exactly what "Couldn't reach the server" meant
+        // here. Still retried: a shop router/DNS hiccup reaching Google's auth
+        // domain specifically is possible even when everything else is fine.
+        await retryTransient(
+          () =>
+            signInWithEmailAndPassword(firebaseAuth, toStaffEmail(username), toStaffPassword(pin)),
+          "sign-in",
+          8,
+          10_000,
+          (err) =>
+            !DEFINITIVE_AUTH_ERROR_CODES.has((err as { code?: string } | undefined)?.code ?? ""),
+        );
+        // Real online success: refresh this till's cached offline credential
+        // in the background, best-effort. onIdTokenChanged picks up
+        // staff/mustChangePin from the real token above.
+        if (staffId) void fetchAndCacheOfflineCredential(staffId).catch(() => {});
+        return null;
+      } catch (err) {
+        const code = err instanceof Error ? (err as { code?: string }).code : undefined;
+        const isDefinitive = !!code && DEFINITIVE_AUTH_ERROR_CODES.has(code);
+
+        // Only a genuine network failure (never a definitive rejection --
+        // that's a real "wrong PIN"/"deactivated" answer from Firebase
+        // itself) falls back to a local unlock, and only on a till that's
+        // actually enrolled for it.
+        if (!isDefinitive && staffId && isDeviceEnrolled()) {
+          const offline = await attemptOfflineUnlock(staffId, pin);
+          if (offline.ok) {
+            const { claims } = offline;
+            setStaff({
+              id: claims.staffId,
+              name: claims.name,
+              role: claims.role,
+              color: "oklch(0.55 0.21 27)", // brand default -- no network to fetch the real one
+              permissions: claims.perms,
+            });
+            setMustChangePin(claims.mustChangePin);
+            setIsOffline(true);
+            resetTimer();
+            return null;
+          }
+          if (offline.reason === "wrong_pin") return { code: "invalid_credentials" };
+          if (offline.reason === "locked") {
+            return { code: "locked", remainingSec: offline.remainingSec ?? 30 };
+          }
+          // "no_cached_credential" / "stale": nothing usable offline for this
+          // account on this till -- fall through to the normal network error.
+        }
+        return mapFirebaseAuthError(err);
+      }
+    },
+    [resetTimer],
+  );
 
   const can = useCallback(
     (moduleKey: ModuleKey) => hasModule(staff?.role, staff?.permissions, moduleKey),
@@ -335,13 +405,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       staff,
       loading,
       mustChangePin,
+      isOffline,
       login,
       logout,
       touchActivity,
       clearMustChangePin,
       can,
     }),
-    [staff, loading, mustChangePin, login, logout, touchActivity, clearMustChangePin, can],
+    [
+      staff,
+      loading,
+      mustChangePin,
+      isOffline,
+      login,
+      logout,
+      touchActivity,
+      clearMustChangePin,
+      can,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -55,6 +55,15 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Enrolled tills for offline PIN login (see src/lib/offline-auth.ts).
+    // Holds only label/audit metadata -- never a secret, so any signed-in
+    // user may read it (a till needs to check its own revoked flag). Written
+    // exclusively by src/server/devices.ts via the Admin SDK.
+    match /devices/{deviceId} {
+      allow read:  if isAuth();
+      allow write: if false;
+    }
+
     // ── Audit log ─────────────────────────────────────────────────────────
     // Append-only. No updates or deletes — ever. A create must be attributed
     // to the caller's own uid, so no staff member can forge log lines in a

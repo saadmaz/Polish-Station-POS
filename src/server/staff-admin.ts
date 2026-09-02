@@ -5,9 +5,11 @@
 // top-level helpers -- called BY those handlers but not nested inside them --
 // don't get stripped, which kept adminDb/adminAuth's imports (and
 // firebase-admin's Node-only dependency graph) alive in the client bundle.
+import { webcrypto } from "node:crypto";
 import { adminAuth, adminDb } from "./firebase-admin";
 import { withRetry, withTimeout } from "./retry";
 import { isAdmin, isManagerOrAbove, type StaffRole } from "@/lib/permissions";
+import { encryptOfflinePayload } from "@/lib/offline-crypto";
 
 interface AuthUserSync {
   staffId: string;
@@ -58,6 +60,36 @@ export async function syncAuthUser({ staffId, email, password, disabled, claims 
   if (claims) {
     await withRetry(() => adminAuth.setCustomUserClaims(staffId, claims), "auth claims set");
   }
+}
+
+/**
+ * The bcrypt `pinHash` proves a PIN was typed correctly; it can never
+ * reconstruct an offline credential, because bcrypt hashes can't be
+ * un-hashed. So every call site that ever sees a *raw* PIN (create, reset,
+ * self-change -- never login itself, which stays a direct Firebase Auth
+ * call) also derives this: an AES-GCM blob only that exact PIN can decrypt.
+ * A till caches its own further-wrapped copy of it (see
+ * src/lib/offline-auth.ts) so a staff member can be authenticated with no
+ * network at all, once they've logged in online on that till at least once
+ * since their PIN was last set.
+ */
+export async function offlineBlobFields(
+  pin: string,
+  claims: {
+    staffId: string;
+    role: StaffRole;
+    perms: string[];
+    name: string;
+    mustChangePin: boolean;
+  },
+) {
+  const blob = await encryptOfflinePayload(webcrypto as unknown as Crypto, pin, claims);
+  return {
+    offlineSalt: blob.salt,
+    offlineIterations: blob.iterations,
+    offlineIv: blob.iv,
+    offlineCiphertext: blob.ciphertext,
+  };
 }
 
 export interface Caller {

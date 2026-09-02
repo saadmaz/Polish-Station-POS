@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, Navigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { KeyRound, Loader2, ShieldAlert } from "lucide-react";
+import { KeyRound, Loader2, ShieldAlert, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth, retryTransient } from "@/lib/auth";
 import { auth as firebaseAuth } from "@/lib/firebase";
@@ -19,7 +19,7 @@ export const Route = createFileRoute("/change-pin")({
 // Deliberately outside the /_app layout: there is no sidebar and no way to
 // navigate into the app while a forced PIN change is pending.
 function ChangePin() {
-  const { staff, loading, mustChangePin, logout, clearMustChangePin } = useAuth();
+  const { staff, loading, mustChangePin, isOffline, logout, clearMustChangePin } = useAuth();
   const navigate = useNavigate();
 
   const [currentPin, setCurrentPin] = useState("");
@@ -30,6 +30,37 @@ function ChangePin() {
 
   if (loading) return null;
   if (!staff) return <Navigate to="/" />;
+
+  // Changing a PIN re-proves the current one against the server and rewrites
+  // Firestore + the Firebase Auth password -- neither is possible with no
+  // real ID token, which an offline session never has.
+  if (isOffline) {
+    return (
+      <div className="brushed-charcoal min-h-screen grid place-items-center px-4 py-10">
+        <div className="w-full max-w-105 rounded-2xl bg-card text-card-foreground p-7 text-center shadow-elevated border border-border">
+          <div className="mx-auto mb-4 grid h-10 w-10 place-items-center rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400">
+            <WifiOff className="h-5 w-5" />
+          </div>
+          <div className="font-display text-base font-extrabold mb-1.5">
+            Connect to change your PIN
+          </div>
+          <p className="text-sm text-muted-foreground">
+            This till is signed in from a cached credential with no network. Reconnect and sign in
+            again to set a new PIN.
+          </p>
+          <button
+            onClick={async () => {
+              await logout();
+              navigate({ to: "/" });
+            }}
+            className="mt-5 w-full rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-muted"
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const complete = [currentPin, newPin, confirmPin].every((p) => /^\d{4}$/.test(p));
 

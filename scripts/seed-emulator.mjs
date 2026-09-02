@@ -11,6 +11,7 @@ import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
 import bcrypt from "bcryptjs";
 import { pathToFileURL } from "node:url";
+import { webcrypto } from "node:crypto";
 
 if (!process.env.FIRESTORE_EMULATOR_HOST) {
   console.error("❌ FIRESTORE_EMULATOR_HOST is not set, refusing to run against a real project.");
@@ -30,6 +31,46 @@ const auth = getAuth();
 const usernameKey = (u) => u.trim().toLowerCase();
 const toStaffEmail = (username) => `${usernameKey(username)}@staff.polishstation.internal`;
 const toStaffPassword = (pin) => `ps-pin-${pin}`;
+
+// Mirrors src/lib/offline-crypto.ts's encryptOfflinePayload byte-for-byte
+// (same PBKDF2-HMAC-SHA256 + AES-256-GCM scheme, same field names) so a
+// seeded staff fixture can exercise the offline-PIN-login e2e spec without
+// going through the real create/reset-PIN server calls this plain node
+// script can't invoke directly.
+const OFFLINE_PBKDF2_ITERATIONS = 300_000;
+const te = new TextEncoder();
+async function deriveOfflineKey(passphrase, salt, iterations) {
+  const keyMaterial = await webcrypto.subtle.importKey(
+    "raw",
+    te.encode(passphrase),
+    "PBKDF2",
+    false,
+    ["deriveKey"],
+  );
+  return webcrypto.subtle.deriveKey(
+    { name: "PBKDF2", salt, iterations, hash: "SHA-256" },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+}
+async function seedOfflineBlob(pin, payload, iterations = OFFLINE_PBKDF2_ITERATIONS) {
+  const salt = webcrypto.getRandomValues(new Uint8Array(16));
+  const iv = webcrypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveOfflineKey(pin, salt, iterations);
+  const ciphertext = await webcrypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    te.encode(JSON.stringify(payload)),
+  );
+  return {
+    offlineSalt: Buffer.from(salt).toString("base64"),
+    offlineIterations: iterations,
+    offlineIv: Buffer.from(iv).toString("base64"),
+    offlineCiphertext: Buffer.from(new Uint8Array(ciphertext)).toString("base64"),
+  };
+}
 
 /** Provisions the Firebase Auth account (email/password + custom claims)
  *  backing a seeded staff fixture, mirroring syncAuthUser in
@@ -63,26 +104,35 @@ const UI_TEST = process.argv.includes("--ui-test");
 async function main() {
   const batch = db.batch();
 
+  const TEST_STAFF_PERMS = [
+    "dashboard",
+    "bookings",
+    "customers",
+    "inventory",
+    "equipment",
+    "purchase-orders",
+    "notifications",
+    "pos",
+    "staff",
+    "reports",
+    "settings",
+  ];
   const pinHash = await bcrypt.hash(TEST_STAFF.pin, 10);
+  const offlineFields = await seedOfflineBlob(TEST_STAFF.pin, {
+    staffId: TEST_STAFF.staffId,
+    role: "SuperAdmin",
+    perms: TEST_STAFF_PERMS,
+    name: "E2E Admin",
+    mustChangePin: false,
+  });
   batch.set(db.collection("staff").doc(TEST_STAFF.staffId), {
     username: TEST_STAFF.username,
     name: "E2E Admin",
     role: "SuperAdmin",
     color: "oklch(0.55 0.21 27)",
-    permissions: [
-      "dashboard",
-      "bookings",
-      "customers",
-      "inventory",
-      "equipment",
-      "purchase-orders",
-      "notifications",
-      "pos",
-      "staff",
-      "reports",
-      "settings",
-    ],
+    permissions: TEST_STAFF_PERMS,
     pinHash,
+    ...offlineFields,
     active: true,
     mustChangePin: false,
     failCount: 0,
@@ -111,19 +161,7 @@ async function main() {
     username: TEST_STAFF.username,
     pin: TEST_STAFF.pin,
     role: "SuperAdmin",
-    perms: [
-      "dashboard",
-      "bookings",
-      "customers",
-      "inventory",
-      "equipment",
-      "purchase-orders",
-      "notifications",
-      "pos",
-      "staff",
-      "reports",
-      "settings",
-    ],
+    perms: TEST_STAFF_PERMS,
     name: "E2E Admin",
   });
 
@@ -197,25 +235,74 @@ async function writeAll(collName, docs) {
 // ── Name / phone / plate pools ──────────────────────────────────────────
 
 const FIRST_NAMES = [
-  "Hasini", "Marcus", "Priya", "Sahan", "Lakmal", "Anjali", "Roshan", "Dilani", "Nuwan",
-  "Chathurika", "Ishara", "Tharindu", "Sanduni", "Malith", "Kavindi", "Ruwan", "Achini",
-  "Dinesh", "Nilmini", "Kusal",
+  "Hasini",
+  "Marcus",
+  "Priya",
+  "Sahan",
+  "Lakmal",
+  "Anjali",
+  "Roshan",
+  "Dilani",
+  "Nuwan",
+  "Chathurika",
+  "Ishara",
+  "Tharindu",
+  "Sanduni",
+  "Malith",
+  "Kavindi",
+  "Ruwan",
+  "Achini",
+  "Dinesh",
+  "Nilmini",
+  "Kusal",
 ];
 const LAST_NAMES = [
-  "Wijesuriya", "Fernando", "Jayasinghe", "De Silva", "Perera", "Mendis", "Karunaratne",
-  "Rathnayake", "Wickramasinghe", "Gunawardena", "Bandara", "Abeysekera", "Ranasinghe",
-  "Senanayake", "Dissanayake", "Herath", "Weerasinghe", "Amarasekara", "Kodithuwakku",
+  "Wijesuriya",
+  "Fernando",
+  "Jayasinghe",
+  "De Silva",
+  "Perera",
+  "Mendis",
+  "Karunaratne",
+  "Rathnayake",
+  "Wickramasinghe",
+  "Gunawardena",
+  "Bandara",
+  "Abeysekera",
+  "Ranasinghe",
+  "Senanayake",
+  "Dissanayake",
+  "Herath",
+  "Weerasinghe",
+  "Amarasekara",
+  "Kodithuwakku",
   "Ekanayake",
 ];
 // Real Sinhala- and Tamil-script names — the UI must render these correctly
 // wherever a customer name shows up (bookings, invoices, PDFs, search).
 const SINHALA_NAMES = [
-  "සුනිල් පෙරේරා", "නිශාන්ති ජයවර්ධන", "චමින්ද රත්නායක", "දිල්හානි විජේසිංහ", "කසුන් බණ්ඩාර",
-  "අනුෂා ගුණවර්ධන", "ප්‍රියන්ත සේනානායක", "තිළිණි අබේසේකර", "මධුෂංක ද සිල්වා", "හසිත කරුණාරත්න",
+  "සුනිල් පෙරේරා",
+  "නිශාන්ති ජයවර්ධන",
+  "චමින්ද රත්නායක",
+  "දිල්හානි විජේසිංහ",
+  "කසුන් බණ්ඩාර",
+  "අනුෂා ගුණවර්ධන",
+  "ප්‍රියන්ත සේනානායක",
+  "තිළිණි අබේසේකර",
+  "මධුෂංක ද සිල්වා",
+  "හසිත කරුණාරත්න",
 ];
 const TAMIL_NAMES = [
-  "முருகன் சிவலிங்கம்", "பிரியா குமார்", "கமலா சுப்ரமணியம்", "விஜய் ராஜேந்திரன்", "அனிதா செல்வராஜ்",
-  "ரவீந்திரன் நடராஜா", "சரோஜா பாலசுப்ரமணியம்", "கோபால் கிருஷ்ணன்", "மீனா ஆறுமுகம்", "சுரேஷ் ராமநாதன்",
+  "முருகன் சிவலிங்கம்",
+  "பிரியா குமார்",
+  "கமலா சுப்ரமணியம்",
+  "விஜய் ராஜேந்திரன்",
+  "அனிதா செல்வராஜ்",
+  "ரவீந்திரன் நடராஜா",
+  "சரோஜா பாலசுப்ரமணியம்",
+  "கோபால் கிருஷ்ணன்",
+  "மீனா ஆறுமுகம்",
+  "சுரேஷ் ராமநாதன்",
 ];
 const EDGE_NAMES = [
   "A",
@@ -264,21 +351,48 @@ function hostilePlateEntry(plate) {
 }
 
 const MAKES_MODELS = [
-  ["Toyota", "Aqua"], ["Toyota", "Prius"], ["Toyota", "Vitz"], ["Toyota", "Corolla"],
-  ["Honda", "Vezel"], ["Honda", "Fit"], ["Honda", "Civic"], ["Honda", "CR-V"],
-  ["Suzuki", "Alto"], ["Suzuki", "Swift"], ["Suzuki", "Wagon R"],
-  ["Nissan", "X-Trail"], ["Nissan", "Leaf"], ["Mazda", "CX-5"], ["Mazda", "Demio"],
-  ["BMW", "320i"], ["Mercedes-Benz", "C200"], ["KIA", "Picanto"],
-  ["Micro", "Panda"], ["Perodua", "Axia"],
+  ["Toyota", "Aqua"],
+  ["Toyota", "Prius"],
+  ["Toyota", "Vitz"],
+  ["Toyota", "Corolla"],
+  ["Honda", "Vezel"],
+  ["Honda", "Fit"],
+  ["Honda", "Civic"],
+  ["Honda", "CR-V"],
+  ["Suzuki", "Alto"],
+  ["Suzuki", "Swift"],
+  ["Suzuki", "Wagon R"],
+  ["Nissan", "X-Trail"],
+  ["Nissan", "Leaf"],
+  ["Mazda", "CX-5"],
+  ["Mazda", "Demio"],
+  ["BMW", "320i"],
+  ["Mercedes-Benz", "C200"],
+  ["KIA", "Picanto"],
+  ["Micro", "Panda"],
+  ["Perodua", "Axia"],
 ];
 const COLOURS = [
-  "Pearl White", "Silver", "Crystal Black", "Gunmetal", "Solid Red", "Soul Red",
-  "Alpine White", "Blue", "Beige", "Bronze", "Champagne Gold", "Metallic Grey",
+  "Pearl White",
+  "Silver",
+  "Crystal Black",
+  "Gunmetal",
+  "Solid Red",
+  "Soul Red",
+  "Alpine White",
+  "Blue",
+  "Beige",
+  "Bronze",
+  "Champagne Gold",
+  "Metallic Grey",
 ];
 const SIZE_CLASSES = ["hatchback", "sedan", "suv", "van", "cab", "motorcycle", "other"];
 
 function slug(name) {
-  const ascii = name.normalize("NFKD").replace(/[^\w]+/g, "").toLowerCase();
+  const ascii = name
+    .normalize("NFKD")
+    .replace(/[^\w]+/g, "")
+    .toLowerCase();
   return ascii.length > 0 ? ascii.slice(0, 20) : "customer";
 }
 
@@ -407,16 +521,47 @@ async function seedUiTestData() {
 
   // ── Services ─────────────────────────────────────────────────────────
   const SERVICES = [
-    { id: "UISV-1", name: "Express Exterior Wash", category: "Exterior", price: 2500, durationMin: 30 },
+    {
+      id: "UISV-1",
+      name: "Express Exterior Wash",
+      category: "Exterior",
+      price: 2500,
+      durationMin: 30,
+    },
     { id: "UISV-2", name: "Premium Hand Wash", category: "Exterior", price: 4500, durationMin: 60 },
-    { id: "UISV-3", name: "Interior Deep Clean", category: "Interior", price: 6500, durationMin: 90 },
-    { id: "UISV-4", name: "Full Detail Package", category: "Full Detail", price: 18500, durationMin: 240 },
+    {
+      id: "UISV-3",
+      name: "Interior Deep Clean",
+      category: "Interior",
+      price: 6500,
+      durationMin: 90,
+    },
+    {
+      id: "UISV-4",
+      name: "Full Detail Package",
+      category: "Full Detail",
+      price: 18500,
+      durationMin: 240,
+    },
     { id: "UISV-5", name: "Ceramic Coating", category: "Coating", price: 75000, durationMin: 480 },
-    { id: "UISV-6", name: "Paint Correction", category: "Paint Protection", price: 28000, durationMin: 300 },
+    {
+      id: "UISV-6",
+      name: "Paint Correction",
+      category: "Paint Protection",
+      price: 28000,
+      durationMin: 300,
+    },
   ];
 
   // ── Bookings (400) ───────────────────────────────────────────────────
-  const BOOKING_STATUSES = ["Pending", "Confirmed", "Checked-In", "Completed", "No-Show", "Cancelled"];
+  const BOOKING_STATUSES = [
+    "Pending",
+    "Confirmed",
+    "Checked-In",
+    "Completed",
+    "No-Show",
+    "Cancelled",
+  ];
   const TECHS = ["Imran S.", "Dilshan H.", "Kasun P.", "Nadeesha W."];
   const BAYS = ["Bay 1", "Bay 2", "Bay 3"];
   const BUSY_DAY_OFFSET = 0; // "today" — visible without navigating the calendar
@@ -432,7 +577,9 @@ async function seedUiTestData() {
     const customer = customers[ci];
     const veh = randomVehicleForCustomer(ci);
     const svc = pick(SERVICES);
-    const time = timeOverride ?? `${String(ri(8, 17)).padStart(2, "0")}:${String(pick([0, 15, 30, 45])).padStart(2, "0")}`;
+    const time =
+      timeOverride ??
+      `${String(ri(8, 17)).padStart(2, "0")}:${String(pick([0, 15, 30, 45])).padStart(2, "0")}`;
     return {
       id,
       customerId: customer.id,
@@ -538,15 +685,27 @@ async function seedUiTestData() {
   let invN = 1;
   const nextInvId = () => `UINV-${invN++}`;
 
-  invoices.push(makeInvoice(nextInvId(), { lines: Array.from({ length: 20 }, randomLine), tip: 0 })); // 20 line items
+  invoices.push(
+    makeInvoice(nextInvId(), { lines: Array.from({ length: 20 }, randomLine), tip: 0 }),
+  ); // 20 line items
   invoices.push(
     makeInvoice(nextInvId(), {
-      lines: [{ name: "Full Vehicle Ceramic Coating — Premium 9H Package", qty: 1, unitPrice: 1850000, discount: 0 }],
+      lines: [
+        {
+          name: "Full Vehicle Ceramic Coating — Premium 9H Package",
+          qty: 1,
+          unitPrice: 1850000,
+          discount: 0,
+        },
+      ],
       tip: 0,
     }),
   ); // LKR 1,850,000
   invoices.push(
-    makeInvoice(nextInvId(), { lines: [{ name: "Air Freshener", qty: 1, unitPrice: 50, discount: 0 }], tip: 0 }),
+    makeInvoice(nextInvId(), {
+      lines: [{ name: "Air Freshener", qty: 1, unitPrice: 50, discount: 0 }],
+      tip: 0,
+    }),
   ); // LKR 50
   invoices.push(makeInvoice(nextInvId(), { status: "Void" }));
 
@@ -594,7 +753,15 @@ async function seedUiTestData() {
   while (invoices.length < 250) {
     const r = rand();
     const status =
-      r < 0.7 ? "Paid" : r < 0.85 ? "Issued" : r < 0.92 ? "Draft" : r < 0.97 ? "Partially Paid" : "Void";
+      r < 0.7
+        ? "Paid"
+        : r < 0.85
+          ? "Issued"
+          : r < 0.92
+            ? "Draft"
+            : r < 0.97
+              ? "Partially Paid"
+              : "Void";
     invoices.push(makeInvoice(nextInvId(), { status }));
   }
 
@@ -616,7 +783,13 @@ async function seedUiTestData() {
     ["Drying Towel Waffle Weave", "Microfiber", "pc"],
     ["Wax Paste Carnauba", "Wax & Sealant", "200g"],
   ];
-  const SUPPLIERS = ["AutoCare Lanka", "Detail Imports", "Local Textiles", "Shine Supplies Co.", "Prestige Chemicals"];
+  const SUPPLIERS = [
+    "AutoCare Lanka",
+    "Detail Imports",
+    "Local Textiles",
+    "Shine Supplies Co.",
+    "Prestige Chemicals",
+  ];
 
   const inventory = [];
   for (let i = 0; i < 40; i++) {
@@ -647,18 +820,72 @@ async function seedUiTestData() {
 
   // ── Staff (3 roles) ──────────────────────────────────────────────────
   const UI_STAFF = [
-    { id: "ui-staff-superadmin", username: "priyantha", name: "Priyantha Wickramasinghe", role: "SuperAdmin", pin: "9821", color: "oklch(0.55 0.21 27)" },
-    { id: "ui-staff-manager", username: "chamari", name: "Chamari Rodrigo", role: "Manager", pin: "5533", color: "oklch(0.6 0.18 145)" },
-    { id: "ui-staff-cashier", username: "kasun", name: "Kasun Bandara", role: "Cashier", pin: "1120", color: "oklch(0.65 0.19 250)" },
+    {
+      id: "ui-staff-superadmin",
+      username: "priyantha",
+      name: "Priyantha Wickramasinghe",
+      role: "SuperAdmin",
+      pin: "9821",
+      color: "oklch(0.55 0.21 27)",
+    },
+    {
+      id: "ui-staff-manager",
+      username: "chamari",
+      name: "Chamari Rodrigo",
+      role: "Manager",
+      pin: "5533",
+      color: "oklch(0.6 0.18 145)",
+    },
+    {
+      id: "ui-staff-cashier",
+      username: "kasun",
+      name: "Kasun Bandara",
+      role: "Cashier",
+      pin: "1120",
+      color: "oklch(0.65 0.19 250)",
+    },
   ];
   const ROLE_PERMISSIONS = {
-    SuperAdmin: ["dashboard", "bookings", "customers", "leads", "inventory", "equipment", "purchase-orders", "notifications", "pos", "staff", "reports", "settings"],
-    Manager: ["dashboard", "bookings", "customers", "leads", "inventory", "equipment", "purchase-orders", "notifications", "pos", "staff", "reports"],
+    SuperAdmin: [
+      "dashboard",
+      "bookings",
+      "customers",
+      "leads",
+      "inventory",
+      "equipment",
+      "purchase-orders",
+      "notifications",
+      "pos",
+      "staff",
+      "reports",
+      "settings",
+    ],
+    Manager: [
+      "dashboard",
+      "bookings",
+      "customers",
+      "leads",
+      "inventory",
+      "equipment",
+      "purchase-orders",
+      "notifications",
+      "pos",
+      "staff",
+      "reports",
+    ],
     Cashier: ["dashboard", "bookings", "customers", "pos"],
   };
 
   // ── Leads (30, every source and status) ─────────────────────────────
-  const LEAD_SOURCES = ["polishstation.lk", "walk-in", "phone", "referral", "instagram", "facebook", "google"];
+  const LEAD_SOURCES = [
+    "polishstation.lk",
+    "walk-in",
+    "phone",
+    "referral",
+    "instagram",
+    "facebook",
+    "google",
+  ];
   const LEAD_STATUSES = ["new", "contacted", "converted", "archived"];
   const LEAD_TYPES = ["contact", "booking"];
 
@@ -675,7 +902,9 @@ async function seedUiTestData() {
       // feedback_firestore_undefined_fields memory).
       ...(rand() < 0.7 ? { email: `lead${i}@example.lk` } : {}),
       ...(rand() < 0.8 ? { phone: makePhone() } : {}),
-      ...(rand() < 0.6 ? { message: "Interested in a full detail package for my car, please call back." } : {}),
+      ...(rand() < 0.6
+        ? { message: "Interested in a full detail package for my car, please call back." }
+        : {}),
       ...(isBooking
         ? {
             vehicle: pick(MAKES_MODELS).join(" "),
@@ -742,7 +971,8 @@ async function seedUiTestData() {
         unit: item.unit,
         qtyOrdered: qty,
         unitCost: item.cost,
-        qtyReceived: status === "Received" ? qty : status === "Partially Received" ? Math.floor(qty / 2) : 0,
+        qtyReceived:
+          status === "Received" ? qty : status === "Partially Received" ? Math.floor(qty / 2) : 0,
       };
     });
     return {
@@ -754,7 +984,10 @@ async function seedUiTestData() {
       notes: "",
       createdAt: isoDaysFromNow(-ri(1, 30)),
       sentAt: status === "Draft" ? null : isoDaysFromNow(-ri(0, 20)),
-      receivedAt: status === "Received" || status === "Partially Received" ? isoDaysFromNow(-ri(0, 10)) : null,
+      receivedAt:
+        status === "Received" || status === "Partially Received"
+          ? isoDaysFromNow(-ri(0, 10))
+          : null,
       createdBy: pick(UI_STAFF).name,
     };
   });
@@ -819,10 +1052,14 @@ async function seedUiTestData() {
   console.log("UI test dataset seeded:");
   console.log(`  customers              ${customers.length}`);
   console.log(`  vehicles (first-class) ${vehiclesColl.length}`);
-  console.log(`  bookings               ${bookings.length}  (${busyDate} has ${bookings.filter((b) => b.date === busyDate).length})`);
+  console.log(
+    `  bookings               ${bookings.length}  (${busyDate} has ${bookings.filter((b) => b.date === busyDate).length})`,
+  );
   console.log(`  invoices               ${invoices.length}`);
   console.log(`  inventory items        ${inventory.length}`);
-  console.log(`  equipment              ${equipment.length}  (overdue: ${equipment[OVERDUE_INDEX].name})`);
+  console.log(
+    `  equipment              ${equipment.length}  (overdue: ${equipment[OVERDUE_INDEX].name})`,
+  );
   console.log(`  purchase orders        ${purchaseOrders.length}`);
   console.log(`  leads                  ${leads.length}`);
   console.log("\nStaff accounts (username / PIN):");

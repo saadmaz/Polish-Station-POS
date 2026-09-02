@@ -152,7 +152,7 @@ function Login() {
     setBusy(true);
     setError(null);
 
-    const err = await login(username.trim(), value);
+    const err = await login(username.trim(), value, picked?.id);
 
     if (!err) {
       // The auth provider decides where to land; a first login with an

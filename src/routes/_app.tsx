@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet, Navigate, useRouterState } from "@tanstack/react-router";
-import { Loader2, ShieldOff } from "lucide-react";
+import { Loader2, ShieldOff, WifiOff } from "lucide-react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { TopBar } from "@/components/top-bar";
 import { useAuth } from "@/lib/auth";
@@ -19,7 +19,7 @@ function Spinner() {
 }
 
 function AppLayout() {
-  const { staff, loading, mustChangePin, can } = useAuth();
+  const { staff, loading, mustChangePin, isOffline, can } = useAuth();
   const { storeLoading } = useStore();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
@@ -30,8 +30,11 @@ function AppLayout() {
 
   if (!staff) return <Navigate to="/" />;
 
-  // A bootstrap PIN issued by an admin cannot be used to reach the app.
-  if (mustChangePin) return <Navigate to="/change-pin" />;
+  // A bootstrap PIN issued by an admin cannot be used to reach the app. An
+  // offline session can't reach /change-pin either way (it needs a real
+  // server round trip), so change-pin.tsx itself explains that rather than
+  // bouncing back and forth between the two routes.
+  if (mustChangePin && !isOffline) return <Navigate to="/change-pin" />;
 
   // Module access. This is a convenience guard, not the security boundary:
   // firestore.rules enforces the same `perms` claim on every read and write.
@@ -39,6 +42,15 @@ function AppLayout() {
   if (moduleKey && !can(moduleKey)) {
     const fallback = MODULES.find((m) => can(m.key));
     return fallback ? <Navigate to={fallback.route} /> : <NoAccess />;
+  }
+
+  // An offline session has no real ID token, so firestore.rules already
+  // rejects every write it could attempt -- this just keeps someone from
+  // wasting a walk-in's time filling out a form that can only fail. Only the
+  // dashboard's cached reads are considered safe to show; every other module
+  // waits for a real network connection.
+  if (isOffline && moduleKey && moduleKey !== "dashboard") {
+    return <Navigate to="/dashboard" />;
   }
 
   // While Firestore listeners deliver their first snapshots (~2-4s on this
@@ -49,6 +61,13 @@ function AppLayout() {
     <div className="flex h-screen w-full bg-background text-foreground">
       <AppSidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
+        {isOffline && (
+          <div className="flex items-center justify-center gap-2 bg-amber-500/15 px-4 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400">
+            <WifiOff className="h-3.5 w-3.5" />
+            Offline &mdash; signed in from a cached credential. Reconnect to do anything beyond
+            viewing the dashboard.
+          </div>
+        )}
         <TopBar />
         <main className="flex-1 overflow-auto bg-muted/30">
           {storeLoading ? (

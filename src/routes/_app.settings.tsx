@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
 import { AccessPanel } from "@/components/access-panel";
+import { DevicesPanel } from "@/components/devices-panel";
 import { useStore } from "@/lib/store";
 import * as db from "@/lib/db";
 import type { BusinessInfo, Service, ServiceCategory } from "@/lib/db";
@@ -24,6 +25,7 @@ import {
   Download,
   Plus,
   Trash2,
+  MonitorSmartphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +69,12 @@ const SECTIONS = [
     icon: ShieldCheck,
     name: "Staff & Access",
     desc: "Roles, PIN length, timeout, lockout",
+  },
+  {
+    id: "devices",
+    icon: MonitorSmartphone,
+    name: "Devices",
+    desc: "Enroll and revoke tills for offline PIN login",
   },
   { id: "notify", icon: Bell, name: "Notifications", desc: "SMS, Email, WhatsApp templates" },
   {
@@ -116,6 +124,7 @@ function Settings() {
           {active === "bays" && <BaysPanel />}
           {active === "booking" && <BookingRulesPanel />}
           {active === "access" && <AccessPanel />}
+          {active === "devices" && <DevicesPanel />}
           {active === "notify" && <NotifyPanel />}
           {active === "integrations" && <IntegrationsPanel />}
           {active === "audit" && <AuditPanel />}
