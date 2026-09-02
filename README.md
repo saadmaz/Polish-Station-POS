@@ -2,7 +2,7 @@
 
 A complete tour of everything the Polish Station point-of-sale / shop-management system does, module by module, with the flows between them.
 
-> **Stack:** TanStack Start (React) + Firebase (Firestore, Auth) · client-side auth, no server-hop on login · single-location car-detailing shop in Dehiwala, Sri Lanka (LKR).
+> **Stack:** TanStack Start (React) + Firebase (Firestore, Auth) · client-side auth, no server-hop on login · offline PIN fallback on enrolled tills · single-location car-detailing shop in Dehiwala, Sri Lanka (LKR).
 
 ---
 
@@ -53,12 +53,18 @@ Firestore is the single source of truth; every screen is a live listener, so eve
 ```mermaid
 flowchart TD
     A["Login screen: tap your name tile"] --> B["Enter 4-digit PIN on the numeric pad"]
-    B --> C{Correct?}
-    C -- "No" --> D["Shake + error.\n5 wrong attempts → Firebase\nlockout for 5 min"]
-    D --> B
-    C -- "Yes, first login\nwith an admin-issued PIN" --> E["Forced /change-pin\n(no way around it)"]
-    C -- "Yes, normal" --> F["Dashboard"]
-    E --> F
+    B --> C{"Firebase\nreachable?"}
+    C -- "Yes" --> D{"Correct?"}
+    D -- "No" --> E["Shake + error.\n5 wrong attempts → Firebase\nlockout for 5 min"]
+    E --> B
+    D -- "Yes, first login\nwith an admin-issued PIN" --> F["Forced /change-pin\n(no way around it)"]
+    D -- "Yes, normal" --> G["Dashboard"]
+    F --> G
+    C -- "No — but this till is\nenrolled + has this\nperson's cached credential" --> H{"Cached PIN\ncorrect?"}
+    H -- "No" --> I["Shake + error.\nLocal lockout after\n5 wrong attempts"]
+    I --> B
+    H -- "Yes" --> J["Dashboard, Offline banner\n— view-only until reconnected"]
+    C -- "No — never enrolled,\nor no cached credential yet" --> K["Couldn't reach the server"]
 ```
 
 - **No server round-trip** — the client signs in directly against Firebase Auth (`signInWithEmailAndPassword`) using a synthetic `username@staff.polishstation.internal` / PIN pair.
@@ -66,6 +72,7 @@ flowchart TD
 - A physical keyboard works too (hidden input trap captures digits).
 - Every account carries a **role** (what you may *do*) and an explicit **module permission list** (what you may *see*) — see §4.
 - Deactivating, deleting, or demoting a user **revokes their session immediately**, not just at next login.
+- **Offline PIN login** — a till enrolled in Settings → Devices caches an AES-encrypted, PIN-protected credential the first time each staff member logs in there online. If the network later drops, the same PIN unlocks that cached credential with no server involved at all: the session is clearly badged **Offline** and restricted to the Dashboard's cached reads only — every mutating action (sales, invoices, PIN changes) waits for reconnection. Wrong offline PINs get their own local lockout, and revoking a till (a lost/stolen tablet) wipes its cache the next time it has any connectivity.
 
 ---
 
@@ -328,6 +335,7 @@ Admin-only control panel, organised into sections:
 - **Bays & Capacity** — add/rename/remove the physical service bays bookings get assigned to; changes propagate everywhere instantly.
 - **Booking Rules** — lead time, max advance booking, deposit threshold/percentage, cancellation window, no-show penalty, auto-confirm toggle.
 - **Staff & Access** — see §4.
+- **Devices** *(Admin+)* — enroll a till for offline PIN login, list every enrolled till with its enrollment date, and revoke one (lost/stolen tablet) — see §2.
 - **Notifications** — outbound channel toggles (local preference switches).
 - **Integrations** — status display for Stripe Terminal / QuickBooks / Google Calendar / WhatsApp Business / Mailchimp (shown for visibility; live connection not wired up — deliberate scope decision, see §16).
 - **Audit Log** — immutable, exportable record of every sale, booking, customer, coupon, service, inventory, equipment, purchase order, expense, and business/bay setting change: who, what, when.
@@ -357,6 +365,7 @@ Admin-only control panel, organised into sections:
 | **CSV export, not live QuickBooks/Xero sync** | Smaller scope, no external OAuth app needed |
 | **No staff rota / shift scheduling UI** | Built once, later removed — not currently part of the app |
 | **No per-service profit margin** | Would require a job→inventory-consumption link that doesn't exist; an invented number is worse than none |
+| **Offline login is view-only, not offline POS** | Firestore has no offline write persistence; letting an offline session ring up real sales would risk double-selling stock or invoice-numbering collisions once reconnected |
 
 ---
 
