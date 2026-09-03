@@ -108,6 +108,13 @@ function drawLogo(doc: jsPDF, x: number, y: number, box: number) {
   doc.addImage(LOGO_PNG_BASE64, "PNG", x, y, box, box);
 }
 
+// Helvetica Bold's cap height as a fraction of font size, used below to
+// centre a pill's fill rect on the actual ink of its text rather than on
+// jsPDF's baseline (which sits near the bottom of the glyphs, not the
+// middle) — the previous fixed "-ph + 0.8" offset put roughly 4x more
+// padding above the label than below it.
+const CAP_HEIGHT_RATIO = 0.72;
+
 function badge(
   doc: jsPDF,
   label: string,
@@ -117,14 +124,18 @@ function badge(
   fg: [number, number, number] = WHITE,
 ) {
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(7.5);
+  const fontSize = 7.5;
+  doc.setFontSize(fontSize);
   const tw = doc.getTextWidth(label);
-  const ph = 4.5;
-  const pw = tw + 6;
+  const padX = 3;
+  const padY = 1.3;
+  const capH = fontSize * CAP_HEIGHT_RATIO * 0.3528; // pt -> mm
+  const pw = tw + padX * 2;
+  const ph = capH + padY * 2;
   doc.setFillColor(...bg);
-  doc.roundedRect(x, y - ph + 0.8, pw, ph, 1, 1, "F");
+  doc.roundedRect(x, y - capH - padY, pw, ph, 1, 1, "F");
   doc.setTextColor(...fg);
-  doc.text(label, x + 3, y);
+  doc.text(label, x + padX, y);
 }
 
 // ─── Shared document builder ──────────────────────────────────────────────────
@@ -378,9 +389,14 @@ function buildDoc(opts: DocOptions): jsPDF {
   y += 1;
   // Total box spans exactly TL to TV — the same left/right bounds as the
   // "Subtotal" row's label and value above it — rather than extending 4mm
-  // further left than the label it's directly under.
+  // further left than the label it's directly under. Height is centred on
+  // the amount's cap height (the larger, dominant text) rather than a
+  // hardcoded "-5.5" that put more padding below the baseline than above it.
+  const totalBoxH = 10;
+  const totalCapH = 11 * CAP_HEIGHT_RATIO * 0.3528;
+  const totalPadY = (totalBoxH - totalCapH) / 2;
   doc.setFillColor(...RED);
-  doc.roundedRect(TL, y - 5.5, TV - TL, 10, 1.5, 1.5, "F");
+  doc.roundedRect(TL, y - totalCapH - totalPadY, TV - TL, totalBoxH, 1.5, 1.5, "F");
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
@@ -405,17 +421,30 @@ function buildDoc(opts: DocOptions): jsPDF {
     // it — extra block appended once below the payment rows, not per-row,
     // since a split payment only has one bank account to point to.
     const hasTransfer = pays.some((p) => p.method === "Transfer");
-    const BANK_BLOCK_H = 19;
-    const boxH = 9 + pays.length * 4.5 + (hasTransfer ? BANK_BLOCK_H : 0);
+
+    // Card height is derived from these same offsets (not a separate
+    // hand-tuned constant), with PAD mirrored top and bottom, so the card
+    // always wraps its content evenly no matter how many payment rows there
+    // are or whether the bank block is shown.
+    const PAD = 5;
+    const ROW_GAP = 4.5;
+    const BANK_GAP = 3.5;
+    const BANK_LINE_GAP = 5;
+    const BANK_LAST_GAP = 4;
+    const lastRowBaseline = PAD + (pays.length - 1) * ROW_GAP;
+    const bankAdvance = ROW_GAP + BANK_GAP + BANK_LINE_GAP + BANK_LAST_GAP;
+    const contentBaseline = lastRowBaseline + (hasTransfer ? bankAdvance : 0);
+    const boxH = contentBaseline + PAD * 2;
+
     doc.setFillColor(...ROW_ALT);
-    doc.roundedRect(ML, y - 5, 95, boxH, 1.5, 1.5, "F");
+    doc.roundedRect(ML, y - PAD, 95, boxH, 1.5, 1.5, "F");
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7);
     doc.setTextColor(...MUTED);
     doc.text("PAYMENT", ML + 4, y);
 
-    let py = y + 5;
+    let py = y + PAD;
     pays.forEach((p) => {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8.5);
@@ -427,21 +456,21 @@ function buildDoc(opts: DocOptions): jsPDF {
       doc.setFont("helvetica", "normal");
       doc.setTextColor(...SLATE);
       doc.text(fmt(p.amount), ML + 91, py, { align: "right" });
-      py += 4.5;
+      py += ROW_GAP;
     });
 
     if (hasTransfer) {
-      py += 3.5;
+      py += BANK_GAP;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(10.5);
       doc.setTextColor(...CHARCOAL);
       doc.text(BANK_ACCOUNT_NO, ML + 4, py);
-      py += 5;
+      py += BANK_LINE_GAP;
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8);
       doc.setTextColor(...SLATE);
       doc.text(BANK_ACCOUNT_NAME, ML + 4, py);
-      py += 4;
+      py += BANK_LAST_GAP;
       doc.text(BANK_NAME, ML + 4, py);
     }
 
@@ -694,8 +723,11 @@ export function downloadPOPDF(po: PurchaseOrder) {
   // Total box spans exactly TL to TV, matching the fix in buildDoc().
   const TV = RCOL;
   const TL = TV - 78;
+  const totalBoxH = 10;
+  const totalCapH = 11 * CAP_HEIGHT_RATIO * 0.3528;
+  const totalPadY = (totalBoxH - totalCapH) / 2;
   doc.setFillColor(...RED);
-  doc.roundedRect(TL, y - 5.5, TV - TL, 10, 1.5, 1.5, "F");
+  doc.roundedRect(TL, y - totalCapH - totalPadY, TV - TL, totalBoxH, 1.5, 1.5, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.setTextColor(...WHITE);
