@@ -386,24 +386,30 @@ function buildDoc(opts: DocOptions): jsPDF {
   }
   if (opts.tip && opts.tip > 0) totalRow("Tip / Gratuity", fmt(opts.tip));
 
-  y += 1;
   // Total box extends 2mm past the text on every side — enough to read as
   // real padding instead of the text sitting flush against the box edge —
   // while the TEXT itself still sits at TL/TV, the same columns as the
   // "Subtotal" row's label and value above it. The right edge lands on TV +
   // 2 = MR (RCOL is defined as MR - 2), which is the same true margin the
   // table header bar already extends to, so it isn't a new overhang.
-  // Height is centred on the amount's cap height (the larger, dominant
-  // text) rather than a hardcoded "-5.5" that put more padding below the
-  // baseline than above it.
+  // Box top is placed a clear TOTAL_GAP below the last totals row's own
+  // baseline (not derived from the cap-height-centred text position below,
+  // which previously left only ~0.1mm before the box — cap-height centring
+  // made the box taller upward without the row above ever accounting for
+  // that extra height).
+  const lastRowBaseline = y - 5.5; // y is 5.5 past that row's baseline (totalRow()'s own increment)
+  const TOTAL_GAP = 4;
   const totalBoxH = 10;
   const totalCapH = 11 * CAP_HEIGHT_RATIO * 0.3528;
   const totalPadY = (totalBoxH - totalCapH) / 2;
   const totalPadX = 2;
+  const totalBoxTop = lastRowBaseline + TOTAL_GAP;
+  const totalTextY = totalBoxTop + totalCapH + totalPadY; // text baseline, centred within the box
+
   doc.setFillColor(...RED);
   doc.roundedRect(
     TL - totalPadX,
-    y - totalCapH - totalPadY,
+    totalBoxTop,
     TV - TL + totalPadX * 2,
     totalBoxH,
     1.5,
@@ -414,11 +420,11 @@ function buildDoc(opts: DocOptions): jsPDF {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.setTextColor(...WHITE);
-  doc.text("TOTAL DUE", TL, y);
+  doc.text("TOTAL DUE", TL, totalTextY);
   doc.setFontSize(11);
-  doc.text(fmt(opts.total), TV, y, { align: "right" });
+  doc.text(fmt(opts.total), TV, totalTextY, { align: "right" });
 
-  y += 14;
+  y = totalBoxTop + totalBoxH + 9.5;
 
   // ── Payment / Quotation info ─────────────────────────────────────────────────
   // Lists every tender line (split payments show one row per method), and
@@ -731,19 +737,26 @@ export function downloadPOPDF(po: PurchaseOrder) {
 
   y += 1;
   rule(doc, y, CHARCOAL);
-  y += 8;
+  const ruleY = y;
 
-  // Total box spans exactly TL to TV, matching the fix in buildDoc().
+  // Total box spans exactly TL to TV, matching the fix in buildDoc(). Box
+  // top sits a clear TOTAL_GAP below the closing rule — not derived from
+  // the cap-height-centred text position, which previously left the box
+  // starting only ~2.6mm below the rule despite the "+= 8" spacer above.
   const TV = RCOL;
   const TL = TV - 78;
+  const TOTAL_GAP = 4;
   const totalBoxH = 10;
   const totalCapH = 11 * CAP_HEIGHT_RATIO * 0.3528;
   const totalPadY = (totalBoxH - totalCapH) / 2;
   const totalPadX = 2;
+  const totalBoxTop = ruleY + TOTAL_GAP;
+  const totalTextY = totalBoxTop + totalCapH + totalPadY;
+
   doc.setFillColor(...RED);
   doc.roundedRect(
     TL - totalPadX,
-    y - totalCapH - totalPadY,
+    totalBoxTop,
     TV - TL + totalPadX * 2,
     totalBoxH,
     1.5,
@@ -753,10 +766,10 @@ export function downloadPOPDF(po: PurchaseOrder) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.setTextColor(...WHITE);
-  doc.text("ORDER TOTAL", TL, y);
+  doc.text("ORDER TOTAL", TL, totalTextY);
   doc.setFontSize(11);
-  doc.text(fmt(grandTotal), TV, y, { align: "right" });
-  y += 16;
+  doc.text(fmt(grandTotal), TV, totalTextY, { align: "right" });
+  y = totalBoxTop + totalBoxH + 11.5;
 
   // Notes
   if (po.notes) {
