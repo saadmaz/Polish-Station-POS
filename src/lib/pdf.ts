@@ -387,16 +387,29 @@ function buildDoc(opts: DocOptions): jsPDF {
   if (opts.tip && opts.tip > 0) totalRow("Tip / Gratuity", fmt(opts.tip));
 
   y += 1;
-  // Total box spans exactly TL to TV — the same left/right bounds as the
-  // "Subtotal" row's label and value above it — rather than extending 4mm
-  // further left than the label it's directly under. Height is centred on
-  // the amount's cap height (the larger, dominant text) rather than a
-  // hardcoded "-5.5" that put more padding below the baseline than above it.
+  // Total box extends 2mm past the text on every side — enough to read as
+  // real padding instead of the text sitting flush against the box edge —
+  // while the TEXT itself still sits at TL/TV, the same columns as the
+  // "Subtotal" row's label and value above it. The right edge lands on TV +
+  // 2 = MR (RCOL is defined as MR - 2), which is the same true margin the
+  // table header bar already extends to, so it isn't a new overhang.
+  // Height is centred on the amount's cap height (the larger, dominant
+  // text) rather than a hardcoded "-5.5" that put more padding below the
+  // baseline than above it.
   const totalBoxH = 10;
   const totalCapH = 11 * CAP_HEIGHT_RATIO * 0.3528;
   const totalPadY = (totalBoxH - totalCapH) / 2;
+  const totalPadX = 2;
   doc.setFillColor(...RED);
-  doc.roundedRect(TL, y - totalCapH - totalPadY, TV - TL, totalBoxH, 1.5, 1.5, "F");
+  doc.roundedRect(
+    TL - totalPadX,
+    y - totalCapH - totalPadY,
+    TV - TL + totalPadX * 2,
+    totalBoxH,
+    1.5,
+    1.5,
+    "F",
+  );
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
@@ -726,8 +739,17 @@ export function downloadPOPDF(po: PurchaseOrder) {
   const totalBoxH = 10;
   const totalCapH = 11 * CAP_HEIGHT_RATIO * 0.3528;
   const totalPadY = (totalBoxH - totalCapH) / 2;
+  const totalPadX = 2;
   doc.setFillColor(...RED);
-  doc.roundedRect(TL, y - totalCapH - totalPadY, TV - TL, totalBoxH, 1.5, 1.5, "F");
+  doc.roundedRect(
+    TL - totalPadX,
+    y - totalCapH - totalPadY,
+    TV - TL + totalPadX * 2,
+    totalBoxH,
+    1.5,
+    1.5,
+    "F",
+  );
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.setTextColor(...WHITE);
