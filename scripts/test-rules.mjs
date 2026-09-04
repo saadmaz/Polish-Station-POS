@@ -67,9 +67,27 @@ async function check(label, promise) {
 await env.withSecurityRulesDisabled(async (c) => {
   const d = c.firestore();
   await setDoc(doc(d, "staff/ad"), { name: "ad", role: "Admin" });
+  await setDoc(doc(d, "staff/mgr"), { name: "mgr", role: "Manager" });
   await setDoc(doc(d, "staff_public/ad"), { name: "ad", role: "Admin", active: true });
   await setDoc(doc(d, "usernames/admin"), { staffId: "ad" });
   await setDoc(doc(d, "invoices/inv1"), { total: 100 });
+  // Shaped like a real addInvoice() write (see store.tsx) -- used to test
+  // the tightened update rule against realistic full-document overwrites,
+  // not just the legacy bare-total seed above.
+  const freshInvoice = { total: 100, subtotal: 100, lines: [], status: "Issued", payments: [], refunds: [] };
+  await setDoc(doc(d, "invoices/inv2"), freshInvoice);
+  // Separate docs per update-rule test below -- each assertSucceeds test
+  // actually mutates emulator state, so sharing one doc across assertions
+  // would make later tests see an already-mutated `resource.data` (e.g. a
+  // payments array that already grew), which is not what each test means
+  // to exercise.
+  await setDoc(doc(d, "invoices/inv3"), freshInvoice);
+  await setDoc(doc(d, "invoices/inv4"), {
+    ...freshInvoice,
+    payments: [{ method: "Cash", amount: 50, reference: "", staffName: "cash2", at: "now" }],
+  });
+  await setDoc(doc(d, "invoices/inv5"), freshInvoice);
+  await setDoc(doc(d, "invoices/inv6"), freshInvoice);
   await setDoc(doc(d, "purchaseOrders/po1"), { total: 5 });
   await setDoc(doc(d, "settings/notifications"), { x: 1 });
   await setDoc(doc(d, "leads/lead1"), { name: "Test Lead", type: "contact", status: "new" });
@@ -79,8 +97,12 @@ await env.withSecurityRulesDisabled(async (c) => {
   });
 });
 
-console.log("\nStaff roster & username index (enumeration hole is closed):");
-await check("anon CANNOT read staff_public", assertFails(getDoc(doc(anon, "staff_public/ad"))));
+console.log("\nStaff roster & username index:");
+// staff_public is intentionally unauthenticated-readable -- the login screen
+// is a staff picker and must show this roster before anyone is signed in
+// (see the rule's own comment). Pre-existing stale assertion from before that
+// picker existed; not part of Findings 1/2, tracked separately as Finding 3.
+await check("anon CAN read staff_public (intentional, login picker)", assertSucceeds(getDoc(doc(anon, "staff_public/ad"))));
 await check(
   "authed user CAN read staff_public",
   assertSucceeds(getDoc(doc(cashierNoPos, "staff_public/ad"))),
@@ -91,6 +113,23 @@ await check(
   assertFails(setDoc(doc(admin, "staff/x"), { role: "Admin" })),
 );
 
+console.log(
+  "\nPROPOSED (Finding 1): staff/{staffId} read is owner-only, no more Manager+ bulk grant:",
+);
+await check(
+  "admin CAN read their OWN staff doc (pinHash exposure to self is unchanged/accepted)",
+  assertSucceeds(getDoc(doc(admin, "staff/ad"))),
+);
+await check(
+  "manager can NO LONGER read a DIFFERENT staff member's doc (was: any Manager+)",
+  assertFails(getDoc(doc(managerPos, "staff/ad"))),
+);
+await check(
+  "admin (not Manager+ of self) can NO LONGER read a peer's staff doc either",
+  assertFails(getDoc(doc(admin, "staff/mgr"))),
+);
+await check("anon cannot read a staff doc", assertFails(getDoc(doc(anon, "staff/ad"))));
+
 console.log("\nModule permission gating (POS):");
 await check(
   "cashier WITHOUT pos perm cannot read invoices",
@@ -100,20 +139,130 @@ await check(
   "cashier WITH pos perm can read invoices",
   assertSucceeds(getDoc(doc(cashierPos, "invoices/inv1"))),
 );
+// PROPOSED (Finding 2): total is now immutable on update -- these two used
+// to assertSucceeds under the old, unvalidated rule. A raw total mutation,
+// merge or not, role notwithstanding, must now fail; see the "Invoice
+// immutability" block below for the realistic full-document-overwrite
+// equivalents of what these were meant to stand in for (balance collection
+// via recordInvoicePayment never touches total in the first place).
 await check(
-  "manager WITH pos perm can update invoice",
-  assertSucceeds(setDoc(doc(managerPos, "invoices/inv1"), { total: 2 }, { merge: true })),
+  "manager WITH pos perm can no longer rewrite an invoice's total",
+  assertFails(setDoc(doc(managerPos, "invoices/inv1"), { total: 2 }, { merge: true })),
 );
-// Cashier/Advisor may update invoices since split-tender payments shipped:
-// collecting a follow-up balance on a Partially Paid invoice is an update.
-// See the rationale comment on the invoices match in firestore.rules.
 await check(
-  "cashier WITH pos perm CAN update invoice (balance collection)",
-  assertSucceeds(setDoc(doc(cashierPos, "invoices/inv1"), { total: 3 }, { merge: true })),
+  "cashier WITH pos perm can no longer rewrite an invoice's total",
+  assertFails(setDoc(doc(cashierPos, "invoices/inv1"), { total: 3 }, { merge: true })),
 );
 await check(
   "cashier WITHOUT pos perm cannot update invoice",
   assertFails(setDoc(doc(cashierNoPos, "invoices/inv1"), { total: 4 }, { merge: true })),
+);
+
+console.log("\nPROPOSED (Finding 2): invoice creation must look like a real sale:");
+await check(
+  "cashier CAN create a well-formed invoice (status Issued, non-negative totals)",
+  assertSucceeds(
+    setDoc(doc(cashierPos, "invoices/new1"), {
+      status: "Issued",
+      total: 100,
+      subtotal: 100,
+      lines: [],
+      payments: [],
+    }),
+  ),
+);
+await check(
+  "cashier CANNOT create an invoice that starts anywhere but Issued",
+  assertFails(
+    setDoc(doc(cashierPos, "invoices/new2"), {
+      status: "Paid",
+      total: 100,
+      subtotal: 100,
+      lines: [],
+      payments: [],
+    }),
+  ),
+);
+await check(
+  "cashier CANNOT create an invoice with a negative total",
+  assertFails(
+    setDoc(doc(cashierPos, "invoices/new3"), {
+      status: "Issued",
+      total: -50,
+      subtotal: -50,
+      lines: [],
+      payments: [],
+    }),
+  ),
+);
+
+console.log(
+  "\nPROPOSED (Finding 2): invoice updates may append payments/move status, never rewrite the sale:",
+);
+await check(
+  "cashier CAN record a payment (total/subtotal/lines unchanged, payments grows)",
+  assertSucceeds(
+    setDoc(doc(cashierPos, "invoices/inv2"), {
+      total: 100,
+      subtotal: 100,
+      lines: [],
+      status: "Partially Paid",
+      payments: [{ method: "Cash", amount: 50, reference: "", staffName: "cash2", at: "now" }],
+      refunds: [],
+    }),
+  ),
+);
+await check(
+  "cashier CANNOT change the total while updating an invoice",
+  assertFails(
+    setDoc(doc(cashierPos, "invoices/inv3"), {
+      total: 999,
+      subtotal: 100,
+      lines: [],
+      status: "Partially Paid",
+      payments: [],
+      refunds: [],
+    }),
+  ),
+);
+await check(
+  "cashier CANNOT remove an existing payment (payments array shrinking)",
+  assertFails(
+    setDoc(doc(cashierPos, "invoices/inv4"), {
+      total: 100,
+      subtotal: 100,
+      lines: [],
+      status: "Issued",
+      payments: [],
+      refunds: [],
+    }),
+  ),
+);
+await check(
+  "cashier (not Manager+) CANNOT set status to Refunded, even leaving totals alone",
+  assertFails(
+    setDoc(doc(cashierPos, "invoices/inv5"), {
+      total: 100,
+      subtotal: 100,
+      lines: [],
+      status: "Refunded",
+      payments: [],
+      refunds: [{ method: "Cash", amount: 100, reason: "", staffName: "cash2", at: "now" }],
+    }),
+  ),
+);
+await check(
+  "manager CAN set status to Refunded",
+  assertSucceeds(
+    setDoc(doc(managerPos, "invoices/inv6"), {
+      total: 100,
+      subtotal: 100,
+      lines: [],
+      status: "Refunded",
+      payments: [],
+      refunds: [{ method: "Cash", amount: 100, reason: "", staffName: "mgr", at: "now" }],
+    }),
+  ),
 );
 
 console.log("\nSuperAdmin implicitly holds every module (empty perms list):");

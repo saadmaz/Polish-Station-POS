@@ -30,10 +30,26 @@ service cloud.firestore {
     }
 
     // ── Staff ─────────────────────────────────────────────────────────────
-    // Reads: own profile OR Manager/Admin. Writes: server-side Admin SDK only,
-    // which bypasses these rules entirely (see src/server/staff.ts).
+    // PROPOSED TIGHTENING (see [[project_firestore_rules_audit]] Finding 1) --
+    // NOT YET DEPLOYED. Was: read if owner OR Manager+. This doc holds
+    // `pinHash` (bcrypt) plus the offline-unlock AES-GCM blob fields, and
+    // Firestore has no field-level read restriction -- reading the doc at
+    // all means downloading those, whether the caller's code uses them or
+    // not. A 4-digit PIN space is brute-forceable offline from a bcrypt
+    // hash in minutes, so the old Manager+ grant let any Manager read (and
+    // offline-crack) every other staff member's PIN, including superiors' --
+    // a Manager -> SuperAdmin escalation path. Narrowed to owner-only.
+    // BREAKS: access-panel.tsx's unfiltered `getDocs(collection(db,"staff"))`
+    // (the Staff & Access list) -- a Manager+ can no longer bulk-read this
+    // collection at all under this rule (Firestore denies a list query it
+    // can't prove holds for every possible matched doc, and non-owner reads
+    // no longer hold for anyone). Fixing that call site requires reading
+    // `staff_public` instead, which needs a `permissions` field added there
+    // (an app-code + server-side change, not made in this rules-only pass).
+    // Does NOT break offline-auth.ts's own-doc blob fetch -- the owner-read
+    // clause is unchanged.
     match /staff/{staffId} {
-      allow read: if isAuth() && (request.auth.uid == staffId || isManagerOrAbove());
+      allow read: if isAuth() && request.auth.uid == staffId;
       allow write: if false;
     }
 
@@ -103,14 +119,39 @@ service cloud.firestore {
     }
 
     // ── Invoices ──────────────────────────────────────────────────────────
+    // PROPOSED TIGHTENING (see [[project_firestore_rules_audit]] Finding 2) --
+    // NOT YET DEPLOYED. Was: create/update gated on role/module only, no
+    // field validation at all -- a Cashier could set total/status/payments
+    // to anything via the same client SDK the app already loads, including
+    // marking an invoice Paid with no real payment, or a bare Manager-only
+    // UI gate on refunds that this rule never actually enforced. Every
+    // legitimate write path (store.tsx's addInvoice/recordInvoicePayment/
+    // refundInvoicePayment/voidInvoice) always setDoc()s the FULL document
+    // with total/subtotal/lines carried through unchanged from the existing
+    // doc, so this does not break any of them -- verified against their
+    // current implementations before drafting this.
     match /invoices/{invoiceId} {
-      allow read:   if hasModule("pos") && (isManagerOrAbove() || role() in ["Cashier", "Advisor"]);
-      allow create: if hasModule("pos") && (isManagerOrAbove() || role() in ["Cashier", "Advisor"]);
-      // Cashier/Advisor need update access too: collecting a follow-up
-      // balance payment on a Partially Paid invoice is an update, not a
-      // create. Refunds are a business-sensitive action gated in the UI
-      // (Manager+ only) rather than here, same pattern as the audit log.
-      allow update: if hasModule("pos") && (isManagerOrAbove() || role() in ["Cashier", "Advisor"]);
+      allow read: if hasModule("pos") && (isManagerOrAbove() || role() in ["Cashier", "Advisor"]);
+
+      allow create: if hasModule("pos") && (isManagerOrAbove() || role() in ["Cashier", "Advisor"])
+                    && request.resource.data.status == "Issued"
+                    && request.resource.data.total is number && request.resource.data.total >= 0
+                    && request.resource.data.subtotal is number && request.resource.data.subtotal >= 0;
+
+      // Core sale content is immutable once created -- an update may only
+      // append to payments/refunds and move status, never rewrite what was
+      // actually sold or for how much. Refunding (moving status to
+      // "Refunded") now requires Manager+ HERE, not just in the UI, closing
+      // the exact gap the old comment on this block only ever hoped the UI
+      // would cover.
+      allow update: if hasModule("pos") && (isManagerOrAbove() || role() in ["Cashier", "Advisor"])
+                    && request.resource.data.total == resource.data.total
+                    && request.resource.data.subtotal == resource.data.subtotal
+                    && request.resource.data.lines == resource.data.lines
+                    && request.resource.data.get('payments', []).size() >= resource.data.get('payments', []).size()
+                    && request.resource.data.get('refunds', []).size() >= resource.data.get('refunds', []).size()
+                    && (request.resource.data.status != "Refunded" || isManagerOrAbove());
+
       allow delete: if isAdmin();
     }
 
