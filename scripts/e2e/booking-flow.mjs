@@ -24,7 +24,16 @@ await check("booking widget loads and lists real services", async () => {
 await check("can step through service -> date -> time -> details", async () => {
   await page.click(`text=${service.name}`);
   await page.waitForSelector("text=Pick a Date", { timeout: 10000 });
-  await page.click('button:has-text("TODAY")');
+  // Tomorrow, not "TODAY": with lead-time/max-advance enforcement now real
+  // (src/lib/booking-rules.ts), "today" can legitimately have zero slots
+  // left depending on what wall-clock time this happens to run at (e.g. the
+  // emulator host is well past business hours in Asia/Colombo) -- tomorrow
+  // always has a full day of slots regardless of when the suite runs.
+  await page
+    .locator("main button")
+    .filter({ hasNotText: "Back" })
+    .nth(1)
+    .click();
   await page.waitForSelector("text=Pick a Time", { timeout: 10000 });
   await page.waitForFunction(() => !document.body.textContent?.includes("Checking availability"), {
     timeout: 10000,
@@ -61,7 +70,11 @@ await check(
       `price should be server-derived (${service.price}), got ${b.price}`,
     );
     assert(b.durationMin === service.durationMin, "durationMin should be server-derived");
-    assert(b.status === "Pending", "new bookings should start Pending");
+    // DEFAULT_BOOKING_RULES.autoConfirm is true (src/lib/booking-rules.ts,
+    // matching the emulator's default settings/bookingRules doc), so a new
+    // public booking lands Confirmed, not Pending, unless that policy is
+    // turned off in Settings → Booking Rules.
+    assert(b.status === "Confirmed", `expected status Confirmed, got ${b.status}`);
   },
 );
 

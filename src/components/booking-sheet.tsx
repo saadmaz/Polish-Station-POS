@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { todayBusinessDate } from "@/lib/business-day";
+import { computeRequiredDeposit } from "@/lib/booking-rules";
 import {
   Sheet,
   SheetContent,
@@ -10,9 +11,8 @@ import {
   SheetDescription,
   SheetFooter,
 } from "@/components/ui/sheet";
-import { Search, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Search, Loader2, CheckCircle2, AlertCircle, AlertTriangle } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
-import { cn } from "@/lib/utils";
 
 interface BookingSheetProps {
   open: boolean;
@@ -38,8 +38,6 @@ const EMPTY = {
   tech: "",
   bay: "",
   notes: "",
-  requireDeposit: false,
-  depositAmount: 0,
 };
 
 // ─── REGO / VIN lookup ────────────────────────────────────────────────────────
@@ -70,9 +68,16 @@ async function decodeVIN(vin: string): Promise<string | null> {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
-  const { services, customers, addBooking, bays } = useStore();
+  const { services, customers, addBooking, bays, bookingRules } = useStore();
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
+  // Set only after the server rejects a submission for being outside policy
+  // (lead time / max advance) -- staff can retype the same details with a
+  // reason and resubmit rather than the sheet just failing silently.
+  const [rejection, setRejection] = useState<"outside_lead_time" | "outside_advance_window" | null>(
+    null,
+  );
+  const [overrideReason, setOverrideReason] = useState("");
 
   // Plate lookup state
   const [lookupState, setLookupState] = useState<
@@ -87,6 +92,12 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
   const lookupRef = useRef<AbortController | null>(null);
 
   function set<K extends keyof typeof EMPTY>(field: K, value: (typeof EMPTY)[K]) {
+    // A rejection (and its override reason) is tied to the exact date/time/
+    // service that was rejected -- changing any of them makes it stale.
+    if (field === "date" || field === "time" || field === "serviceId") {
+      setRejection(null);
+      setOverrideReason("");
+    }
     setForm((f) => ({ ...f, [field]: value }));
   }
 
@@ -166,22 +177,18 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
     setLookupSuggestion(null);
   }
 
-  // When service changes, auto-suggest deposit for premium services
   function handleServiceChange(serviceId: string) {
     set("serviceId", serviceId);
-    const svc = services.find((s) => s.id === serviceId);
-    if (!svc) return;
-    const suggestDeposit = svc.price >= 15000;
-    const depositAmt = suggestDeposit ? Math.round(svc.price * 0.3) : 0;
-    setForm((f) => ({
-      ...f,
-      serviceId,
-      requireDeposit: suggestDeposit,
-      depositAmount: depositAmt,
-    }));
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  const REJECTION_LABEL: Record<"outside_lead_time" | "outside_advance_window", string> = {
+    outside_lead_time:
+      "This time is inside the minimum lead-time window (Settings → Booking Rules).",
+    outside_advance_window:
+      "This date is beyond the maximum advance-booking window (Settings → Booking Rules).",
+  };
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name.trim() || !form.serviceId || !form.date || !form.time) return;
     const svc = services.find((s) => s.id === form.serviceId);
@@ -194,17 +201,13 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
     );
 
     setSubmitting(true);
-    addBooking({
+    const result = await addBooking({
       customerId: customer?.id ?? null,
       customerName: form.name.trim(),
       phone: form.phone.trim(),
       plate: form.plate.trim().toUpperCase(),
       vehicleModel: form.vehicleModel.trim(),
       serviceId: svc.id,
-      serviceName: svc.name,
-      category: svc.category,
-      durationMin: svc.durationMin,
-      price: svc.price,
       date: form.date,
       time: form.time,
       // Unlike bay (below), tech has no fallback-routing logic anywhere that
@@ -215,31 +218,43 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
       // trustworthy).
       tech: form.tech,
       bay: form.bay || "—",
-      status: "Confirmed",
       notes: form.notes,
-      // Omit rather than set to `undefined`: Firestore's client SDK
-      // setDoc() throws on an explicit undefined field value (this
-      // previously broke every booking created with no deposit required).
-      ...(form.requireDeposit ? { depositAmount: form.depositAmount } : {}),
-      depositStatus: form.requireDeposit ? "required" : "none",
+      ...(rejection && overrideReason.trim() ? { overrideReason: overrideReason.trim() } : {}),
     });
+    setSubmitting(false);
 
-    const depositNote = form.requireDeposit
-      ? ` · Deposit ${formatCurrency(form.depositAmount)} required`
-      : "";
+    if (!result.success) {
+      if (result.error === "outside_lead_time" || result.error === "outside_advance_window") {
+        setRejection(result.error);
+        return;
+      }
+      toast.error(
+        result.error === "unauthorized"
+          ? "You don't have permission to create bookings."
+          : "Couldn't find that service. Please pick it again.",
+      );
+      return;
+    }
+
+    const deposit = result.booking.depositAmount;
+    const depositNote = deposit ? ` · Deposit ${formatCurrency(deposit)} required` : "";
 
     toast.success("Booking confirmed", {
       description: `${form.name}: ${svc.name} on ${form.date} at ${form.time}${depositNote}`,
     });
     setForm(EMPTY);
+    setRejection(null);
+    setOverrideReason("");
     setLookupState("idle");
     setLookupSuggestion(null);
-    setSubmitting(false);
     onOpenChange(false);
   }
 
   const selectedService = services.find((s) => s.id === form.serviceId);
   const isVIN = VIN_RE.test(form.plate.replace(/\s/g, ""));
+  const previewDeposit = selectedService
+    ? computeRequiredDeposit(selectedService.price, bookingRules)
+    : 0;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -436,79 +451,38 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
             </div>
           </div>
 
-          {/* Deposit */}
-          <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-3">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-input accent-primary"
-                checked={form.requireDeposit}
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  setForm((f) => ({
-                    ...f,
-                    requireDeposit: checked,
-                    depositAmount: checked ? Math.round((selectedService?.price ?? 0) * 0.3) : 0,
-                  }));
-                }}
-              />
-              <span className="text-sm font-medium">Require Deposit</span>
-              {selectedService && selectedService.price >= 15000 && !form.requireDeposit && (
-                <span className="text-[11px] text-warning font-medium ml-auto">
-                  Recommended for this service
-                </span>
-              )}
-            </label>
-
-            {form.requireDeposit && (
-              <div className="space-y-1.5">
-                <label className="text-xs text-muted-foreground font-medium">
-                  Deposit Amount (LKR)
-                  {selectedService && (
-                    <span className="ml-2 text-muted-foreground/70">
-                      · {Math.round((form.depositAmount / selectedService.price) * 100)}% of service
-                      price
-                    </span>
-                  )}
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={0}
-                    max={selectedService?.price ?? 999999}
-                    className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
-                    value={form.depositAmount}
-                    onChange={(e) => set("depositAmount", Number(e.target.value))}
-                  />
-                  {selectedService && (
-                    <div className="flex gap-1">
-                      {[25, 30, 50].map((pct) => (
-                        <button
-                          key={pct}
-                          type="button"
-                          onClick={() =>
-                            set("depositAmount", Math.round((selectedService.price * pct) / 100))
-                          }
-                          className={cn(
-                            "rounded-md px-2 py-1.5 text-[11px] font-semibold border transition-colors",
-                            Math.round((selectedService.price * pct) / 100) === form.depositAmount
-                              ? "bg-primary/10 border-primary/40 text-primary"
-                              : "border-input text-muted-foreground hover:bg-muted",
-                          )}
-                        >
-                          {pct}%
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="text-[11px] text-muted-foreground">
-                  Balance due at pickup:{" "}
-                  {formatCurrency((selectedService?.price ?? 0) - form.depositAmount)}
-                </div>
+          {/* Deposit -- computed from Settings → Booking Rules, not staff-entered */}
+          {previewDeposit > 0 && (
+            <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm">
+              <div className="font-medium text-warning">
+                Deposit required: {formatCurrency(previewDeposit)}
               </div>
-            )}
-          </div>
+              <div className="mt-0.5 text-[11px] text-muted-foreground">
+                Per policy (Settings → Booking Rules). Balance due at pickup:{" "}
+                {formatCurrency((selectedService?.price ?? 0) - previewDeposit)}
+              </div>
+            </div>
+          )}
+
+          {/* Lead-time/max-advance rejection: same submit, plus a mandatory reason */}
+          {rejection && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 space-y-2">
+              <div className="flex items-start gap-2 text-sm text-destructive">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{REJECTION_LABEL[rejection]}</span>
+              </div>
+              <label className="text-xs font-medium text-muted-foreground">
+                Reason to book anyway *
+              </label>
+              <input
+                required
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="e.g. Customer confirmed by phone, manager approved"
+                value={overrideReason}
+                onChange={(e) => setOverrideReason(e.target.value)}
+              />
+            </div>
+          )}
 
           {/* Notes */}
           <div className="space-y-1.5">
@@ -532,10 +506,10 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
             </button>
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || (rejection !== null && !overrideReason.trim())}
               className="flex-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90 disabled:opacity-60"
             >
-              {submitting ? "Confirming…" : "Confirm Booking"}
+              {submitting ? "Confirming…" : rejection ? "Book Anyway" : "Confirm Booking"}
             </button>
           </SheetFooter>
         </form>

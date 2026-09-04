@@ -27,7 +27,7 @@ import {
   type Query,
   type Unsubscribe,
 } from "firebase/firestore";
-import { db as fsDb } from "./firebase";
+import { db as fsDb, auth as firebaseAuth } from "./firebase";
 import { useAuth } from "./auth";
 import { hasModule, isManagerOrAbove, type ModuleKey } from "./permissions";
 import {
@@ -36,12 +36,21 @@ import {
   DEFAULT_NOTIFICATION_SETTINGS,
   DEFAULT_BUSINESS_INFO,
   DEFAULT_BAYS,
+  DEFAULT_BOOKING_RULES,
   sanitizeBusinessInfo,
   sanitizeBays,
+  sanitizeBookingRules,
   setBusinessInfoCache,
   getAmountPaid,
   type BusinessInfo,
+  type BookingRules,
 } from "./db";
+import {
+  createStaffBookingFn,
+  updateStaffBookingFn,
+  type CreateStaffBookingResult,
+  type UpdateStaffBookingResult,
+} from "@/server/staff-bookings";
 import { synthesizeWalkInJob } from "./job-linking";
 import { buildTransitionEvent } from "./job";
 import type { Job } from "./job";
@@ -105,6 +114,14 @@ async function nextSeqId(
 
 function newId(): string {
   return crypto.randomUUID();
+}
+
+// Cached ID token, refreshed by the SDK only when actually expired -- same
+// reasoning as access-panel.tsx's identical helper: the server re-verifies
+// the caller's role from the staff doc regardless, so forcing a refresh on
+// every call buys nothing but a multi-second round trip.
+async function getIdToken(): Promise<string | null> {
+  return (await firebaseAuth.currentUser?.getIdToken()) ?? null;
 }
 
 // ── Context shape ─────────────────────────────────────────────────────────────
@@ -176,12 +193,37 @@ interface Store {
   updateCoupon: (c: Coupon) => void;
   deleteCoupon: (id: string) => void;
 
-  // Bookings
-  addBooking: (b: Omit<Booking, "id" | "createdAt">) => Promise<Booking>;
-  updateBooking: (b: Booking) => void;
+  // Bookings -- create/cancel/check-in/deposit/no-show all round-trip
+  // through src/server/staff-bookings.ts (not a direct Firestore write) so
+  // lead-time/max-advance/etc. policy is enforced server-side, the same as
+  // the public /book widget. deleteBooking is the one exception, left as a
+  // direct write: deletion isn't a policy concept and firestore.rules
+  // already gate it Manager+.
+  addBooking: (
+    b: Omit<
+      Booking,
+      | "id"
+      | "createdAt"
+      | "status"
+      | "cancelWindowHours"
+      | "noShowPenaltyEnabled"
+      | "depositAmount"
+      | "depositStatus"
+      | "ruleOverrideReason"
+      // Derived server-side from the service doc -- never trust a client-
+      // submitted price, same reasoning as the public /book widget.
+      | "serviceName"
+      | "category"
+      | "durationMin"
+      | "price"
+    > & { overrideReason?: string },
+  ) => Promise<CreateStaffBookingResult>;
   deleteBooking: (id: string) => void;
-  checkinBooking: (id: string) => Promise<void>;
-  markDepositPaid: (bookingId: string) => void;
+  checkinBooking: (id: string) => Promise<UpdateStaffBookingResult>;
+  markDepositPaid: (bookingId: string) => Promise<UpdateStaffBookingResult>;
+  cancelBooking: (id: string) => Promise<UpdateStaffBookingResult>;
+  markNoShow: (id: string) => Promise<UpdateStaffBookingResult>;
+  completeBooking: (id: string) => Promise<UpdateStaffBookingResult>;
 
   // Services
   upsertService: (s: Service) => void;
@@ -199,6 +241,10 @@ interface Store {
   // Bays (settings/bays doc: the list of physical service bays)
   bays: string[];
   saveBays: (bays: string[]) => void;
+
+  // Booking rules (settings/bookingRules doc: lead time, deposits, etc.)
+  bookingRules: BookingRules;
+  saveBookingRules: (rules: BookingRules) => void;
 
   // Invoices
   addInvoice: (
@@ -295,6 +341,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [auditList, setAuditList] = useState<AuditLog[]>([]);
   const [businessInfo, setBusinessInfo] = useState<BusinessInfo>(DEFAULT_BUSINESS_INFO);
   const [bays, setBays] = useState<string[]>(DEFAULT_BAYS);
+  const [bookingRules, setBookingRules] = useState<BookingRules>(DEFAULT_BOOKING_RULES);
 
   // Actor identity for audit entries, read through a ref so the mutation
   // callbacks don't have to re-create whenever the profile doc refreshes.
@@ -318,6 +365,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     notificationSettingsData,
     businessInfo,
     bays,
+    bookingRules,
   });
   useEffect(() => {
     S.current = {
@@ -336,6 +384,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       notificationSettingsData,
       businessInfo,
       bays,
+      bookingRules,
     };
   }, [
     services,
@@ -353,6 +402,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     notificationSettingsData,
     businessInfo,
     bays,
+    bookingRules,
   ]);
 
   // ── Firestore listeners ────────────────────────────────────────────────────
@@ -478,6 +528,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           done();
         },
         fail("settings/bays"),
+      ),
+    );
+    add(() =>
+      onSnapshot(
+        fd("settings", "bookingRules"),
+        (s) => {
+          setBookingRules(s.exists() ? sanitizeBookingRules(s.data()) : DEFAULT_BOOKING_RULES);
+          done();
+        },
+        fail("settings/bookingRules"),
       ),
     );
     add(() =>
@@ -741,36 +801,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── Booking mutations ──────────────────────────────────────────────────────
-  const addBooking = useCallback(
-    async (data: Omit<Booking, "id" | "createdAt">): Promise<Booking> => {
-      const b: Booking = {
-        ...data,
-        id: await nextSeqId("bookings", "B-", S.current.bookings, 200),
-        createdAt: new Date().toISOString(),
-      };
-      write("bookings", b);
-      logAudit(actorRef.current, {
-        action: "ADD_BOOKING",
-        entity: "Booking",
-        entityId: b.id,
-        before: null,
-        after: b,
-      });
-      return b;
-    },
-    [],
-  );
-
-  const updateBooking = useCallback((b: Booking) => {
-    const before = S.current.bookings.find((x) => x.id === b.id) ?? null;
-    write("bookings", b);
-    logAudit(actorRef.current, {
-      action: "UPDATE_BOOKING",
-      entity: "Booking",
-      entityId: b.id,
-      before,
-      after: b,
-    });
+  // Booking creation/updates go through src/server/staff-bookings.ts (Admin
+  // SDK, not a direct client write) so leadTime/maxAdvance/deposit/
+  // cancelWindow/noShowPenalty policy is enforced server-side, not just by
+  // whatever this client happens to check first. The audit entry is written
+  // server-side too (inside staff-bookings.ts), not here.
+  const addBooking = useCallback(async (data: Parameters<Store["addBooking"]>[0]) => {
+    const idToken = await getIdToken();
+    if (!idToken) return { success: false, error: "unauthorized" } as const;
+    return createStaffBookingFn({ data: { ...data, idToken } });
   }, []);
 
   const deleteBooking = useCallback((id: string) => {
@@ -785,33 +824,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const checkinBooking = useCallback(async (id: string) => {
-    const b = S.current.bookings.find((x) => x.id === id);
-    if (!b) return;
-    const after = { ...b, status: "Checked-In" as const };
-    write("bookings", after);
-    logAudit(actorRef.current, {
-      action: "CHECKIN_BOOKING",
-      entity: "Booking",
-      entityId: id,
-      before: b,
-      after,
-    });
-  }, []);
-
-  const markDepositPaid = useCallback((bookingId: string) => {
-    const b = S.current.bookings.find((x) => x.id === bookingId);
-    if (!b) return;
-    const after = { ...b, depositStatus: "paid" as const };
-    write("bookings", after);
-    logAudit(actorRef.current, {
-      action: "MARK_DEPOSIT_PAID",
-      entity: "Booking",
-      entityId: bookingId,
-      before: b,
-      after,
-    });
-  }, []);
+  const updateStaffBooking = useCallback(
+    async (
+      bookingId: string,
+      action: "cancel" | "checkin" | "deposit_paid" | "no_show" | "complete",
+    ) => {
+      const idToken = await getIdToken();
+      if (!idToken) return { success: false, error: "unauthorized" } as const;
+      return updateStaffBookingFn({ data: { idToken, bookingId, action } });
+    },
+    [],
+  );
+  const checkinBooking = useCallback(
+    (id: string) => updateStaffBooking(id, "checkin"),
+    [updateStaffBooking],
+  );
+  const markDepositPaid = useCallback(
+    (id: string) => updateStaffBooking(id, "deposit_paid"),
+    [updateStaffBooking],
+  );
+  const cancelBooking = useCallback(
+    (id: string) => updateStaffBooking(id, "cancel"),
+    [updateStaffBooking],
+  );
+  const markNoShow = useCallback(
+    (id: string) => updateStaffBooking(id, "no_show"),
+    [updateStaffBooking],
+  );
+  const completeBooking = useCallback(
+    (id: string) => updateStaffBooking(id, "complete"),
+    [updateStaffBooking],
+  );
 
   // ── Service mutations ──────────────────────────────────────────────────────
   const upsertService = useCallback((s: Service) => {
@@ -1077,21 +1120,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   // ── Expense mutations ──────────────────────────────────────────────────────
-  const addExpense = useCallback(
-    (data: Omit<Expense, "id" | "createdAt">): Expense => {
-      const e: Expense = { ...data, id: newId(), createdAt: new Date().toISOString() };
-      write("expenses", e);
-      logAudit(actorRef.current, {
-        action: "ADD_EXPENSE",
-        entity: "Expense",
-        entityId: e.id,
-        before: null,
-        after: e,
-      });
-      return e;
-    },
-    [],
-  );
+  const addExpense = useCallback((data: Omit<Expense, "id" | "createdAt">): Expense => {
+    const e: Expense = { ...data, id: newId(), createdAt: new Date().toISOString() };
+    write("expenses", e);
+    logAudit(actorRef.current, {
+      action: "ADD_EXPENSE",
+      entity: "Expense",
+      entityId: e.id,
+      before: null,
+      after: e,
+    });
+    return e;
+  }, []);
 
   const deleteExpense = useCallback((id: string) => {
     const e = S.current.expenses.find((x) => x.id === id);
@@ -1301,6 +1341,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       .catch((err) => console.error("[store] saveBays:", err));
   }, []);
 
+  const saveBookingRules = useCallback((next: BookingRules) => {
+    const before = S.current.bookingRules;
+    const sanitized = sanitizeBookingRules(next);
+    setDoc(fd("settings", "bookingRules"), sanitized)
+      .then(() => {
+        logAudit(actorRef.current, {
+          action: "UPDATE_BOOKING_RULES",
+          entity: "Settings",
+          entityId: "bookingRules",
+          before,
+          after: sanitized,
+        });
+      })
+      .catch((err) => console.error("[store] saveBookingRules:", err));
+  }, []);
+
   const recordNotification = useCallback(
     (n: Omit<SentNotification, "id" | "sentAt">): SentNotification => {
       const entry: SentNotification = { ...n, id: newId(), sentAt: new Date().toISOString() };
@@ -1346,6 +1402,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     saveBusinessInfo,
     bays,
     saveBays,
+    bookingRules,
+    saveBookingRules,
     addCustomer,
     updateCustomer,
     deleteCustomer,
@@ -1354,10 +1412,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateCoupon,
     deleteCoupon,
     addBooking,
-    updateBooking,
     deleteBooking,
     checkinBooking,
     markDepositPaid,
+    cancelBooking,
+    markNoShow,
+    completeBooking,
     upsertService,
     deleteService,
     upsertInventoryItem,

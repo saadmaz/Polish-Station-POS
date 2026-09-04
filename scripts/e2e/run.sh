@@ -49,6 +49,7 @@ node scripts/e2e/session-resume.mjs || STATUS=1
 node scripts/e2e/new-user-login.mjs || STATUS=1
 node scripts/e2e/offline-login.mjs || STATUS=1
 node scripts/e2e/booking-flow.mjs || STATUS=1
+node scripts/e2e/staff-booking-flow.mjs || STATUS=1
 node scripts/e2e/equipment-integrity.mjs || STATUS=1
 node scripts/e2e/payments-flow.mjs || STATUS=1
 node scripts/e2e/healthz.mjs || STATUS=1

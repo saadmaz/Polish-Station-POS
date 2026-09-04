@@ -3,8 +3,9 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { adminDb } from "./firebase-admin";
 import { withTimeout } from "./retry";
-import { activeBookingsOnDate } from "./bookings-data";
+import { activeBookingsOnDate, getBookingRules } from "./bookings-data";
 import { todayBusinessDate } from "@/lib/business-day";
+import { isWithinLeadTime, isWithinMaxAdvance, computeRequiredDeposit } from "@/lib/booking-rules";
 
 // Public, unauthenticated surface for the /book widget. firestore.rules
 // requires isAuth() for both `services` reads and `bookings` writes (by
@@ -74,7 +75,16 @@ const CreateBookingSchema = z.object({
 
 export type CreateBookingResult =
   | { success: true; bookingId: string }
-  | { success: false; error: "invalid_service" | "slot_full" | "rate_limited" | "invalid_date" };
+  | {
+      success: false;
+      error:
+        | "invalid_service"
+        | "slot_full"
+        | "rate_limited"
+        | "invalid_date"
+        | "outside_lead_time"
+        | "outside_advance_window";
+    };
 
 // Best-effort abuse guard: this is the only write reachable with zero
 // authentication anywhere in the app, so it gets its own cap independent of
@@ -114,6 +124,19 @@ export const createBookingFn = createServerFn({ method: "POST" })
     if (!serviceSnap.exists) return { success: false, error: "invalid_service" };
     const service = serviceSnap.data()!;
 
+    // No override on this path: it's unauthenticated, so there's no caller
+    // to attribute a bypass to. The widget itself should already be hiding
+    // out-of-window slots/dates (see getBookingRulesFn below) -- this is the
+    // server-side backstop for a replayed or hand-crafted request.
+    const rules = await getBookingRules();
+    const nowIso = new Date().toISOString();
+    if (!isWithinLeadTime(nowIso, data.date, data.time, rules)) {
+      return { success: false, error: "outside_lead_time" };
+    }
+    if (!isWithinMaxAdvance(nowIso, data.date, rules)) {
+      return { success: false, error: "outside_advance_window" };
+    }
+
     const sameSlot = (await activeBookingsOnDate(data.date)).filter((b) => b.time === data.time);
     if (sameSlot.length >= MAX_PER_SLOT) return { success: false, error: "slot_full" };
 
@@ -126,6 +149,8 @@ export const createBookingFn = createServerFn({ method: "POST" })
     // formats coexist safely since nextSeqId() already ignores non-numeric
     // suffixes when computing the next staff-side number.
     const bookingId = `B-W${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+    const price = service.price as number;
+    const depositAmount = computeRequiredDeposit(price, rules);
 
     await withTimeout(
       adminDb
@@ -142,14 +167,21 @@ export const createBookingFn = createServerFn({ method: "POST" })
           serviceName: service.name as string,
           category: service.category as string,
           durationMin: service.durationMin as number,
-          price: service.price as number,
+          price,
           date: data.date,
           time: data.time,
           tech: "", // no fallback-routing logic keys on this one (unlike bay)
           bay: "—",
-          status: "Pending",
+          // autoConfirm governs only this public path -- staff-created
+          // bookings always land Confirmed (src/server/staff-bookings.ts).
+          status: rules.autoConfirm ? "Confirmed" : "Pending",
           notes: data.notes,
-          createdAt: new Date().toISOString(),
+          createdAt: nowIso,
+          // Snapshotted at creation -- cancellation/no-show flagging must
+          // read these, never the live settings doc, see booking-rules.ts.
+          cancelWindowHours: rules.cancelWindowHours,
+          noShowPenaltyEnabled: rules.noShowPenaltyEnabled,
+          ...(depositAmount > 0 ? { depositAmount, depositStatus: "required" } : {}),
         }),
       10_000,
       "booking create",
@@ -157,3 +189,20 @@ export const createBookingFn = createServerFn({ method: "POST" })
 
     return { success: true, bookingId };
   });
+
+// ── Booking policy (public-safe subset) ────────────────────────────────────────
+// Only the two fields that affect what the widget shows before submission --
+// deliberately NOT the full BookingRules (deposit/cancellation policy is
+// nobody else's business until they're already booking).
+
+export interface PublicBookingRules {
+  leadTimeMinutes: number;
+  maxAdvanceDays: number;
+}
+
+export const getBookingRulesFn = createServerFn({ method: "GET" }).handler(
+  async (): Promise<PublicBookingRules> => {
+    const rules = await getBookingRules();
+    return { leadTimeMinutes: rules.leadTimeMinutes, maxAdvanceDays: rules.maxAdvanceDays };
+  },
+);
