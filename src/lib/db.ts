@@ -1,10 +1,6 @@
 // Typed localStorage database layer.
 // All writes go through these functions so the store context can invalidate queries.
 import { DEFAULT_TEMPLATES } from "./notifications";
-import { DEFAULT_BOOKING_RULES, type BookingRules } from "./booking-rules";
-
-export type { BookingRules };
-export { DEFAULT_BOOKING_RULES };
 
 // "Completed" was added alongside the POS/timeline consistency fix: a
 // walk-in POS sale with no pre-existing booking now auto-creates one (see
@@ -70,15 +66,6 @@ export interface Booking {
   createdAt: string;
   depositAmount?: number;
   depositStatus?: DepositStatus;
-  // Snapshotted from settings/bookingRules at the moment this booking was
-  // created (see src/lib/booking-rules.ts) -- cancellation/no-show flagging
-  // reads these, NEVER the live settings, so editing policy later can't
-  // retroactively rewrite the terms of a booking already taken.
-  cancelWindowHours?: number;
-  noShowPenaltyEnabled?: boolean;
-  // Set only when a lead-time/max-advance rejection was bypassed at creation
-  // or reschedule (staff path only -- the public widget has no override).
-  ruleOverrideReason?: string;
 }
 
 // ── Leads (contact/booking inquiries from the public polishstation.lk site) ───
@@ -270,31 +257,6 @@ export function sanitizeBays(input: unknown): string[] {
     .filter((b): b is string => typeof b === "string" && b.trim().length > 0)
     .map((b) => b.trim());
   return names.length > 0 ? names : DEFAULT_BAYS;
-}
-
-// ─── Booking rules (settings/bookingRules Firestore doc) ─────────────────────
-// See src/lib/booking-rules.ts for the policy math itself; this is just the
-// doc-shape guard, same pattern as sanitizeBusinessInfo/sanitizeBays above.
-
-export function sanitizeBookingRules(input: unknown): BookingRules {
-  const d = (typeof input === "object" && input !== null ? input : {}) as Record<string, unknown>;
-  const num = (k: keyof BookingRules) =>
-    typeof d[k] === "number" && Number.isFinite(d[k])
-      ? (d[k] as number)
-      : DEFAULT_BOOKING_RULES[k as "leadTimeMinutes"];
-  const bool = (k: keyof BookingRules) =>
-    typeof d[k] === "boolean"
-      ? (d[k] as boolean)
-      : (DEFAULT_BOOKING_RULES[k as "autoConfirm"] as boolean);
-  return {
-    leadTimeMinutes: Math.max(0, num("leadTimeMinutes")),
-    maxAdvanceDays: Math.max(0, num("maxAdvanceDays")),
-    depositThreshold: Math.max(0, num("depositThreshold")),
-    depositPct: Math.min(100, Math.max(0, num("depositPct"))),
-    cancelWindowHours: Math.max(0, num("cancelWindowHours")),
-    noShowPenaltyEnabled: bool("noShowPenaltyEnabled"),
-    autoConfirm: bool("autoConfirm"),
-  };
 }
 
 // ─── Payment/refund derived helpers ─────────────────────────────────────────

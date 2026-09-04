@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -24,7 +24,7 @@ import { StatusChip, statusVariant } from "@/components/status-chip";
 import { PageHeader } from "@/components/page-header";
 import { useConfirm } from "@/hooks/use-confirm";
 import { cn } from "@/lib/utils";
-import type { Booking } from "@/lib/db";
+import type { Booking, BookingStatus } from "@/lib/db";
 
 export const Route = createFileRoute("/_app/bookings")({
   head: () => ({ meta: [{ title: "Bookings · Polish Station OS" }] }),
@@ -51,16 +51,12 @@ function BookingCard({
   onCancel,
   onDelete,
   onMarkDepositPaid,
-  onNoShow,
-  onBill,
 }: {
   booking: Booking;
   onCheckin: () => void;
   onCancel: () => void;
   onDelete: () => void;
   onMarkDepositPaid: () => void;
-  onNoShow: () => void;
-  onBill: () => void;
 }) {
   const hasDeposit = booking.depositStatus && booking.depositStatus !== "none";
   const depositPaid = booking.depositStatus === "paid";
@@ -143,22 +139,6 @@ function BookingCard({
             <LogIn className="h-3.5 w-3.5" /> Check In
           </button>
         )}
-        {booking.status === "Checked-In" && (
-          <button
-            onClick={onBill}
-            className="flex items-center justify-center gap-1.5 w-full rounded-md bg-primary/10 border border-primary/30 text-primary py-1.5 text-xs font-semibold hover:bg-primary/20"
-          >
-            <Banknote className="h-3.5 w-3.5" /> Bill This Booking
-          </button>
-        )}
-        {(booking.status === "Confirmed" || booking.status === "Pending") && (
-          <button
-            onClick={onNoShow}
-            className="w-full rounded-md border border-border py-1.5 text-xs text-muted-foreground hover:text-warning hover:border-warning/40"
-          >
-            Mark No-Show
-          </button>
-        )}
         {booking.status !== "Cancelled" &&
           booking.status !== "Checked-In" &&
           booking.status !== "Completed" && (
@@ -183,16 +163,8 @@ function BookingCard({
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 function Bookings() {
-  const {
-    bookings,
-    deleteBooking,
-    checkinBooking,
-    markDepositPaid,
-    cancelBooking,
-    markNoShow,
-    bays,
-  } = useStore();
-  const navigate = useNavigate();
+  const { bookings, updateBooking, deleteBooking, checkinBooking, markDepositPaid, bays } =
+    useStore();
   const [view, setView] = useState<"day" | "week" | "list">("day");
   const [currentDate, setCurrentDate] = useState(todayBusinessDate());
   const [bookingOpen, setBookingOpen] = useState(false);
@@ -232,29 +204,21 @@ function Bookings() {
   const weekDatesSet = new Set(weekDates);
   const weekBookings = bookings.filter((b) => weekDatesSet.has(b.date));
 
-  async function handleCancel(id: string) {
-    const result = await cancelBooking(id);
-    if (!result.success) {
-      toast.error("Couldn't cancel, please try again");
-      setActiveCard(null);
-      return;
-    }
-    // Flag-only per Settings → Booking Rules: this never blocks the cancel,
-    // it just tells staff the cancellation fell inside the policy window --
-    // this app has no automated charging, so there's nothing to actually
-    // apply beyond the record itself.
-    if (result.flagged) {
-      toast.warning("Cancelled — inside the cancellation window (flagged for review)");
-    } else {
-      toast.success("Booking cancelled");
-    }
+  function handleStatusChange(id: string, status: BookingStatus) {
+    const b = bookings.find((x) => x.id === id);
+    if (!b) return;
+    updateBooking({ ...b, status });
+    toast.success(`Booking ${status.toLowerCase()}`);
     setActiveCard(null);
   }
 
   async function handleCheckin(id: string) {
-    const result = await checkinBooking(id);
-    if (result.success) toast.success("Checked in");
-    else toast.error("Check-in failed, please try again");
+    try {
+      await checkinBooking(id);
+      toast.success("Checked in");
+    } catch {
+      toast.error("Check-in failed, please try again");
+    }
     setActiveCard(null);
   }
 
@@ -265,30 +229,9 @@ function Bookings() {
     setActiveCard(null);
   }
 
-  async function handleMarkDepositPaid(id: string) {
-    const result = await markDepositPaid(id);
-    if (result.success) toast.success("Deposit marked as received");
-    else toast.error("Couldn't mark deposit paid, please try again");
-  }
-
-  async function handleNoShow(id: string) {
-    if (!(await confirm({ title: "Mark this booking as a no-show?" }))) return;
-    const result = await markNoShow(id);
-    if (!result.success) {
-      toast.error("Couldn't mark no-show, please try again");
-      setActiveCard(null);
-      return;
-    }
-    toast.warning(
-      result.flagged
-        ? "Marked as no-show (flagged per policy — no charge is applied automatically)"
-        : "Marked as no-show",
-    );
-    setActiveCard(null);
-  }
-
-  function handleBill(id: string) {
-    void navigate({ to: "/pos", search: { bookingId: id } });
+  function handleMarkDepositPaid(id: string) {
+    markDepositPaid(id);
+    toast.success("Deposit marked as received");
   }
 
   // Day view calendar grid
@@ -380,11 +323,9 @@ function Bookings() {
                       <BookingCard
                         booking={b}
                         onCheckin={() => handleCheckin(b.id)}
-                        onCancel={() => handleCancel(b.id)}
+                        onCancel={() => handleStatusChange(b.id, "Cancelled")}
                         onDelete={() => handleDelete(b.id)}
                         onMarkDepositPaid={() => handleMarkDepositPaid(b.id)}
-                        onNoShow={() => handleNoShow(b.id)}
-                        onBill={() => handleBill(b.id)}
                       />
                     ) : (
                       <>

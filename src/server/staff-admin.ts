@@ -8,13 +8,7 @@
 import { webcrypto } from "node:crypto";
 import { adminAuth, adminDb } from "./firebase-admin";
 import { withRetry, withTimeout } from "./retry";
-import {
-  isAdmin,
-  isManagerOrAbove,
-  sanitizePermissions,
-  type ModuleKey,
-  type StaffRole,
-} from "@/lib/permissions";
+import { isAdmin, isManagerOrAbove, type StaffRole } from "@/lib/permissions";
 import { encryptOfflinePayload } from "@/lib/offline-crypto";
 
 interface AuthUserSync {
@@ -101,7 +95,6 @@ export async function offlineBlobFields(
 export interface Caller {
   uid: string;
   role: StaffRole;
-  permissions: ModuleKey[];
 }
 
 /**
@@ -130,11 +123,7 @@ export async function requireCaller(idToken: string): Promise<Caller | null> {
   const staff = snap.data()!;
   if (staff.active === false) return null;
 
-  return {
-    uid,
-    role: staff.role as StaffRole,
-    permissions: sanitizePermissions(staff.permissions),
-  };
+  return { uid, role: staff.role as StaffRole };
 }
 
 /**

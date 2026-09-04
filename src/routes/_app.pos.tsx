@@ -42,12 +42,6 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 
 export const Route = createFileRoute("/_app/pos")({
   head: () => ({ meta: [{ title: "POS / Checkout · Polish Station OS" }] }),
-  // Lets "Bill This Booking" (src/routes/_app.bookings.tsx) open POS
-  // pre-filled from a checked-in booking, same pattern as
-  // _app.settings.tsx's `?tab=`.
-  validateSearch: (search: Record<string, unknown>): { bookingId?: string } => ({
-    bookingId: typeof search.bookingId === "string" ? search.bookingId : undefined,
-  }),
   component: POS,
 });
 
@@ -70,15 +64,12 @@ function POS() {
     customers,
     coupons,
     invoices,
-    bookings,
     addInvoice,
     voidInvoice,
-    completeBooking,
     notificationSettingsData,
     recordNotification,
   } = useStore();
   const { staff } = useAuth();
-  const { bookingId } = Route.useSearch();
 
   // Customer selection
   const [customerSearch, setCustomerSearch] = useState("");
@@ -88,35 +79,6 @@ function POS() {
   // Line items
   const [lines, setLines] = useState<(InvoiceLine & { key: number })[]>([]);
   const [lineCounter, setLineCounter] = useState(0);
-
-  // "Bill This Booking" (?bookingId=) -- pre-fills the cart once from the
-  // booking, and carries its already-collected deposit through as
-  // Invoice.depositApplied (see src/lib/db.ts) rather than demanding it be
-  // tendered again. billingBookingId, once set, marks this checkout as
-  // originating from a booking so a successful charge also completes it.
-  const [billingBookingId, setBillingBookingId] = useState<string | null>(null);
-  const [depositApplied, setDepositApplied] = useState(0);
-
-  useEffect(() => {
-    if (!bookingId || billingBookingId) return;
-    const b = bookings.find((x) => x.id === bookingId);
-    if (!b) return;
-    setBillingBookingId(b.id);
-    setDepositApplied(b.depositStatus === "paid" ? (b.depositAmount ?? 0) : 0);
-    if (b.customerId) {
-      setSelectedCustomerId(b.customerId);
-    } else {
-      setManualCustomer(b.customerName);
-    }
-    setLineCounter((k) => {
-      const key = k + 1;
-      setLines((ls) => [
-        ...ls,
-        { key, name: b.serviceName, qty: 1, unitPrice: b.price, discount: 0 },
-      ]);
-      return key;
-    });
-  }, [bookingId, billingBookingId, bookings]);
 
   // Loyalty & coupons
   const [couponInput, setCouponInput] = useState("");
@@ -203,9 +165,6 @@ function POS() {
   const pointsRedeemed = Math.min(pointsToRedeem, pointsBalance);
   const pointsValue = calcPointsValue(pointsRedeemed, grossTotal);
   const total = Math.max(0, grossTotal - pointsValue);
-  // What still needs to be tendered right now -- total minus any deposit
-  // already collected on the booking this checkout originated from.
-  const amountDue = Math.max(0, total - depositApplied);
   const tendered = tenderLines.reduce((s, l) => s + l.amount, 0);
 
   function applyCoupon() {
@@ -252,10 +211,9 @@ function POS() {
       return;
     }
     const validTenders = tenderLines.filter((l) => l.amount > 0);
-    // amountDue can legitimately be 0 when points redemption or an
-    // already-collected deposit covers the whole bill: only demand a
-    // cash/card/transfer tender for what's still actually owed.
-    if (amountDue > 0 && validTenders.length === 0) {
+    // total can legitimately be 0 when points redemption covers the whole
+    // bill: only demand a cash/card/transfer tender for what's still owed.
+    if (total > 0 && validTenders.length === 0) {
       toast.error("Add at least one payment (Cash/Card/Transfer)");
       return;
     }
@@ -275,7 +233,6 @@ function POS() {
         // field value (this previously broke every checkout with no deposit).
         ...(appliedCoupon ? { couponCode: appliedCoupon.code, couponDiscount } : {}),
         ...(pointsRedeemed > 0 ? { pointsRedeemed, pointsRedeemedValue: pointsValue } : {}),
-        ...(depositApplied > 0 ? { depositApplied } : {}),
         ...(selectedCustomer?.phone ? { phone: selectedCustomer.phone } : {}),
         ...(selectedCustomer?.vehicles[0]?.plate
           ? { plate: selectedCustomer.vehicles[0].plate }
@@ -298,14 +255,6 @@ function POS() {
           description: `${inv.id} · ${formatCurrency(tendered)} · ${describePaymentMethods(inv)}`,
         },
       );
-
-      // Best-effort: the invoice is already the source of truth for the
-      // sale, so a failed status bump here doesn't undo a successful
-      // charge -- it just leaves the booking showing Checked-In instead of
-      // Completed, harmless and correctable by hand.
-      if (billingBookingId) {
-        void completeBooking(billingBookingId).catch(() => {});
-      }
 
       setChargedInfo({
         customerName: customerName || "Guest",
@@ -330,8 +279,6 @@ function POS() {
       setTenderLines([]);
       setAppliedCoupon(null);
       setPointsToRedeem(0);
-      setBillingBookingId(null);
-      setDepositApplied(0);
     } catch (err) {
       // addInvoice() now awaits its Firestore write instead of firing it and
       // forgetting: a network drop here throws, so the till must show that
@@ -566,15 +513,6 @@ function POS() {
           </span>
         </div>
 
-        {depositApplied > 0 && (
-          <div className="mb-3 flex items-center justify-between rounded-md bg-success/10 border border-success/30 px-3 py-2 text-sm">
-            <span className="text-success font-medium">Deposit already collected</span>
-            <span className="font-mono font-semibold text-success">
-              − {formatCurrency(depositApplied)}
-            </span>
-          </div>
-        )}
-
         <div className="grid grid-cols-3 gap-2 mb-3">
           {[150, 300, 500].map((amt) => (
             <button
@@ -596,7 +534,7 @@ function POS() {
           Payment
         </div>
         <div className="mb-4">
-          <TenderLineEditor lines={tenderLines} onChange={setTenderLines} remaining={amountDue} />
+          <TenderLineEditor lines={tenderLines} onChange={setTenderLines} remaining={total} />
         </div>
 
         {chargedInfo && (
@@ -681,20 +619,20 @@ function POS() {
 
         <button
           onClick={handleCharge}
-          disabled={charging || lines.length === 0 || (tendered <= 0 && amountDue > 0)}
+          disabled={charging || lines.length === 0 || (tendered <= 0 && total > 0)}
           className="w-full rounded-md gradient-brand py-3 text-sm font-bold uppercase tracking-wider text-primary-foreground shadow-red hover:opacity-95 disabled:opacity-50"
         >
           {charging
             ? "Processing…"
             : lines.length === 0
               ? "Complete Sale"
-              : amountDue <= 0 && (pointsValue > 0 || depositApplied > 0)
-                ? "Complete: Fully Covered"
-                : amountDue <= 0
+              : total <= 0 && pointsValue > 0
+                ? "Complete: Covered by Points"
+                : total <= 0
                   ? "Complete Sale"
-                  : tendered > 0 && tendered < amountDue
-                    ? `Collect ${formatCurrency(tendered)} of ${formatCurrency(amountDue)}`
-                    : `Charge ${formatCurrency(amountDue)}`}
+                  : tendered > 0 && tendered < total
+                    ? `Collect ${formatCurrency(tendered)} of ${formatCurrency(total)}`
+                    : `Charge ${formatCurrency(total)}`}
         </button>
 
         <button

@@ -5,11 +5,8 @@ import {
   getBookableServicesFn,
   getFullSlotsFn,
   createBookingFn,
-  getBookingRulesFn,
   type BookableService,
-  type PublicBookingRules,
 } from "@/server/bookings";
-import { isWithinLeadTime } from "@/lib/booking-rules";
 import {
   CheckCircle2,
   Car,
@@ -72,14 +69,10 @@ function toLocalYMD(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-// Never shows more than 14 days regardless of policy (kept scrollable/usable
-// on a phone), but hides any day beyond maxAdvanceDays -- "hide them in the
-// slot picker" per the booking-rules requirement, not just reject at submit.
-function getDateCards(maxAdvanceDays: number) {
+function getDateCards() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const count = Math.max(1, Math.min(14, maxAdvanceDays + 1));
-  return Array.from({ length: count }, (_, i) => {
+  return Array.from({ length: 14 }, (_, i) => {
     const d = new Date(today.getTime() + i * 86400000);
     return {
       date: toLocalYMD(d),
@@ -228,16 +221,8 @@ function ServiceStep({
 
 // ─── Step 2: Date ─────────────────────────────────────────────────────────────
 
-function DateStep({
-  maxAdvanceDays,
-  onSelect,
-  onBack,
-}: {
-  maxAdvanceDays: number;
-  onSelect: (d: string) => void;
-  onBack: () => void;
-}) {
-  const dateCards = useMemo(() => getDateCards(maxAdvanceDays), [maxAdvanceDays]);
+function DateStep({ onSelect, onBack }: { onSelect: (d: string) => void; onBack: () => void }) {
+  const dateCards = useMemo(() => getDateCards(), []);
   return (
     <div>
       <button
@@ -273,26 +258,15 @@ function DateStep({
 function TimeStep({
   service,
   date,
-  leadTimeMinutes,
   onSelect,
   onBack,
 }: {
   service: Service;
   date: string;
-  leadTimeMinutes: number;
   onSelect: (t: string) => void;
   onBack: () => void;
 }) {
-  // Hides slots the server would reject anyway (see createBookingFn's
-  // isWithinLeadTime check) rather than letting someone pick one only to
-  // find out it's rejected at submit.
-  const slots = useMemo(
-    () =>
-      generateSlots(service.durationMin).filter((t) =>
-        isWithinLeadTime(new Date().toISOString(), date, t, { leadTimeMinutes }),
-      ),
-    [service.durationMin, date, leadTimeMinutes],
-  );
+  const slots = useMemo(() => generateSlots(service.durationMin), [service.durationMin]);
   const [fullSlots, setFullSlots] = useState<Set<string> | null>(null);
 
   useEffect(() => {
@@ -652,12 +626,6 @@ function BookPage() {
   const [bookingId, setBookingId] = useState("");
   const [services, setServices] = useState<Service[] | null>(null);
   const [servicesError, setServicesError] = useState(false);
-  // Defaults match DEFAULT_BOOKING_RULES (src/lib/booking-rules.ts) so the
-  // picker isn't wide open for the brief window before this loads.
-  const [bookingRules, setBookingRules] = useState<PublicBookingRules>({
-    leadTimeMinutes: 30,
-    maxAdvanceDays: 60,
-  });
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -669,9 +637,6 @@ function BookPage() {
     getBookableServicesFn()
       .then(setServices)
       .catch(() => setServicesError(true));
-    getBookingRulesFn()
-      .then(setBookingRules)
-      .catch(() => {}); // keep the conservative defaults above on failure
   }, []);
 
   function update(partial: Partial<FormState>) {
@@ -701,11 +666,7 @@ function BookPage() {
             ? "That time slot just filled up. Please go back and pick another."
             : result.error === "rate_limited"
               ? "Too many booking attempts from this number. Please try again in a few minutes, or call us directly."
-              : result.error === "outside_lead_time"
-                ? "That time is too soon to book online. Please pick a later slot, or call us directly."
-                : result.error === "outside_advance_window"
-                  ? "That date is too far out to book online yet. Please pick a closer date, or call us directly."
-                  : "Something went wrong submitting your booking. Please try again.",
+              : "Something went wrong submitting your booking. Please try again.",
         );
         return;
       }
@@ -761,7 +722,6 @@ function BookPage() {
         )}
         {step === 2 && (
           <DateStep
-            maxAdvanceDays={bookingRules.maxAdvanceDays}
             onSelect={(d) => {
               update({ date: d, time: "" });
               setStep(3);
@@ -773,7 +733,6 @@ function BookPage() {
           <TimeStep
             service={form.service}
             date={form.date}
-            leadTimeMinutes={bookingRules.leadTimeMinutes}
             onSelect={(t) => {
               update({ time: t });
               setStep(4);

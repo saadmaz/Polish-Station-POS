@@ -2,6 +2,36 @@
 
 ## Status note (read this first)
 
+**UPDATE (2026-09-05, later the same day):** the feature described below has
+now actually been removed, at the operator's explicit request ("take off the
+whole booking rules thing... there is no need for anything like this right
+now, I will come back later if required"). This document was written a few
+hours earlier, while the feature was still live, specifically so this
+removal wouldn't lose the requirement — see the original note below,
+preserved for context on why the doc exists and what was verified before
+deletion.
+
+The app now behaves exactly as it did before commit `a3502ba` ("feat:
+implement booking rules management and enforcement"): the public `/book`
+widget always creates `"Pending"` bookings with no lead-time/max-advance
+check beyond "not in the past", staff bookings have no policy check either,
+and there is no deposit-threshold/percentage computation, cancellation-window
+flagging, or no-show flagging tied to a configurable policy. (The
+**pre-existing, unrelated** manual per-booking deposit fields —
+`Booking.depositAmount`/`depositStatus`, set by hand per booking in the
+booking sheet — were not touched; they predate this feature and aren't part
+of what "booking rules" ever meant.) Removal was verified with a full
+typecheck, lint, the unit test suite, and a production build, all passing.
+
+To rebuild: this file is the spec. The original commit is still in git
+history (`a3502ba`) if a line-for-line starting point is wanted, though the
+codebase has moved on since (the Notifications feature in particular touches
+some of the same files) so it's a reference, not a drop-in patch.
+
+---
+
+### Original note, written before the removal above
+
 This document was requested as a pre-deletion capture of the policy intent
 behind Settings → Booking Rules (`BookingRulesPanel`, `src/routes/_app.settings.tsx`),
 on the premise that the panel and its enforcement are about to be removed.

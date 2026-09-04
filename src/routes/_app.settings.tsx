@@ -7,7 +7,7 @@ import { AccessPanel } from "@/components/access-panel";
 import { DevicesPanel } from "@/components/devices-panel";
 import { useStore } from "@/lib/store";
 import * as db from "@/lib/db";
-import type { BusinessInfo, Service, ServiceCategory, BookingRules } from "@/lib/db";
+import type { BusinessInfo, Service, ServiceCategory } from "@/lib/db";
 import { formatCurrency } from "@/lib/currency";
 import { formatDateTime } from "@/lib/date-format";
 import { useConfirm } from "@/hooks/use-confirm";
@@ -16,7 +16,6 @@ import {
   Building2,
   Tag,
   ParkingMeter,
-  Calendar,
   ShieldCheck,
   Bell,
   ScrollText,
@@ -55,12 +54,6 @@ const SECTIONS = [
     icon: ParkingMeter,
     name: "Bays & Capacity",
     desc: "Add, rename, or remove service bays",
-  },
-  {
-    id: "booking",
-    icon: Calendar,
-    name: "Booking Rules",
-    desc: "Lead time, deposits, cancellation policy",
   },
   {
     id: "access",
@@ -119,7 +112,6 @@ function Settings() {
           {active === "business" && <BusinessPanel />}
           {active === "catalog" && <CatalogPanel />}
           {active === "bays" && <BaysPanel />}
-          {active === "booking" && <BookingRulesPanel />}
           {active === "access" && <AccessPanel />}
           {active === "devices" && <DevicesPanel />}
           {active === "notify" && <NotifyPanel />}
@@ -510,156 +502,6 @@ function BaysPanel() {
           className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red disabled:opacity-50"
         >
           Save Changes
-        </button>
-      </div>
-    </>
-  );
-}
-
-// Real, Firestore-backed policy (settings/bookingRules doc, via
-// useStore().bookingRules/saveBookingRules) -- see src/lib/booking-rules.ts
-// for the enforcement math and src/server/{bookings,staff-bookings}.ts for
-// where it's actually applied. Not every field blocks anything: the UI below
-// says which, honestly, per field.
-
-interface RuleField {
-  key: keyof BookingRules;
-  label: string;
-  unit: string;
-  note: string;
-  kind: "number" | "boolean";
-  max?: number;
-}
-
-const RULE_FIELDS: RuleField[] = [
-  {
-    key: "leadTimeMinutes",
-    label: "Minimum lead time",
-    unit: "minutes",
-    note: "Enforced: a booking inside this window is rejected (both the public widget and staff bookings; staff may override with a reason).",
-    kind: "number",
-  },
-  {
-    key: "maxAdvanceDays",
-    label: "Maximum advance booking",
-    unit: "days",
-    note: "Enforced: a date beyond this is rejected (both the public widget and staff bookings; staff may override with a reason).",
-    kind: "number",
-  },
-  {
-    key: "depositThreshold",
-    label: "Deposit required above",
-    unit: "LKR",
-    note: "Computed: services at or above this price get a deposit amount stamped on the booking. Never blocks creating the booking.",
-    kind: "number",
-  },
-  {
-    key: "depositPct",
-    label: "Deposit percentage",
-    unit: "%",
-    note: "Applied to the service price when a deposit is required, above.",
-    kind: "number",
-    max: 100,
-  },
-  {
-    key: "cancelWindowHours",
-    label: "Cancellation window",
-    unit: "hours",
-    note: "Flag only: a cancellation inside this window is recorded for review. This app has no automated charging, so nothing is charged.",
-    kind: "number",
-  },
-  {
-    key: "noShowPenaltyEnabled",
-    label: "Flag no-shows for review",
-    unit: "",
-    note: "Flag only, same as above — marking a booking No-Show is recorded, nothing is charged automatically.",
-    kind: "boolean",
-  },
-  {
-    key: "autoConfirm",
-    label: "Auto-confirm public bookings",
-    unit: "",
-    note: "Public /book widget only. Staff-created bookings are always Confirmed regardless of this setting.",
-    kind: "boolean",
-  },
-];
-
-function BookingRulesPanel() {
-  const { bookingRules, saveBookingRules } = useStore();
-  const [rules, setRules] = useState<BookingRules>(bookingRules);
-  const [saved, setSaved] = useState(false);
-  const [dirty, setDirty] = useState(false);
-
-  // The listener can deliver a fresher doc (another till saved) while this
-  // panel is open with no local edits yet -- but never clobber unsaved work.
-  useEffect(() => {
-    if (!dirty) setRules(bookingRules);
-  }, [bookingRules, dirty]);
-
-  function set<K extends keyof BookingRules>(k: K, v: BookingRules[K]) {
-    setRules((r) => ({ ...r, [k]: v }));
-    setSaved(false);
-    setDirty(true);
-  }
-  function save() {
-    saveBookingRules(rules);
-    setSaved(true);
-    setDirty(false);
-  }
-
-  return (
-    <>
-      <SectionTitle
-        title="Booking Rules"
-        desc="Lead time and advance-booking limits are enforced when creating a booking. Deposit is computed and stored. Cancellation window and no-show are recorded for review only — nothing is charged automatically."
-      />
-      <div className="divide-y divide-border">
-        {RULE_FIELDS.map((f) => (
-          <div key={f.key} className="flex items-center justify-between gap-4 py-3">
-            <div className="flex-1">
-              <div className="text-sm">{f.label}</div>
-              <div className="mt-0.5 text-[11px] text-muted-foreground">{f.note}</div>
-            </div>
-            {f.kind === "boolean" ? (
-              <input
-                type="checkbox"
-                className="h-5 w-5 shrink-0 rounded border-input accent-primary"
-                checked={rules[f.key] as boolean}
-                onChange={(e) => set(f.key, e.target.checked as BookingRules[typeof f.key])}
-              />
-            ) : (
-              <div className="flex shrink-0 items-center gap-1.5">
-                <input
-                  type="number"
-                  min={0}
-                  max={f.max}
-                  value={rules[f.key] as number}
-                  onChange={(e) =>
-                    set(
-                      f.key,
-                      Math.max(
-                        0,
-                        Math.min(f.max ?? Infinity, Number(e.target.value) || 0),
-                      ) as BookingRules[typeof f.key],
-                    )
-                  }
-                  className="w-24 rounded-md border border-input bg-background px-2.5 py-1.5 text-right text-sm font-mono focus:outline-none focus:border-primary"
-                />
-                <span className="w-14 text-xs text-muted-foreground">{f.unit}</span>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-      <div className="mt-4 flex items-center gap-2 justify-end">
-        {saved && <span className="text-xs text-success font-medium">Saved ✓</span>}
-        {dirty && <span className="text-xs text-warning font-medium">Unsaved changes</span>}
-        <button
-          onClick={save}
-          disabled={!dirty}
-          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red disabled:opacity-50"
-        >
-          Save Rules
         </button>
       </div>
     </>
