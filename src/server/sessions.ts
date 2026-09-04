@@ -65,7 +65,7 @@ export const createSessionFn = createServerFn({ method: "POST" })
     // as resumeSessionFn above.
     const ip = getRequestIP({ xForwardedFor: true }) ?? "unknown";
     if (isCreateRateLimited(ip)) {
-      console.log(`[sessions] create: rate limited (ip=${ip})`);
+      console.error(`[sessions] create: rate limited (ip=${ip})`);
       return { success: false };
     }
 
@@ -78,7 +78,7 @@ export const createSessionFn = createServerFn({ method: "POST" })
       );
       uid = decoded.uid;
     } catch (err) {
-      console.log("[sessions] create: token verify failed:", err);
+      console.error("[sessions] create: token verify failed:", err);
       return { success: false };
     }
 
@@ -110,7 +110,7 @@ export const createSessionFn = createServerFn({ method: "POST" })
       return { success: false };
     }
 
-    console.log(`[sessions] create: success staffId=${uid} hash=${tokenHash.slice(0, 8)}`);
+    console.error(`[sessions] create: success staffId=${uid} hash=${tokenHash.slice(0, 8)}`);
     setCookie(SESSION_COOKIE_NAME, token, cookieOptions());
     return { success: true };
   });
@@ -130,25 +130,25 @@ export const resumeSessionFn = createServerFn({ method: "POST" }).handler(
     // issue is root-caused -- see [[project_auth_model]].
     const token = getCookie(SESSION_COOKIE_NAME);
     if (!token) {
-      console.log("[sessions] resume: no cookie");
+      console.error("[sessions] resume: no cookie");
       return { success: false };
     }
 
     const ip = getRequestIP({ xForwardedFor: true }) ?? "unknown";
     if (isResumeRateLimited(ip)) {
-      console.log(`[sessions] resume: rate limited (ip=${ip})`);
+      console.error(`[sessions] resume: rate limited (ip=${ip})`);
       return { success: false };
     }
 
     const tokenHash = hashSessionToken(token);
     const ref = adminDb.collection("sessions").doc(tokenHash);
     const snap = await withTimeout(ref.get(), 8_000, "session lookup").catch((err) => {
-      console.log(`[sessions] resume: doc lookup failed (hash=${tokenHash.slice(0, 8)}):`, err);
+      console.error(`[sessions] resume: doc lookup failed (hash=${tokenHash.slice(0, 8)}):`, err);
       return null;
     });
 
     if (!snap?.exists) {
-      console.log(`[sessions] resume: no doc for hash=${tokenHash.slice(0, 8)}`);
+      console.error(`[sessions] resume: no doc for hash=${tokenHash.slice(0, 8)}`);
       deleteCookie(SESSION_COOKIE_NAME, { path: "/" });
       return { success: false };
     }
@@ -159,7 +159,7 @@ export const resumeSessionFn = createServerFn({ method: "POST" }).handler(
     const absoluteExpiresAt = Date.parse(session.absoluteExpiresAt as string);
 
     if (session.revoked || now > expiresAt || now > absoluteExpiresAt) {
-      console.log(
+      console.error(
         `[sessions] resume: rejected staffId=${session.staffId} revoked=${session.revoked} ` +
           `expired=${now > expiresAt} absoluteExpired=${now > absoluteExpiresAt}`,
       );
@@ -176,11 +176,11 @@ export const resumeSessionFn = createServerFn({ method: "POST" }).handler(
       8_000,
       "resume staff lookup",
     ).catch((err) => {
-      console.log(`[sessions] resume: staff lookup failed staffId=${staffId}:`, err);
+      console.error(`[sessions] resume: staff lookup failed staffId=${staffId}:`, err);
       return null;
     });
     if (!staffSnap?.exists || staffSnap.data()?.active === false) {
-      console.log(`[sessions] resume: staff missing/inactive staffId=${staffId}`);
+      console.error(`[sessions] resume: staff missing/inactive staffId=${staffId}`);
       deleteCookie(SESSION_COOKIE_NAME, { path: "/" });
       return { success: false };
     }
@@ -193,7 +193,7 @@ export const resumeSessionFn = createServerFn({ method: "POST" }).handler(
         "custom token mint",
       );
     } catch (err) {
-      console.log(`[sessions] resume: custom token mint failed staffId=${staffId}:`, err);
+      console.error(`[sessions] resume: custom token mint failed staffId=${staffId}:`, err);
       return { success: false };
     }
 
@@ -207,7 +207,7 @@ export const resumeSessionFn = createServerFn({ method: "POST" }).handler(
       })
       .catch((err) => console.error(`[sessions] resume touch(${tokenHash}) failed:`, err));
 
-    console.log(`[sessions] resume: success staffId=${staffId}`);
+    console.error(`[sessions] resume: success staffId=${staffId}`);
     setCookie(SESSION_COOKIE_NAME, token, cookieOptions());
     return { success: true, customToken };
   },
