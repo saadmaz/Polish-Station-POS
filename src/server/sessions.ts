@@ -61,13 +61,8 @@ const CreateSessionSchema = z.object({ idToken: z.string().min(1) });
 export const createSessionFn = createServerFn({ method: "POST" })
   .validator((raw: unknown) => CreateSessionSchema.parse(raw))
   .handler(async ({ data }): Promise<{ success: boolean }> => {
-    // TEMPORARY diagnostic logging (2026-09-05), same reasoning/removal note
-    // as resumeSessionFn above.
     const ip = getRequestIP({ xForwardedFor: true }) ?? "unknown";
-    if (isCreateRateLimited(ip)) {
-      console.error(`[sessions] create: rate limited (ip=${ip})`);
-      return { success: false };
-    }
+    if (isCreateRateLimited(ip)) return { success: false };
 
     let uid: string;
     try {
@@ -77,8 +72,7 @@ export const createSessionFn = createServerFn({ method: "POST" })
         "token verify",
       );
       uid = decoded.uid;
-    } catch (err) {
-      console.error("[sessions] create: token verify failed:", err);
+    } catch {
       return { success: false };
     }
 
@@ -110,7 +104,6 @@ export const createSessionFn = createServerFn({ method: "POST" })
       return { success: false };
     }
 
-    console.error(`[sessions] create: success staffId=${uid} hash=${tokenHash.slice(0, 8)}`);
     setCookie(SESSION_COOKIE_NAME, token, cookieOptions());
     return { success: true };
   });
@@ -123,32 +116,17 @@ export type ResumeSessionResult = { success: true; customToken: string } | { suc
  *  back to the PIN screen -- never left half-resumed. */
 export const resumeSessionFn = createServerFn({ method: "POST" }).handler(
   async (): Promise<ResumeSessionResult> => {
-    // TEMPORARY diagnostic logging (2026-09-05): every return branch here
-    // fails silently by design (a normal "not logged in" is not an error),
-    // which made "why didn't this device auto-resume" undiagnosable from
-    // stderr.log alone. Remove once the reported "still gets logged out"
-    // issue is root-caused -- see [[project_auth_model]].
     const token = getCookie(SESSION_COOKIE_NAME);
-    if (!token) {
-      console.error("[sessions] resume: no cookie");
-      return { success: false };
-    }
+    if (!token) return { success: false };
 
     const ip = getRequestIP({ xForwardedFor: true }) ?? "unknown";
-    if (isResumeRateLimited(ip)) {
-      console.error(`[sessions] resume: rate limited (ip=${ip})`);
-      return { success: false };
-    }
+    if (isResumeRateLimited(ip)) return { success: false };
 
     const tokenHash = hashSessionToken(token);
     const ref = adminDb.collection("sessions").doc(tokenHash);
-    const snap = await withTimeout(ref.get(), 8_000, "session lookup").catch((err) => {
-      console.error(`[sessions] resume: doc lookup failed (hash=${tokenHash.slice(0, 8)}):`, err);
-      return null;
-    });
+    const snap = await withTimeout(ref.get(), 8_000, "session lookup").catch(() => null);
 
     if (!snap?.exists) {
-      console.error(`[sessions] resume: no doc for hash=${tokenHash.slice(0, 8)}`);
       deleteCookie(SESSION_COOKIE_NAME, { path: "/" });
       return { success: false };
     }
@@ -159,10 +137,6 @@ export const resumeSessionFn = createServerFn({ method: "POST" }).handler(
     const absoluteExpiresAt = Date.parse(session.absoluteExpiresAt as string);
 
     if (session.revoked || now > expiresAt || now > absoluteExpiresAt) {
-      console.error(
-        `[sessions] resume: rejected staffId=${session.staffId} revoked=${session.revoked} ` +
-          `expired=${now > expiresAt} absoluteExpired=${now > absoluteExpiresAt}`,
-      );
       deleteCookie(SESSION_COOKIE_NAME, { path: "/" });
       return { success: false };
     }
@@ -175,12 +149,8 @@ export const resumeSessionFn = createServerFn({ method: "POST" }).handler(
       adminDb.collection("staff").doc(staffId).get(),
       8_000,
       "resume staff lookup",
-    ).catch((err) => {
-      console.error(`[sessions] resume: staff lookup failed staffId=${staffId}:`, err);
-      return null;
-    });
+    ).catch(() => null);
     if (!staffSnap?.exists || staffSnap.data()?.active === false) {
-      console.error(`[sessions] resume: staff missing/inactive staffId=${staffId}`);
       deleteCookie(SESSION_COOKIE_NAME, { path: "/" });
       return { success: false };
     }
@@ -192,8 +162,7 @@ export const resumeSessionFn = createServerFn({ method: "POST" }).handler(
         8_000,
         "custom token mint",
       );
-    } catch (err) {
-      console.error(`[sessions] resume: custom token mint failed staffId=${staffId}:`, err);
+    } catch {
       return { success: false };
     }
 
@@ -207,7 +176,6 @@ export const resumeSessionFn = createServerFn({ method: "POST" }).handler(
       })
       .catch((err) => console.error(`[sessions] resume touch(${tokenHash}) failed:`, err));
 
-    console.error(`[sessions] resume: success staffId=${staffId}`);
     setCookie(SESSION_COOKIE_NAME, token, cookieOptions());
     return { success: true, customToken };
   },
