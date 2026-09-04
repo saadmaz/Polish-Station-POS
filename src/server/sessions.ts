@@ -42,10 +42,16 @@ function cookieOptions() {
   };
 }
 
-/** Shared by createSessionFn/resumeSessionFn (creating/reading their own
- *  request's IP) and used to keep abuse-blunting consistent across both. */
-const isCreateRateLimited = createRateLimiter(5 * 60 * 1000, 30);
-const isResumeRateLimited = createRateLimiter(5 * 60 * 1000, 60);
+// Keyed by IP, which on a shop connection is shared by every till/phone/
+// laptop behind the same NAT -- generously sized so ordinary multi-device
+// daily use (each device resumes once per reload/restart) never collides
+// with it. This isn't protecting a guessable secret either way: the cookie
+// itself is a 256-bit token, so rate-limiting these two endpoints only
+// blunts an outright automated flood, not credential guessing -- unlike
+// verifyStepUpPinFn in auth.ts, which DOES gate a guessable 4-digit PIN and
+// stays tight.
+const isCreateRateLimited = createRateLimiter(5 * 60 * 1000, 200);
+const isResumeRateLimited = createRateLimiter(5 * 60 * 1000, 400);
 
 const CreateSessionSchema = z.object({ idToken: z.string().min(1) });
 

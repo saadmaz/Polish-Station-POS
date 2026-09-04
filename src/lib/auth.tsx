@@ -318,10 +318,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       try {
-        // Bounded like every other call to this host: a stalled resume check
-        // must not leave the screen blank indefinitely -- fail open to the
-        // PIN picker instead (same fallback as an outright network error).
-        const result = await withClientTimeout(resumeSessionFn(), 8_000, "session resume");
+        // Retried like every other call to this host (a single stalled
+        // attempt here is exactly what turns "log in once" into "log in
+        // every time"), but still bounded overall -- 3 attempts x 6s, worst
+        // case ~21s, then fail open to the PIN picker rather than leave the
+        // screen blank forever.
+        const result = await retryTransient(() => resumeSessionFn(), "session resume", 3, 6_000);
         if (cancelled) return;
         if (result.success) {
           // onIdTokenChanged (re-subscribed once resumeChecked flips below)
@@ -421,13 +423,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // in the background, best-effort. onIdTokenChanged picks up
         // staff/mustChangePin from the real token above.
         if (staffId) void fetchAndCacheOfflineCredential(staffId).catch(() => {});
-        // Establish the persistent auto-resume session, also best-effort and
-        // in the background -- a stalled/failed call here just means this
-        // device won't auto-resume next visit and shows the PIN screen
-        // again, not that this login failed.
+        // Establish the persistent auto-resume session, also in the
+        // background so it never blocks/fails this login -- but retried like
+        // every other call to this host, not a single fire-and-forget shot:
+        // this is the ONE call standing between "login once" and "log in
+        // again every single time", so a single stalled attempt silently
+        // costing a device its auto-resume forever is worth avoiding.
         void firebaseAuth.currentUser
           ?.getIdToken()
-          .then((idToken) => createSessionFn({ data: { idToken } }))
+          .then((idToken) =>
+            retryTransient(
+              () => createSessionFn({ data: { idToken } }),
+              "create session",
+              4,
+              8_000,
+            ),
+          )
           .catch(() => {});
         return null;
       } catch (err) {
