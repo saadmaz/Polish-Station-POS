@@ -509,9 +509,13 @@ export interface NotificationSettings {
   reminderIntervalDays: number;
   serviceReminderTemplate: string;
   reviewRequestTemplate: string;
+  // Settings → Notifications' one real toggle (src/server/notifications.ts
+  // sendReceiptEmailFn). Defaults off: a customer-facing send is new
+  // capability, not something to silently turn on for every existing till.
+  receiptEmailEnabled: boolean;
 }
 
-export type SentNotificationType = "service_reminder" | "review_request";
+export type SentNotificationType = "service_reminder" | "review_request" | "receipt_email";
 
 export interface SentNotification {
   id: string;
@@ -519,6 +523,9 @@ export interface SentNotification {
   customerId: string | null;
   customerName: string;
   phone: string;
+  // Only set for type "receipt_email" -- the other two types are WhatsApp/
+  // SMS deep-links keyed on phone.
+  email?: string;
   sentAt: string;
 }
 
@@ -1295,6 +1302,7 @@ export const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   reminderIntervalDays: 30,
   serviceReminderTemplate: DEFAULT_TEMPLATES.serviceReminder,
   reviewRequestTemplate: DEFAULT_TEMPLATES.reviewRequest,
+  receiptEmailEnabled: false,
 };
 
 export const notificationSettings = {

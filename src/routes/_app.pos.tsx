@@ -3,12 +3,14 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
+import { auth as firebaseAuth } from "@/lib/firebase";
 import { isManagerOrAbove } from "@/lib/permissions";
 import { formatCurrency } from "@/lib/currency";
 import { formatDateTime } from "@/lib/date-format";
 import { useConfirm } from "@/hooks/use-confirm";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip, statusVariant } from "@/components/status-chip";
+import { sendReceiptEmailFn, getEmailProviderStatusFn } from "@/server/notifications";
 import {
   Plus,
   Trash2,
@@ -16,6 +18,7 @@ import {
   FileDown,
   FileText,
   MessageCircle,
+  Mail,
   Star,
   Ticket,
   Gift,
@@ -51,11 +54,14 @@ export const Route = createFileRoute("/_app/pos")({
 interface ChargedInfo {
   customerName: string;
   phone: string;
+  email: string;
   customerId: string | null;
   vehicleModel: string;
   plate: string;
   serviceName: string;
   invoiceId: string;
+  lines: InvoiceLine[];
+  total: number;
 }
 
 function POS() {
@@ -128,6 +134,18 @@ function POS() {
   } | null>(null);
   const [mobilePaymentOpen, setMobilePaymentOpen] = useState(false);
   const { confirm, ConfirmDialog } = useConfirm();
+
+  // Receipt email: real, staff-initiated (Settings → Notifications), see
+  // src/server/notifications.ts. Checked once on mount, same reasoning as
+  // NotifyPanel's own check -- never show a send option for an unconfigured
+  // channel.
+  const [emailConfigured, setEmailConfigured] = useState(false);
+  const [sendingReceipt, setSendingReceipt] = useState(false);
+  useEffect(() => {
+    getEmailProviderStatusFn()
+      .then((r) => setEmailConfigured(r.configured))
+      .catch(() => setEmailConfigured(false));
+  }, []);
 
   const selectedCustomer = customers.find((c) => c.id === selectedCustomerId);
   const customerName = selectedCustomer?.name ?? manualCustomer;
@@ -292,11 +310,14 @@ function POS() {
       setChargedInfo({
         customerName: customerName || "Guest",
         phone: selectedCustomer?.phone ?? "",
+        email: selectedCustomer?.email ?? "",
         customerId,
         vehicleModel: selectedCustomer?.vehicles[0]?.model ?? "",
         plate: selectedCustomer?.vehicles[0]?.plate ?? "",
         serviceName: lines[0]?.name ?? "",
         invoiceId: inv.id,
+        lines: inv.lines,
+        total: inv.total,
       });
 
       // Reset — only on success: a failed charge keeps the cart so the
@@ -320,6 +341,49 @@ function POS() {
       toast.error("Checkout failed, please check your connection and try again");
     } finally {
       setCharging(false);
+    }
+  }
+
+  async function handleSendReceipt() {
+    if (!chargedInfo || !chargedInfo.email) return;
+    setSendingReceipt(true);
+    try {
+      const idToken = await firebaseAuth.currentUser?.getIdToken();
+      if (!idToken) throw new Error("no id token");
+      const result = await sendReceiptEmailFn({
+        data: {
+          idToken,
+          toEmail: chargedInfo.email,
+          customerName: chargedInfo.customerName,
+          invoiceId: chargedInfo.invoiceId,
+          total: chargedInfo.total,
+          lines: chargedInfo.lines,
+        },
+      });
+      if (result.success) {
+        // Honest per Stage 4: this records that the send request was
+        // accepted by Resend, not that it was delivered -- there's no
+        // webhook/delivery-status pipeline behind this, same as the
+        // WhatsApp/SMS deep-links only ever recording "staff sent this".
+        recordNotification({
+          type: "receipt_email",
+          customerId: chargedInfo.customerId,
+          customerName: chargedInfo.customerName,
+          phone: chargedInfo.phone,
+          email: chargedInfo.email,
+        });
+        toast.success("Receipt email sent");
+      } else {
+        toast.error(
+          result.error === "not_configured"
+            ? "Email isn't configured on the server"
+            : "Couldn't send the receipt email, please try again",
+        );
+      }
+    } catch {
+      toast.error("Couldn't send the receipt email, please try again");
+    } finally {
+      setSendingReceipt(false);
     }
   }
 
@@ -585,6 +649,33 @@ function POS() {
                 Set your Google Review link in Notifications → Templates.
               </p>
             ) : null}
+
+            {/* Receipt email: real, staff-initiated (src/server/notifications.ts).
+                Only ever shown as a real, clickable option -- disabled/hidden
+                states below explain exactly why when it isn't available. */}
+            {chargedInfo.email &&
+            notificationSettingsData.receiptEmailEnabled &&
+            emailConfigured ? (
+              <button
+                onClick={handleSendReceipt}
+                disabled={sendingReceipt}
+                className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-green-600 py-2.5 text-sm font-medium text-green-700 hover:bg-green-100 disabled:opacity-60 dark:text-green-400 dark:hover:bg-green-900/20"
+              >
+                <Mail className="h-4 w-4" /> {sendingReceipt ? "Sending…" : "Email Receipt"}
+              </button>
+            ) : !chargedInfo.email ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                No email on file for this customer — can't send a receipt.
+              </p>
+            ) : !notificationSettingsData.receiptEmailEnabled ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Receipt email is off — enable it in Settings → Notifications.
+              </p>
+            ) : (
+              <p className="mt-2 text-xs text-amber-600">
+                Receipt email isn't configured on the server yet.
+              </p>
+            )}
           </div>
         )}
 

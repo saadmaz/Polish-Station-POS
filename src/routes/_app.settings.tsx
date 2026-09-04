@@ -11,6 +11,7 @@ import type { BusinessInfo, Service, ServiceCategory, BookingRules } from "@/lib
 import { formatCurrency } from "@/lib/currency";
 import { formatDateTime } from "@/lib/date-format";
 import { useConfirm } from "@/hooks/use-confirm";
+import { getEmailProviderStatusFn } from "@/server/notifications";
 import {
   Building2,
   Tag,
@@ -73,7 +74,12 @@ const SECTIONS = [
     name: "Devices",
     desc: "Enroll and revoke tills for offline PIN login",
   },
-  { id: "notify", icon: Bell, name: "Notifications", desc: "SMS, Email, WhatsApp templates" },
+  {
+    id: "notify",
+    icon: Bell,
+    name: "Notifications",
+    desc: "Receipt email on/off. Message templates and WhatsApp/SMS deep-links are at /notifications.",
+  },
   {
     id: "audit",
     icon: ScrollText,
@@ -660,62 +666,70 @@ function BookingRulesPanel() {
   );
 }
 
-const NOTIFY_KEY = "ps_notify_settings";
-const NOTIFY_DEFAULTS: Record<string, boolean> = {
-  "SMS: Booking Confirmation": true,
-  "SMS: Ready for Pickup": true,
-  "Email: Receipt": true,
-  "WhatsApp: Before/After Photos": true,
-  "Email: Marketing Campaigns": false,
-};
-
-function loadNotify(): Record<string, boolean> {
-  try {
-    return { ...NOTIFY_DEFAULTS, ...JSON.parse(localStorage.getItem(NOTIFY_KEY) ?? "{}") };
-  } catch {
-    return { ...NOTIFY_DEFAULTS };
-  }
-}
-
+// Real, Firestore-backed (settings/notifications doc, same
+// notificationSettingsData/saveNotificationSettings the real /notifications
+// page's templates already use). Down to the one toggle that survived an
+// audit of this panel: SMS (no provider anywhere in this codebase),
+// WhatsApp-photo-attachments (wa.me deep links are text-only, no media
+// capability exists), and bulk marketing email (would need a whole campaign
+// composer + unsubscribe compliance, not built) were all removed rather than
+// shipped as switches that do nothing -- see src/server/notifications.ts.
 function NotifyPanel() {
-  const [channels, setChannels] = useState<Record<string, boolean>>(loadNotify);
+  const { notificationSettingsData, saveNotificationSettings } = useStore();
+  const [emailConfigured, setEmailConfigured] = useState(false);
+  const [checkingProvider, setCheckingProvider] = useState(true);
 
-  function toggle(name: string) {
-    setChannels((prev) => {
-      const next = { ...prev, [name]: !prev[name] };
-      localStorage.setItem(NOTIFY_KEY, JSON.stringify(next));
-      return next;
-    });
+  useEffect(() => {
+    getEmailProviderStatusFn()
+      .then((r) => setEmailConfigured(r.configured))
+      .catch(() => setEmailConfigured(false))
+      .finally(() => setCheckingProvider(false));
+  }, []);
+
+  const on = notificationSettingsData.receiptEmailEnabled;
+  // Never render an enabled-looking switch for an unconfigured channel: stay
+  // disabled while the check is in flight, not just once it resolves false.
+  const disabled = checkingProvider || !emailConfigured;
+
+  function toggle() {
+    if (disabled) return;
+    saveNotificationSettings({ ...notificationSettingsData, receiptEmailEnabled: !on });
   }
 
   return (
     <>
-      <SectionTitle title="Notifications" desc="Toggle outbound channels and message templates." />
-      <div className="divide-y divide-border">
-        {Object.keys(NOTIFY_DEFAULTS).map((name) => {
-          const on = channels[name] ?? NOTIFY_DEFAULTS[name];
-          return (
-            <div key={name} className="flex items-center justify-between py-3">
-              <span className="text-sm">{name}</span>
-              <button
-                role="switch"
-                aria-checked={on}
-                onClick={() => toggle(name)}
-                className={cn(
-                  "inline-flex h-6 w-11 items-center rounded-full p-0.5 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40",
-                  on ? "bg-primary" : "bg-muted",
-                )}
-              >
-                <span
-                  className={cn(
-                    "h-5 w-5 rounded-full bg-white shadow transition-transform",
-                    on ? "translate-x-5" : "translate-x-0",
-                  )}
-                />
-              </button>
-            </div>
-          );
-        })}
+      <SectionTitle
+        title="Notifications"
+        desc="One real channel: a receipt email staff can send from POS after checkout. Everything else here (SMS, WhatsApp photos, marketing campaigns) had no backing provider or capability and was removed rather than left as a switch that does nothing."
+      />
+      <div className="flex items-center justify-between py-3">
+        <div>
+          <span className="text-sm">Email: Receipt</span>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            {checkingProvider
+              ? "Checking email provider…"
+              : emailConfigured
+                ? "Staff-initiated, sent from POS after checkout. Not sent automatically."
+                : "Not configured — RESEND_API_KEY is missing on the server."}
+          </p>
+        </div>
+        <button
+          role="switch"
+          aria-checked={on}
+          disabled={disabled}
+          onClick={toggle}
+          className={cn(
+            "inline-flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-40",
+            on && !disabled ? "bg-primary" : "bg-muted",
+          )}
+        >
+          <span
+            className={cn(
+              "h-5 w-5 rounded-full bg-white shadow transition-transform",
+              on && !disabled ? "translate-x-5" : "translate-x-0",
+            )}
+          />
+        </button>
       </div>
     </>
   );
