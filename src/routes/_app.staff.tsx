@@ -59,11 +59,10 @@ function StaffPage() {
                 </div>
               </div>
             </div>
-            <div className="mt-3 flex justify-between text-[11px] text-muted-foreground border-t border-border pt-3">
+            <div className="mt-3 text-[11px] text-muted-foreground border-t border-border pt-3">
               <span>
                 User · <span className="font-mono">{s.username || "—"}</span>
               </span>
-              <span>Shift · 08:00 – 18:00</span>
             </div>
           </div>
         ))}
