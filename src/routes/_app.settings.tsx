@@ -18,10 +18,7 @@ import {
   Calendar,
   ShieldCheck,
   Bell,
-  Link2,
   ScrollText,
-  Check,
-  X,
   Download,
   Plus,
   Trash2,
@@ -78,12 +75,6 @@ const SECTIONS = [
   },
   { id: "notify", icon: Bell, name: "Notifications", desc: "SMS, Email, WhatsApp templates" },
   {
-    id: "integrations",
-    icon: Link2,
-    name: "Integrations",
-    desc: "Payment terminal, QuickBooks, Google Calendar",
-  },
-  {
     id: "audit",
     icon: ScrollText,
     name: "Audit Log",
@@ -126,7 +117,6 @@ function Settings() {
           {active === "access" && <AccessPanel />}
           {active === "devices" && <DevicesPanel />}
           {active === "notify" && <NotifyPanel />}
-          {active === "integrations" && <IntegrationsPanel />}
           {active === "audit" && <AuditPanel />}
         </div>
       </div>
@@ -655,46 +645,6 @@ function NotifyPanel() {
             </div>
           );
         })}
-      </div>
-    </>
-  );
-}
-
-function IntegrationsPanel() {
-  const apps = [
-    { name: "Stripe Terminal", connected: true, desc: "Card-present payments" },
-    { name: "QuickBooks Online", connected: true, desc: "Daily revenue sync" },
-    { name: "Google Calendar", connected: false, desc: "Two-way booking sync" },
-    { name: "WhatsApp Business API", connected: true, desc: "Customer messaging" },
-    { name: "Mailchimp", connected: false, desc: "Email marketing" },
-  ];
-  return (
-    <>
-      <SectionTitle title="Integrations" desc="Connect Polish Station OS to external services." />
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {apps.map((a) => (
-          <div
-            key={a.name}
-            className="flex items-center justify-between rounded-lg border border-border p-4"
-          >
-            <div>
-              <div className="font-display font-bold">{a.name}</div>
-              <div className="text-xs text-muted-foreground">{a.desc}</div>
-            </div>
-            {a.connected ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-success/15 text-success border border-success/30 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider">
-                <Check className="h-3 w-3" /> Connected
-              </span>
-            ) : (
-              <button
-                onClick={() => toast.info(`${a.name} integration isn't available yet.`)}
-                className="inline-flex items-center gap-1 rounded-md border border-input px-3 py-1.5 text-xs hover:bg-accent"
-              >
-                <X className="h-3 w-3" /> Connect
-              </button>
-            )}
-          </div>
-        ))}
       </div>
     </>
   );
