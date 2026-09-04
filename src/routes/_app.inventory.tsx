@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useStore } from "@/lib/store";
+import { useAuth } from "@/lib/auth";
+import { isManagerOrAbove } from "@/lib/permissions";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
 import { Plus, Pencil, Trash2, Minus, X, Search } from "lucide-react";
@@ -235,6 +237,12 @@ function AdjustWidget({ item }: { item: InventoryItem }) {
 
 function Inventory() {
   const { inventory, upsertInventoryItem, deleteInventoryItem } = useStore();
+  const { staff } = useAuth();
+  // Matches firestore.rules: a non-Manager inventory-module holder may only
+  // adjust stock (the Adjust widget below), never edit an item's other
+  // fields or add/delete items outright -- see Finding 4,
+  // [[project_firestore_rules_audit]].
+  const canManage = isManagerOrAbove(staff?.role);
   const [formMode, setFormMode] = useState<null | "add" | InventoryItem>(null);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All");
@@ -283,14 +291,14 @@ function Inventory() {
         title="Inventory"
         subtitle={`${inventory.length} SKUs · ${formatCurrency(totalValue)} on hand`}
         actions={
-          <>
+          canManage && (
             <button
               onClick={() => setFormMode("add")}
               className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90"
             >
               <Plus className="h-4 w-4" /> Add Item
             </button>
-          </>
+          )
         }
       />
 
@@ -396,22 +404,24 @@ function Inventory() {
                     <AdjustWidget item={i} />
                   </td>
                   <td className="px-3 py-3">
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => setFormMode(i)}
-                        className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                        title="Edit"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(i.id, i.name)}
-                        className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-primary"
-                        title="Delete"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
+                    {canManage && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setFormMode(i)}
+                          className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          title="Edit"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(i.id, i.name)}
+                          className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-primary"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               );

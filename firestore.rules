@@ -30,24 +30,27 @@ service cloud.firestore {
     }
 
     // ── Staff ─────────────────────────────────────────────────────────────
-    // PROPOSED TIGHTENING (see [[project_firestore_rules_audit]] Finding 1) --
-    // NOT YET DEPLOYED. Was: read if owner OR Manager+. This doc holds
-    // `pinHash` (bcrypt) plus the offline-unlock AES-GCM blob fields, and
-    // Firestore has no field-level read restriction -- reading the doc at
-    // all means downloading those, whether the caller's code uses them or
-    // not. A 4-digit PIN space is brute-forceable offline from a bcrypt
-    // hash in minutes, so the old Manager+ grant let any Manager read (and
-    // offline-crack) every other staff member's PIN, including superiors' --
-    // a Manager -> SuperAdmin escalation path. Narrowed to owner-only.
-    // BREAKS: access-panel.tsx's unfiltered `getDocs(collection(db,"staff"))`
-    // (the Staff & Access list) -- a Manager+ can no longer bulk-read this
-    // collection at all under this rule (Firestore denies a list query it
-    // can't prove holds for every possible matched doc, and non-owner reads
-    // no longer hold for anyone). Fixing that call site requires reading
-    // `staff_public` instead, which needs a `permissions` field added there
-    // (an app-code + server-side change, not made in this rules-only pass).
-    // Does NOT break offline-auth.ts's own-doc blob fetch -- the owner-read
-    // clause is unchanged.
+    // DRAFTED + TESTED, NOT YET DEPLOYED (see
+    // [[project_firestore_rules_audit]] Finding 1 and
+    // [[project_firestore_rules_deploy_2026_09_05]]). Findings 2/4/5 shipped
+    // 2026-09-05; this one was deliberately held back from that deploy
+    // because owner-only read breaks access-panel.tsx's Staff & Access list
+    // for every Manager+ until the app itself is redeployed with the fix
+    // already written in this session's code (staff_public read instead of
+    // bulk staff read, plus createStaffFn/updateStaffFn now writing
+    // `permissions` onto staff_public, plus
+    // scripts/migrate-staff-public-permissions.ts to backfill existing
+    // accounts). This file holds the TARGET rule below; deploy the app
+    // FIRST, then run `npm run deploy:rules` again to actually ship this.
+    //
+    // Reasoning: this doc holds `pinHash` (bcrypt) plus the offline-unlock
+    // AES-GCM blob fields, and Firestore has no field-level read restriction
+    // -- reading the doc at all means downloading those, whether the
+    // caller's code uses them or not. A 4-digit PIN space is brute-forceable
+    // offline from a bcrypt hash in minutes, so the Manager+ grant this
+    // replaces let any Manager read (and offline-crack) every other staff
+    // member's PIN, including superiors' -- a Manager -> SuperAdmin
+    // escalation path.
     match /staff/{staffId} {
       allow read: if isAuth() && request.auth.uid == staffId;
       allow write: if false;
@@ -91,11 +94,27 @@ service cloud.firestore {
     // ── Audit log ─────────────────────────────────────────────────────────
     // Append-only. No updates or deletes — ever. A create must be attributed
     // to the caller's own uid, so no staff member can forge log lines in a
-    // colleague's name.
+    // colleague's name. TIGHTENED (see [[project_firestore_rules_audit]]
+    // Finding 5, deployed [[project_firestore_rules_deploy_2026_09_05]]) --
+    // the attribution check
+    // alone didn't constrain the logged CONTENT at all: a caller could
+    // attribute an entry to themselves honestly and still write `action`/
+    // `entity` as anything (wrong type, empty, garbage), which would corrupt
+    // the one place this app's own security/access history is read from.
+    // Now requires the shape store.tsx's logAudit() always writes; `before`/
+    // `after` stay untyped (they're genuinely `unknown`, and can legitimately
+    // be null), just required present.
     match /audit/{logId} {
-      allow read:             if isManagerOrAbove();
-      allow create:           if isAuth() && request.resource.data.staffId == request.auth.uid;
-      allow update, delete:   if false;
+      allow read:   if isManagerOrAbove();
+      allow create: if isAuth() && request.resource.data.staffId == request.auth.uid
+                    && request.resource.data.staffName is string
+                    && request.resource.data.action is string && request.resource.data.action.size() > 0
+                    && request.resource.data.entity is string && request.resource.data.entity.size() > 0
+                    && request.resource.data.entityId is string
+                    && request.resource.data.createdAt is string
+                    && request.resource.data.keys().hasAll(
+                         ["staffId", "staffName", "action", "entity", "entityId", "before", "after", "createdAt"]);
+      allow update, delete: if false;
     }
 
     // ── Sequential-ID counters ────────────────────────────────────────────
@@ -119,10 +138,11 @@ service cloud.firestore {
     }
 
     // ── Invoices ──────────────────────────────────────────────────────────
-    // PROPOSED TIGHTENING (see [[project_firestore_rules_audit]] Finding 2) --
-    // NOT YET DEPLOYED. Was: create/update gated on role/module only, no
-    // field validation at all -- a Cashier could set total/status/payments
-    // to anything via the same client SDK the app already loads, including
+    // TIGHTENED (see [[project_firestore_rules_audit]] Finding 2, deployed
+    // [[project_firestore_rules_deploy_2026_09_05]]). Was: create/update
+    // gated on role/module only, no field validation at all -- a Cashier
+    // could set total/status/payments to anything via the same client SDK
+    // the app already loads, including
     // marking an invoice Paid with no real payment, or a bare Manager-only
     // UI gate on refunds that this rule never actually enforced. Every
     // legitimate write path (store.tsx's addInvoice/recordInvoicePayment/
@@ -186,11 +206,24 @@ service cloud.firestore {
 
     // Append-only transition log — same pattern as `audit`: no update or
     // delete, ever, and a create must be attributed to the caller's own uid
-    // so no staff member can forge an event in a colleague's name.
+    // so no staff member can forge an event in a colleague's name. TIGHTENED
+    // (see [[project_firestore_rules_audit]] Finding 5, deployed
+    // [[project_firestore_rules_deploy_2026_09_05]]) -- same
+    // gap as `audit` above: attribution alone didn't constrain the logged
+    // content. Now requires the shape job.ts's buildTransitionEvent() always
+    // produces; `fromStatus`/`note` stay untyped beyond key presence (both
+    // are legitimately nullable -- fromStatus is null only for the creation
+    // event, note is optional).
     match /jobEvents/{eventId} {
       allow read:   if isAuth();
       allow create: if hasModule("pos") && (isManagerOrAbove() || role() in ["Cashier", "Advisor"])
-                    && request.resource.data.actorId == request.auth.uid;
+                    && request.resource.data.actorId == request.auth.uid
+                    && request.resource.data.actorName is string
+                    && request.resource.data.jobId is string && request.resource.data.jobId.size() > 0
+                    && request.resource.data.toStatus is string && request.resource.data.toStatus.size() > 0
+                    && request.resource.data.at is string
+                    && request.resource.data.keys().hasAll(
+                         ["jobId", "fromStatus", "toStatus", "actorId", "actorName", "at", "note"]);
       allow update, delete: if false;
     }
 
@@ -244,13 +277,30 @@ service cloud.firestore {
     // ── Coupons ───────────────────────────────────────────────────────────
     // Read is open to any signed-in user so POS checkout (Cashier/Advisor)
     // can validate a code. Creating/deleting coupon terms is a Manager+
-    // action; `update` is left to any customers-module holder because
-    // redeeming a coupon at checkout only bumps redeemedCount — same
-    // looseness as inventory's "any module holder may adjust quantities".
+    // action. TIGHTENED (see [[project_firestore_rules_audit]] Finding 4,
+    // deployed [[project_firestore_rules_deploy_2026_09_05]]) -- update used
+    // to be open to any customers-module holder
+    // for every field, not just the redemption bump the comment claimed:
+    // the UI (_app.customers.tsx CouponsPanel) already gates full edits and
+    // the active toggle behind Manager+ (`canManage`), so a non-Manager
+    // customers-module holder (e.g. a default-permissioned Advisor) could
+    // previously bypass that UI gate via the client SDK directly and rewrite
+    // a coupon's discount value/type/expiry/active. Now a non-Manager update
+    // may only grow `redeemedCount` (the real checkout-redemption write,
+    // store.tsx's addInvoice batch) with every other field held identical;
+    // Manager+ keeps full update rights for the edit form / active toggle.
     match /coupons/{couponId} {
       allow read:   if isAuth();
       allow create: if hasModule("customers") && isManagerOrAbove();
-      allow update: if hasModule("customers");
+      allow update: if hasModule("customers")
+                    && (isManagerOrAbove() ||
+                        (request.resource.data.code == resource.data.code
+                          && request.resource.data.type == resource.data.type
+                          && request.resource.data.value == resource.data.value
+                          && request.resource.data.active == resource.data.active
+                          && request.resource.data.expiresAt == resource.data.expiresAt
+                          && request.resource.data.maxRedemptions == resource.data.maxRedemptions
+                          && request.resource.data.redeemedCount > resource.data.redeemedCount));
       allow delete: if hasModule("customers") && isManagerOrAbove();
     }
 
@@ -261,12 +311,24 @@ service cloud.firestore {
     }
 
     // ── Inventory ─────────────────────────────────────────────────────────
+    // TIGHTENED (see [[project_firestore_rules_audit]] Finding 4, deployed
+    // [[project_firestore_rules_deploy_2026_09_05]]) -- was: any
+    // inventory-module holder (e.g. a default-permissioned
+    // Advisor) could edit every field via the client SDK, including cost/
+    // supplier/reorder-threshold/name, with no UI gate at all (unlike
+    // coupons, which already gated this in the UI). Decision: restrict full
+    // edits to Manager+ here AND add a matching UI gate in _app.inventory.tsx
+    // (done alongside this change). Non-Managers keep exactly what the old
+    // comment always claimed was the intent -- adjusting `stock` (and the
+    // `lastUpdated` timestamp that always accompanies it) via the Adjust
+    // widget's store.tsx adjustStock(), nothing else.
     match /inventory/{itemId} {
       allow read:   if isAuth();
       allow create: if hasModule("inventory") && isManagerOrAbove();
-      // Technicians consume stock while working a job, so any holder of the
-      // inventory module may adjust quantities.
-      allow update: if hasModule("inventory");
+      allow update: if hasModule("inventory")
+                    && (isManagerOrAbove() ||
+                        (request.resource.data.diff(resource.data).affectedKeys()
+                          .hasOnly(["stock", "lastUpdated"])));
       allow delete: if hasModule("inventory") && isManagerOrAbove();
     }
 

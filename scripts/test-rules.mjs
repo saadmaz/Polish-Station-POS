@@ -48,6 +48,19 @@ const cashierNoPos = ctx("cash1", "Cashier", ["dashboard"]); // POS revoked
 const cashierPos = ctx("cash2", "Cashier", ["pos", "dashboard"]);
 const advisorLeads = ctx("adv1", "Advisor", ["leads", "dashboard"]);
 const advisorNoLeads = ctx("adv2", "Advisor", ["dashboard"]); // leads revoked
+// Default-permissioned Advisor (mirrors ROLE_DEFAULT_PERMISSIONS.Advisor) --
+// holds "customers" and "inventory" but is NOT Manager+, the exact profile
+// Finding 4's coupons/inventory field-restriction tests need.
+const advisorDefault = ctx("adv3", "Advisor", [
+  "dashboard",
+  "bookings",
+  "customers",
+  "leads",
+  "pos",
+  "inventory",
+  "equipment",
+  "notifications",
+]);
 const anon = env.unauthenticatedContext().firestore();
 
 let pass = 0,
@@ -74,7 +87,14 @@ await env.withSecurityRulesDisabled(async (c) => {
   // Shaped like a real addInvoice() write (see store.tsx) -- used to test
   // the tightened update rule against realistic full-document overwrites,
   // not just the legacy bare-total seed above.
-  const freshInvoice = { total: 100, subtotal: 100, lines: [], status: "Issued", payments: [], refunds: [] };
+  const freshInvoice = {
+    total: 100,
+    subtotal: 100,
+    lines: [],
+    status: "Issued",
+    payments: [],
+    refunds: [],
+  };
   await setDoc(doc(d, "invoices/inv2"), freshInvoice);
   // Separate docs per update-rule test below -- each assertSucceeds test
   // actually mutates emulator state, so sharing one doc across assertions
@@ -89,6 +109,33 @@ await env.withSecurityRulesDisabled(async (c) => {
   await setDoc(doc(d, "invoices/inv5"), freshInvoice);
   await setDoc(doc(d, "invoices/inv6"), freshInvoice);
   await setDoc(doc(d, "purchaseOrders/po1"), { total: 5 });
+  // Shaped like a real Coupon (see db.ts) / InventoryItem doc -- used for
+  // Finding 4's field-restriction tests below.
+  const freshCoupon = {
+    code: "SAVE10",
+    type: "percent",
+    value: 10,
+    active: true,
+    expiresAt: null,
+    maxRedemptions: null,
+    redeemedCount: 0,
+  };
+  await setDoc(doc(d, "coupons/c1"), freshCoupon);
+  await setDoc(doc(d, "coupons/c2"), freshCoupon);
+  await setDoc(doc(d, "coupons/c3"), freshCoupon);
+  const freshInventoryItem = {
+    name: "Microfiber Towel",
+    sku: "MF-1",
+    category: "Microfiber",
+    unit: "pc",
+    stock: 100,
+    reorder: 20,
+    cost: 350,
+    supplier: "Local Textiles",
+    lastUpdated: "then",
+  };
+  await setDoc(doc(d, "inventory/i1"), freshInventoryItem);
+  await setDoc(doc(d, "inventory/i2"), freshInventoryItem);
   await setDoc(doc(d, "settings/notifications"), { x: 1 });
   await setDoc(doc(d, "leads/lead1"), { name: "Test Lead", type: "contact", status: "new" });
   await setDoc(doc(d, "newsletterSubscribers/a@example.com"), {
@@ -102,7 +149,10 @@ console.log("\nStaff roster & username index:");
 // is a staff picker and must show this roster before anyone is signed in
 // (see the rule's own comment). Pre-existing stale assertion from before that
 // picker existed; not part of Findings 1/2, tracked separately as Finding 3.
-await check("anon CAN read staff_public (intentional, login picker)", assertSucceeds(getDoc(doc(anon, "staff_public/ad"))));
+await check(
+  "anon CAN read staff_public (intentional, login picker)",
+  assertSucceeds(getDoc(doc(anon, "staff_public/ad"))),
+);
 await check(
   "authed user CAN read staff_public",
   assertSucceeds(getDoc(doc(cashierNoPos, "staff_public/ad"))),
@@ -303,14 +353,134 @@ await check(
   assertFails(getDoc(doc(managerPos, "purchaseOrders/po1"))),
 );
 
+console.log("\nPROPOSED (Finding 4): coupon update is field-restricted for non-Managers:");
+await check(
+  "advisor (customers module, non-Manager) CAN redeem a coupon (redeemedCount grows only)",
+  assertSucceeds(
+    setDoc(doc(advisorDefault, "coupons/c1"), {
+      code: "SAVE10",
+      type: "percent",
+      value: 10,
+      active: true,
+      expiresAt: null,
+      maxRedemptions: null,
+      redeemedCount: 1,
+    }),
+  ),
+);
+await check(
+  "advisor (non-Manager) CANNOT rewrite a coupon's value while updating",
+  assertFails(
+    setDoc(doc(advisorDefault, "coupons/c2"), {
+      code: "SAVE10",
+      type: "percent",
+      value: 99,
+      active: true,
+      expiresAt: null,
+      maxRedemptions: null,
+      redeemedCount: 1,
+    }),
+  ),
+);
+await check(
+  "advisor (non-Manager) CANNOT toggle a coupon's active flag",
+  assertFails(
+    setDoc(doc(advisorDefault, "coupons/c3"), {
+      code: "SAVE10",
+      type: "percent",
+      value: 10,
+      active: false,
+      expiresAt: null,
+      maxRedemptions: null,
+      redeemedCount: 0,
+    }),
+  ),
+);
+await check(
+  "admin (Manager+, holds every module) CAN rewrite a coupon's value directly",
+  assertSucceeds(
+    setDoc(doc(admin, "coupons/c3"), {
+      code: "SAVE10",
+      type: "percent",
+      value: 25,
+      active: false,
+      expiresAt: null,
+      maxRedemptions: null,
+      redeemedCount: 0,
+    }),
+  ),
+);
+
+console.log("\nPROPOSED (Finding 4): inventory full edit is Manager+ only, others adjust stock:");
+await check(
+  "advisor (inventory module, non-Manager) CAN adjust stock",
+  assertSucceeds(
+    setDoc(doc(advisorDefault, "inventory/i1"), {
+      name: "Microfiber Towel",
+      sku: "MF-1",
+      category: "Microfiber",
+      unit: "pc",
+      stock: 90,
+      reorder: 20,
+      cost: 350,
+      supplier: "Local Textiles",
+      lastUpdated: "now",
+    }),
+  ),
+);
+await check(
+  "advisor (non-Manager) CANNOT change an item's cost while adjusting stock",
+  assertFails(
+    setDoc(doc(advisorDefault, "inventory/i2"), {
+      name: "Microfiber Towel",
+      sku: "MF-1",
+      category: "Microfiber",
+      unit: "pc",
+      stock: 90,
+      reorder: 20,
+      cost: 999,
+      supplier: "Local Textiles",
+      lastUpdated: "now",
+    }),
+  ),
+);
+await check(
+  "admin (Manager+, holds every module) CAN edit an item's cost directly",
+  assertSucceeds(
+    setDoc(doc(admin, "inventory/i2"), {
+      name: "Microfiber Towel",
+      sku: "MF-1",
+      category: "Microfiber",
+      unit: "pc",
+      stock: 100,
+      reorder: 20,
+      cost: 999,
+      supplier: "Local Textiles",
+      lastUpdated: "now",
+    }),
+  ),
+);
+
 console.log("\nAudit log: append-only, attributed to the caller's own uid:");
+// Realistic full shape, matching store.tsx's logAudit() -- needed since
+// Finding 5 now validates content, not just attribution (see below).
+const fullAuditEntry = (staffId) => ({
+  staffId,
+  staffName: "cash2",
+  action: "X",
+  entity: "Test",
+  entityId: "e1",
+  before: null,
+  after: { ok: true },
+  createdAt: "now",
+});
 await check(
   "audit create with own staffId succeeds",
-  assertSucceeds(setDoc(doc(cashierPos, "audit/a1"), { staffId: "cash2", action: "X" })),
+  assertSucceeds(setDoc(doc(cashierPos, "audit/a1"), fullAuditEntry("cash2"))),
 );
 await check(
   "audit create attributed to ANOTHER uid is rejected",
-  assertFails(setDoc(doc(cashierPos, "audit/a2"), { staffId: "mgr", action: "X" })),
+  assertFails(setDoc(doc(cashierPos, "audit/a2"), fullAuditEntry("mgr"))),
 );
 await check(
   "audit create without staffId is rejected",
@@ -321,6 +491,53 @@ await check(
   assertFails(setDoc(doc(admin, "audit/a1"), { staffId: "ad", action: "TAMPERED" })),
 );
 await check("audit entries can never be deleted", assertFails(deleteDoc(doc(admin, "audit/a1"))));
+
+console.log("\nPROPOSED (Finding 5): audit content must look like a real log entry:");
+await check(
+  "cashier CANNOT create an audit entry with a non-string action",
+  assertFails(setDoc(doc(cashierPos, "audit/bad1"), { ...fullAuditEntry("cash2"), action: 123 })),
+);
+await check(
+  "cashier CANNOT create an audit entry with an empty entity",
+  assertFails(setDoc(doc(cashierPos, "audit/bad2"), { ...fullAuditEntry("cash2"), entity: "" })),
+);
+await check(
+  "cashier CANNOT create an audit entry missing entityId",
+  assertFails(
+    (() => {
+      const e = fullAuditEntry("cash2");
+      delete e.entityId;
+      return setDoc(doc(cashierPos, "audit/bad3"), e);
+    })(),
+  ),
+);
+
+console.log("\nPROPOSED (Finding 5): jobEvents content must look like a real transition:");
+const fullJobEvent = (actorId) => ({
+  jobId: "J-1",
+  fromStatus: null,
+  toStatus: "booked",
+  actorId,
+  actorName: "cash2",
+  at: "now",
+  note: null,
+});
+await check(
+  "cashier WITH pos perm CAN create a well-formed jobEvent",
+  assertSucceeds(setDoc(doc(cashierPos, "jobEvents/je1"), fullJobEvent("cash2"))),
+);
+await check(
+  "cashier CANNOT create a jobEvent attributed to another uid",
+  assertFails(setDoc(doc(cashierPos, "jobEvents/je2"), fullJobEvent("mgr"))),
+);
+await check(
+  "cashier CANNOT create a jobEvent with an empty toStatus",
+  assertFails(setDoc(doc(cashierPos, "jobEvents/je3"), { ...fullJobEvent("cash2"), toStatus: "" })),
+);
+await check(
+  "cashier WITHOUT pos perm cannot create a jobEvent at all",
+  assertFails(setDoc(doc(cashierNoPos, "jobEvents/je4"), fullJobEvent("cash1"))),
+);
 
 console.log("\nSequential-ID counters:");
 await check(

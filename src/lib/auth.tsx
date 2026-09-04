@@ -213,6 +213,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(ACTIVITY_KEY, Date.now().toString());
   }, [logout]);
 
+  // Used where a session is being (re)established without the user having
+  // just performed a real action -- a silent Firebase-persisted-session
+  // restore or cookie-based auto-resume on mount/reload -- as opposed to
+  // resetTimer, which stamps a fresh full window for genuine activity (a
+  // real login, a real interaction). Honors time already spent idle before
+  // the tab was closed/reloaded, read back from ACTIVITY_KEY, instead of
+  // silently granting a full new SESSION_TIMEOUT_MS on every reload
+  // regardless of how long the tab was actually gone -- previously
+  // ACTIVITY_KEY was write-only (never read back), so closing and reopening
+  // a tab reset the inactivity clock to zero no matter how long it had
+  // actually been.
+  const resumeTimer = useCallback(() => {
+    const stored = Number(localStorage.getItem(ACTIVITY_KEY));
+    if (!Number.isFinite(stored) || stored <= 0) {
+      resetTimer();
+      return;
+    }
+    const elapsed = Date.now() - stored;
+    if (elapsed >= SESSION_TIMEOUT_MS) {
+      void logout();
+      return;
+    }
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(logout, SESSION_TIMEOUT_MS - elapsed);
+    // Deliberately doesn't touch ACTIVITY_KEY: no real activity happened
+    // here, just the tab (re)mounting.
+  }, [logout, resetTimer]);
+
   const touchActivity = useCallback(() => resetTimer(), [resetTimer]);
 
   // changeOwnPinFn now applies its Firebase Auth claims update best-effort,
@@ -260,7 +288,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
           setMustChangePin(!!claims.mustChangePin);
           setIsOffline(false); // a real token always supersedes any offline session
-          resetTimer();
+          // Not resetTimer(): this handler fires both for a genuine fresh
+          // login and for Firebase silently restoring a persisted session on
+          // reload -- resumeTimer tells them apart via ACTIVITY_KEY (falls
+          // back to a fresh full window when there's no stored activity).
+          resumeTimer();
 
           // Cosmetics + deactivation sweep off the critical path: fetch the
           // public profile in the background for the real colour, and sign
@@ -296,7 +328,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return unsub;
-  }, [resetTimer, resumeChecked]);
+  }, [resumeTimer, resumeChecked]);
 
   // Cookie-based auto-resume: on every mount (including a reload), the
   // session cookie is the actual source of truth for whether this device

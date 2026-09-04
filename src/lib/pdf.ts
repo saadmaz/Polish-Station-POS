@@ -20,43 +20,64 @@ const BANK_ACCOUNT_NO = "1000 923 474";
 const BANK_ACCOUNT_NAME = "STOPWASH PVT LTD";
 const BANK_NAME = "Commercial Bank";
 
-// Header: address + clickable website only, no phone number.
+// Header: address, clickable website, and (as a mailto link) the
+// settings/business email -- there's ample width here (this line alone,
+// nothing else shares it), unlike the denser footer contact line below.
 function drawHeaderContact(doc: jsPDF, x: number, y: number) {
-  const addressPart = `${getBusinessInfo().address}  ·  `;
+  const info = getBusinessInfo();
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
   doc.setTextColor(255, 220, 220);
-  doc.text(addressPart, x, y);
-  doc.textWithLink(WEBSITE_LABEL, x + doc.getTextWidth(addressPart), y, { url: WEBSITE_URL });
+  let cx = x;
+  const put = (text: string, url?: string) => {
+    if (url) doc.textWithLink(text, cx, y, { url });
+    else doc.text(text, cx, y);
+    cx += doc.getTextWidth(text);
+  };
+  put(`${info.address}  ·  `);
+  put(WEBSITE_LABEL, WEBSITE_URL);
+  if (info.email) {
+    put("  ·  ");
+    put(info.email, `mailto:${info.email}`);
+  }
 }
 
-// Footer: address, clickable website, and both contact numbers — no email.
-// Built as a sequence of segments (each measured before the next is placed)
-// rather than one joined string, so the pipe separators land at consistent
-// gaps regardless of how wide any one segment renders.
+// Footer: address, clickable website, both contact numbers, and opening
+// hours -- NOT email, which already has room on the header line above but
+// would overflow the page margin if appended here too (measured: this line
+// already reaches ~145mm of the ~178mm available before hours; adding both
+// hours and email pushes it past the page edge entirely). Built as a
+// sequence of segments (each measured before the next is placed) rather
+// than one joined string, so the pipe separators land at consistent gaps
+// regardless of how wide any one segment renders.
 function drawFooterContact(doc: jsPDF, x: number, y: number, color: [number, number, number]) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
   let cx = x;
   const sep = "   |   ";
 
-  const put = (text: string, isLink = false) => {
+  const put = (text: string, url?: string) => {
     doc.setTextColor(...color);
-    if (isLink) {
-      doc.textWithLink(text, cx, y, { url: WEBSITE_URL });
+    if (url) {
+      doc.textWithLink(text, cx, y, { url });
     } else {
       doc.text(text, cx, y);
     }
     cx += doc.getTextWidth(text);
   };
 
-  put(getBusinessInfo().address);
+  const info = getBusinessInfo();
+  put(info.address);
   put(sep);
-  put(WEBSITE_LABEL, true);
+  put(WEBSITE_LABEL, WEBSITE_URL);
   put(sep);
   put(CONTACT_PHONE_1);
   put(sep);
   put(CONTACT_PHONE_2);
+  if (info.hours) {
+    put(sep);
+    put(info.hours);
+  }
 }
 
 // ─── Brand colours (RGB) ─────────────────────────────────────────────────────
@@ -409,15 +430,7 @@ function buildDoc(opts: DocOptions): jsPDF {
   const totalTextY = totalBoxTop + totalCapH + totalPadY; // text baseline, centred within the box
 
   doc.setFillColor(...RED);
-  doc.roundedRect(
-    TL - totalPadX,
-    totalBoxTop,
-    TV - TL + totalPadX * 2,
-    totalBoxH,
-    1.5,
-    1.5,
-    "F",
-  );
+  doc.roundedRect(TL - totalPadX, totalBoxTop, TV - TL + totalPadX * 2, totalBoxH, 1.5, 1.5, "F");
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
@@ -756,15 +769,7 @@ export function downloadPOPDF(po: PurchaseOrder) {
   const totalTextY = totalBoxTop + totalCapH + totalPadY;
 
   doc.setFillColor(...RED);
-  doc.roundedRect(
-    TL - totalPadX,
-    totalBoxTop,
-    TV - TL + totalPadX * 2,
-    totalBoxH,
-    1.5,
-    1.5,
-    "F",
-  );
+  doc.roundedRect(TL - totalPadX, totalBoxTop, TV - TL + totalPadX * 2, totalBoxH, 1.5, 1.5, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.setTextColor(...WHITE);

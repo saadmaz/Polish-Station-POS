@@ -147,6 +147,13 @@ export const createStaffFn = createServerFn({ method: "POST" })
           role: data.role,
           color: data.color,
           active: true,
+          // Lets access-panel.tsx's Staff & Access list read this collection
+          // instead of bulk-reading the private `staff` collection (which
+          // firestore.rules restricts to owner-only read -- see Finding 1 in
+          // [[project_firestore_rules_audit]]). Never anything more sensitive
+          // than a module-key list; pinHash/offline-unlock fields stay on the
+          // private `staff` doc only.
+          permissions,
         });
         return batch.commit();
       }, "staff create commit");
@@ -237,6 +244,7 @@ export const updateStaffFn = createServerFn({ method: "POST" })
         name: data.name,
         role: data.role,
         color: data.color,
+        permissions,
       });
       return batch.commit();
     }, "staff update commit");

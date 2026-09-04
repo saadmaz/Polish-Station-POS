@@ -118,7 +118,13 @@ export function AccessPanel() {
 
   const load = useCallback(async () => {
     try {
-      const snap = await getDocs(collection(db, "staff"));
+      // staff_public, not staff: the private `staff` collection is
+      // owner-only read under firestore.rules (Finding 1,
+      // [[project_firestore_rules_audit]] -- it holds pinHash and the
+      // offline-unlock blob, neither of which belongs in a bulk list read).
+      // staff_public carries everything this list actually displays,
+      // including `permissions` now that create/updateStaffFn write it there.
+      const snap = await getDocs(collection(db, "staff_public"));
       setRows(
         snap.docs
           .map((d) => {
