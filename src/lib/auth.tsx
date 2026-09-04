@@ -26,6 +26,7 @@ import {
   isDeviceEnrolled,
 } from "./offline-auth";
 import { createSessionFn, resumeSessionFn, logoutFn } from "@/server/sessions";
+import { SESSION_TIMEOUT_MS } from "./security-constants";
 
 // Re-exported so the many `import { type StaffRole } from "@/lib/auth"` call
 // sites keep working; permissions.ts is the definition.
@@ -73,7 +74,6 @@ interface AuthState {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15-minute inactivity timeout
 const ACTIVITY_KEY = "ps_last_activity";
 
 // ── Context ───────────────────────────────────────────────────────────────────

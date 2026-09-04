@@ -14,6 +14,12 @@ import {
 } from "lucide-react";
 import { db, auth as firebaseAuth } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth";
+import { SESSION_TIMEOUT_MS, LOCKOUT_THRESHOLD, LOCKOUT_BASE_MS } from "@/lib/security-constants";
+import {
+  formatSessionTimeout,
+  formatOfflineLockoutThreshold,
+  formatOfflineLockoutBackoff,
+} from "@/lib/security-stats";
 import { StatusChip } from "@/components/status-chip";
 import {
   createStaffFn,
@@ -174,10 +180,27 @@ export function AccessPanel() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         <Stat label="Auth Type" value="Username + PIN" mono />
-        <Stat label="Lockout Threshold" value="5 fails" />
-        <Stat label="Session Timeout" value="15 min" />
-        <Stat label="Lockout Duration" value="5 min" />
+        <Stat
+          label="Session Timeout"
+          value={formatSessionTimeout(SESSION_TIMEOUT_MS)}
+          hint="inactivity, any device"
+        />
+        <Stat
+          label="Offline PIN Lockout"
+          value={formatOfflineLockoutThreshold(LOCKOUT_THRESHOLD)}
+          hint="cached credential, this till only"
+        />
+        <Stat
+          label="Offline Lockout Backoff"
+          value={formatOfflineLockoutBackoff(LOCKOUT_BASE_MS)}
+          hint="cached credential, this till only"
+        />
       </div>
+      {/* The primary username+PIN login (Firebase email/password sign-in) has
+          no lockout this app controls or can source a number for -- it goes
+          straight to Firebase Auth's own undocumented auth/too-many-requests
+          throttle. No tile is shown for it rather than inventing one; see
+          src/lib/auth.tsx's mapFirebaseAuthError. */}
 
       {loading ? (
         <div className="flex justify-center py-10">
@@ -852,11 +875,22 @@ function ResetPinDialog({
 
 // ── Small building blocks ─────────────────────────────────────────────────────
 
-function Stat({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Stat({
+  label,
+  value,
+  mono,
+  hint,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+  hint?: string;
+}) {
   return (
     <div className="rounded-lg border border-border p-3">
       <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</div>
       <div className={cn("text-xl font-bold", mono ? "font-mono" : "font-display")}>{value}</div>
+      {hint && <div className="mt-0.5 text-[10px] text-muted-foreground">{hint}</div>}
     </div>
   );
 }

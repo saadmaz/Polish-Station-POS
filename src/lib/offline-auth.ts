@@ -20,6 +20,7 @@ import { doc, getDoc } from "firebase/firestore";
 import { db } from "./firebase";
 import { encryptOfflinePayload, decryptOfflinePayload, type OfflineBlob } from "./offline-crypto";
 import type { StaffRole, ModuleKey } from "./permissions";
+import { LOCKOUT_THRESHOLD, LOCKOUT_BASE_MS } from "./security-constants";
 
 export interface OfflineClaims {
   staffId: string;
@@ -39,8 +40,8 @@ const ATTEMPTS_PREFIX = "ps_offline_attempts_"; // + staffId
  *  reality on a till that's been offline the whole time. */
 const MAX_CACHE_AGE_MS = 72 * 60 * 60 * 1000;
 
-const LOCKOUT_THRESHOLD = 5;
-const LOCKOUT_BASE_MS = 30_000; // doubles per additional failure past the threshold
+// LOCKOUT_THRESHOLD/LOCKOUT_BASE_MS now live in ./security-constants (single
+// source of truth also read by the Staff & Access Stat tiles), imported above.
 
 interface WrappedCredential {
   issuedAt: number;
