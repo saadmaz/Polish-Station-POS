@@ -109,6 +109,11 @@ export interface InvoiceLine {
   qty: number;
   unitPrice: number;
   discount: number;
+  // Print-only: line total still comes from unitPrice * qty - discount as
+  // usual (so totals stay consistent), but the PDF leaves the UNIT PRICE
+  // cell blank for this row — e.g. a bundled/flat-rate line where a per-unit
+  // figure would only be a confusing rounding artifact of the total.
+  hideUnitPrice?: boolean;
 }
 
 export interface PaymentRecord {

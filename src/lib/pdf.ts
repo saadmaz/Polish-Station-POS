@@ -326,7 +326,9 @@ function buildDoc(opts: DocOptions): jsPDF {
     doc.text(String(line.qty), C2, y, { align: "right" });
 
     doc.setTextColor(...SLATE);
-    doc.text(fmt(line.unitPrice), C3, y, { align: "right" });
+    if (!line.hideUnitPrice) {
+      doc.text(fmt(line.unitPrice), C3, y, { align: "right" });
+    }
 
     if (line.discount > 0) {
       doc.setTextColor(200, 50, 50);
