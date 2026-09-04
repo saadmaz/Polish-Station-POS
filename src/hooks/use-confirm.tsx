@@ -28,6 +28,7 @@ import {
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { useStepUpAuth } from "./use-step-up";
 
 interface ConfirmOptions {
   title: string;
@@ -37,18 +38,32 @@ interface ConfirmOptions {
   /** Red confirm button. Defaults to true: every caller of this hook so far
    *  is replacing a confirm() that gated a delete/void/cancel/refund. */
   destructive?: boolean;
+  /** Re-prompt for the caller's own PIN after they confirm, before resolving
+   *  true -- for actions sensitive enough that the confirm dialog alone
+   *  isn't enough (deleting a record). See src/hooks/use-step-up.tsx. */
+  requirePin?: boolean;
 }
 
 export function useConfirm() {
   const [options, setOptions] = useState<ConfirmOptions | null>(null);
   const resolveRef = useRef<((value: boolean) => void) | null>(null);
+  const { requireStepUp, StepUpDialog } = useStepUpAuth();
 
-  const confirm = useCallback((opts: ConfirmOptions): Promise<boolean> => {
-    setOptions(opts);
-    return new Promise<boolean>((resolve) => {
-      resolveRef.current = resolve;
-    });
-  }, []);
+  const confirm = useCallback(
+    (opts: ConfirmOptions): Promise<boolean> => {
+      setOptions(opts);
+      return new Promise<boolean>((resolve) => {
+        resolveRef.current = async (confirmed: boolean) => {
+          if (confirmed && opts.requirePin) {
+            resolve(await requireStepUp());
+          } else {
+            resolve(confirmed);
+          }
+        };
+      });
+    },
+    [requireStepUp],
+  );
 
   // Idempotent: Radix's AlertDialogAction closes the dialog on click (firing
   // onOpenChange(false) after our own onClick already settled true), and a
@@ -92,5 +107,13 @@ export function useConfirm() {
     </AlertDialog>
   );
 
-  return { confirm, ConfirmDialog };
+  return {
+    confirm,
+    ConfirmDialog: (
+      <>
+        {ConfirmDialog}
+        {StepUpDialog}
+      </>
+    ),
+  };
 }

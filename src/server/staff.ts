@@ -6,6 +6,7 @@ import { adminAuth, adminDb } from "./firebase-admin";
 import { USERNAME_RE, PIN_RE } from "./auth";
 import { withRetry } from "./retry";
 import { invalidateStaffCache } from "./staff-cache";
+import { revokeAllSessions } from "./sessions";
 import { usernameKey, toStaffEmail, toStaffPassword } from "@/lib/staff-auth";
 import {
   requireAdmin,
@@ -313,7 +314,10 @@ export const setStaffActiveFn = createServerFn({ method: "POST" })
     );
 
     // Deactivation must end any session already open on a shop tablet.
-    if (!data.active) revokeBestEffort(data.targetStaffId);
+    if (!data.active) {
+      revokeBestEffort(data.targetStaffId);
+      void revokeAllSessions(data.targetStaffId);
+    }
 
     await invalidateStaffCache();
     return { success: true };
@@ -379,6 +383,8 @@ export const resetPinFn = createServerFn({ method: "POST" })
     });
 
     revokeBestEffort(data.targetStaffId);
+    // A PIN reset must end every session already open under the old PIN.
+    void revokeAllSessions(data.targetStaffId);
 
     await invalidateStaffCache();
     return { success: true };
@@ -443,6 +449,7 @@ export const deleteStaffFn = createServerFn({ method: "POST" })
     ).catch((err) => console.error(`[staff] deleteUser(${data.targetStaffId}) failed:`, err));
 
     revokeBestEffort(data.targetStaffId);
+    void revokeAllSessions(data.targetStaffId);
 
     await invalidateStaffCache();
     return { success: true };

@@ -602,7 +602,8 @@ function PORow({ po }: { po: PurchaseOrder }) {
             {po.status === "Draft" && (
               <button
                 onClick={async () => {
-                  if (await confirm({ title: "Delete this draft PO?" })) deletePurchaseOrder(po.id);
+                  if (await confirm({ title: "Delete this draft PO?", requirePin: true }))
+                    deletePurchaseOrder(po.id);
                 }}
                 aria-label="Delete"
                 className="rounded p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
@@ -679,7 +680,8 @@ function POCard({ po }: { po: PurchaseOrder }) {
         {po.status === "Draft" && (
           <button
             onClick={async () => {
-              if (await confirm({ title: "Delete this draft PO?" })) deletePurchaseOrder(po.id);
+              if (await confirm({ title: "Delete this draft PO?", requirePin: true }))
+                deletePurchaseOrder(po.id);
             }}
             className="inline-flex items-center gap-1 rounded-md border border-input px-2.5 py-1.5 text-[11px] font-medium text-destructive hover:bg-destructive/10"
           >

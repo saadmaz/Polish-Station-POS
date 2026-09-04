@@ -34,6 +34,7 @@ import {
   type StaffRole,
 } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
+import { useStepUpAuth } from "@/hooks/use-step-up";
 
 const INPUT =
   "w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20";
@@ -403,8 +404,10 @@ function DeleteDialog({
   onDeleted: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const { requireStepUp, StepUpDialog } = useStepUpAuth();
 
   async function confirmDelete() {
+    if (!(await requireStepUp())) return;
     setBusy(true);
     try {
       const token = await idToken();
@@ -429,38 +432,41 @@ function DeleteDialog({
   }
 
   return (
-    <Modal onClose={onClose}>
-      <div className="flex items-start gap-3">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-destructive/10 text-destructive">
-          <AlertTriangle className="h-5 w-5" />
+    <>
+      {StepUpDialog}
+      <Modal onClose={onClose}>
+        <div className="flex items-start gap-3">
+          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-destructive/10 text-destructive">
+            <AlertTriangle className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="font-display text-base font-bold">Delete {row.name}?</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              This permanently removes the account and frees the username{" "}
+              <span className="font-mono">{row.username}</span> for reuse. Any open session is
+              signed out immediately. This can't be undone.
+            </p>
+          </div>
         </div>
-        <div>
-          <h3 className="font-display text-base font-bold">Delete {row.name}?</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            This permanently removes the account and frees the username{" "}
-            <span className="font-mono">{row.username}</span> for reuse. Any open session is signed
-            out immediately. This can't be undone.
-          </p>
-        </div>
-      </div>
 
-      <div className="mt-5 flex gap-2">
-        <button
-          onClick={confirmDelete}
-          disabled={busy}
-          className="flex flex-1 items-center justify-center gap-2 rounded-md bg-destructive px-4 py-2 text-sm font-medium text-white hover:bg-destructive/90 disabled:opacity-40"
-        >
-          {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-          Delete user
-        </button>
-        <button
-          onClick={onClose}
-          className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
-        >
-          Cancel
-        </button>
-      </div>
-    </Modal>
+        <div className="mt-5 flex gap-2">
+          <button
+            onClick={confirmDelete}
+            disabled={busy}
+            className="flex flex-1 items-center justify-center gap-2 rounded-md bg-destructive px-4 py-2 text-sm font-medium text-white hover:bg-destructive/90 disabled:opacity-40"
+          >
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+            Delete user
+          </button>
+          <button
+            onClick={onClose}
+            className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+          >
+            Cancel
+          </button>
+        </div>
+      </Modal>
+    </>
   );
 }
 
@@ -476,8 +482,10 @@ function ActiveToggle({
   onDone: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const { requireStepUp, StepUpDialog } = useStepUpAuth();
 
   async function toggle() {
+    if (!(await requireStepUp())) return;
     setBusy(true);
     try {
       const token = await idToken();
@@ -504,20 +512,23 @@ function ActiveToggle({
   }
 
   return (
-    <IconBtn
-      title={row.active ? "Disable" : "Enable"}
-      onClick={toggle}
-      disabled={disabled || busy}
-      danger={row.active}
-    >
-      {busy ? (
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-      ) : row.active ? (
-        <UserX className="h-3.5 w-3.5" />
-      ) : (
-        <UserCheck className="h-3.5 w-3.5" />
-      )}
-    </IconBtn>
+    <>
+      {StepUpDialog}
+      <IconBtn
+        title={row.active ? "Disable" : "Enable"}
+        onClick={toggle}
+        disabled={disabled || busy}
+        danger={row.active}
+      >
+        {busy ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : row.active ? (
+          <UserX className="h-3.5 w-3.5" />
+        ) : (
+          <UserCheck className="h-3.5 w-3.5" />
+        )}
+      </IconBtn>
+    </>
   );
 }
 
@@ -545,6 +556,7 @@ function StaffDialog({
     () => new Set(row ? row.permissions : ROLE_DEFAULT_PERMISSIONS.Technician),
   );
   const [busy, setBusy] = useState(false);
+  const { requireStepUp, StepUpDialog } = useStepUpAuth();
 
   const superadmin = isSuperAdmin(role);
 
@@ -576,6 +588,9 @@ function StaffDialog({
     name.trim().length >= 2 && (mode === "edit" || (usernameValid && pinValid)) && !busy;
 
   async function save() {
+    // Step-up only for editing an EXISTING user's role/permissions/name --
+    // provisioning a brand-new account isn't "changing" anyone's access.
+    if (mode === "edit" && !(await requireStepUp())) return;
     setBusy(true);
     try {
       const token = await idToken();
@@ -628,126 +643,129 @@ function StaffDialog({
   }
 
   return (
-    <Modal onClose={onClose}>
-      <h3 className="font-display text-base font-bold mb-1">
-        {mode === "create" ? "Add User" : `Edit ${row!.name}`}
-      </h3>
-      <p className="text-sm text-muted-foreground mb-4">
-        {mode === "create"
-          ? "The user signs in with this username and PIN. This is their permanent PIN, and they are not asked to change it."
-          : "Change role, colour, and module access. Username can't be changed here."}
-      </p>
+    <>
+      {StepUpDialog}
+      <Modal onClose={onClose}>
+        <h3 className="font-display text-base font-bold mb-1">
+          {mode === "create" ? "Add User" : `Edit ${row!.name}`}
+        </h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          {mode === "create"
+            ? "The user signs in with this username and PIN. This is their permanent PIN, and they are not asked to change it."
+            : "Change role, colour, and module access. Username can't be changed here."}
+        </p>
 
-      <div className="space-y-3">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Display name">
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className={INPUT}
-              placeholder="e.g. Salman"
-            />
-          </Field>
-          <Field label="Username">
-            <input
-              value={username}
-              disabled={mode === "edit"}
-              onChange={(e) => setUsername(e.target.value.replace(/[^A-Za-z0-9_.-]/g, ""))}
-              className={cn(INPUT, "uppercase tracking-wide", mode === "edit" && "opacity-60")}
-              placeholder="e.g. SALMAN"
-            />
-          </Field>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Role">
-            <select
-              value={role}
-              onChange={(e) => pickRole(e.target.value as StaffRole)}
-              className={INPUT}
-            >
-              {assignableRoles.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          </Field>
-          {mode === "create" && (
-            <Field label="Temporary PIN">
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Display name">
               <input
-                type="text"
-                inputMode="numeric"
-                value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                className={cn(INPUT, "font-mono tracking-[0.4em]")}
-                placeholder="4 digits"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className={INPUT}
+                placeholder="e.g. Salman"
               />
             </Field>
-          )}
-        </div>
-
-        <Field label="Colour">
-          <div className="flex flex-wrap gap-2 pt-1">
-            {PALETTE.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setColor(c)}
-                className={cn(
-                  "h-7 w-7 rounded-full ring-2 ring-offset-2 ring-offset-background transition",
-                  color === c ? "ring-primary" : "ring-transparent",
-                )}
-                style={{ background: c }}
-                aria-label="colour"
+            <Field label="Username">
+              <input
+                value={username}
+                disabled={mode === "edit"}
+                onChange={(e) => setUsername(e.target.value.replace(/[^A-Za-z0-9_.-]/g, ""))}
+                className={cn(INPUT, "uppercase tracking-wide", mode === "edit" && "opacity-60")}
+                placeholder="e.g. SALMAN"
               />
-            ))}
+            </Field>
           </div>
-        </Field>
 
-        <Field label="Module access">
-          {superadmin ? (
-            <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              Super Admins always have access to every module.
-            </p>
-          ) : (
-            <div className="grid grid-cols-2 gap-1.5 pt-1 sm:grid-cols-3">
-              {MODULES.map((m) => (
-                <label
-                  key={m.key}
-                  className="flex items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-muted/50 cursor-pointer"
-                >
-                  <input
-                    type="checkbox"
-                    checked={perms.has(m.key)}
-                    onChange={() => toggleModule(m.key)}
-                    className="h-4 w-4 accent-primary"
-                  />
-                  <span className="truncate">{m.label}</span>
-                </label>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Role">
+              <select
+                value={role}
+                onChange={(e) => pickRole(e.target.value as StaffRole)}
+                className={INPUT}
+              >
+                {assignableRoles.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {mode === "create" && (
+              <Field label="Temporary PIN">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  className={cn(INPUT, "font-mono tracking-[0.4em]")}
+                  placeholder="4 digits"
+                />
+              </Field>
+            )}
+          </div>
+
+          <Field label="Colour">
+            <div className="flex flex-wrap gap-2 pt-1">
+              {PALETTE.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setColor(c)}
+                  className={cn(
+                    "h-7 w-7 rounded-full ring-2 ring-offset-2 ring-offset-background transition",
+                    color === c ? "ring-primary" : "ring-transparent",
+                  )}
+                  style={{ background: c }}
+                  aria-label="colour"
+                />
               ))}
             </div>
-          )}
-        </Field>
-      </div>
+          </Field>
 
-      <div className="mt-5 flex gap-2">
-        <button
-          onClick={save}
-          disabled={!canSave}
-          className="flex flex-1 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
-        >
-          {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-          {mode === "create" ? "Create user" : "Save changes"}
-        </button>
-        <button
-          onClick={onClose}
-          className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
-        >
-          Cancel
-        </button>
-      </div>
-    </Modal>
+          <Field label="Module access">
+            {superadmin ? (
+              <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                Super Admins always have access to every module.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-1.5 pt-1 sm:grid-cols-3">
+                {MODULES.map((m) => (
+                  <label
+                    key={m.key}
+                    className="flex items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-muted/50 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={perms.has(m.key)}
+                      onChange={() => toggleModule(m.key)}
+                      className="h-4 w-4 accent-primary"
+                    />
+                    <span className="truncate">{m.label}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </Field>
+        </div>
+
+        <div className="mt-5 flex gap-2">
+          <button
+            onClick={save}
+            disabled={!canSave}
+            className="flex flex-1 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+          >
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+            {mode === "create" ? "Create user" : "Save changes"}
+          </button>
+          <button
+            onClick={onClose}
+            className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+          >
+            Cancel
+          </button>
+        </div>
+      </Modal>
+    </>
   );
 }
 
@@ -764,9 +782,11 @@ function ResetPinDialog({
 }) {
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
+  const { requireStepUp, StepUpDialog } = useStepUpAuth();
 
   async function submit() {
     if (!/^\d{4}$/.test(pin)) return;
+    if (!(await requireStepUp())) return;
     setBusy(true);
     try {
       const token = await idToken();
@@ -791,39 +811,42 @@ function ResetPinDialog({
   }
 
   return (
-    <Modal onClose={onClose}>
-      <h3 className="font-display text-base font-bold mb-1">Reset PIN</h3>
-      <p className="text-sm text-muted-foreground mb-4">
-        Set a temporary 4-digit PIN for <strong>{row.name}</strong>. They'll be forced to choose a
-        new one the next time they sign in.
-      </p>
-      <input
-        type="text"
-        inputMode="numeric"
-        maxLength={4}
-        value={pin}
-        onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
-        placeholder="••••"
-        className="mb-4 w-full rounded-md border border-input bg-background px-3 py-2 text-center font-mono text-xl tracking-[0.5em] outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-        autoFocus
-      />
-      <div className="flex gap-2">
-        <button
-          onClick={submit}
-          disabled={pin.length !== 4 || busy}
-          className="flex flex-1 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
-        >
-          {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-          Reset PIN
-        </button>
-        <button
-          onClick={onClose}
-          className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
-        >
-          Cancel
-        </button>
-      </div>
-    </Modal>
+    <>
+      {StepUpDialog}
+      <Modal onClose={onClose}>
+        <h3 className="font-display text-base font-bold mb-1">Reset PIN</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Set a temporary 4-digit PIN for <strong>{row.name}</strong>. They'll be forced to choose a
+          new one the next time they sign in.
+        </p>
+        <input
+          type="text"
+          inputMode="numeric"
+          maxLength={4}
+          value={pin}
+          onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+          placeholder="••••"
+          className="mb-4 w-full rounded-md border border-input bg-background px-3 py-2 text-center font-mono text-xl tracking-[0.5em] outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+          autoFocus
+        />
+        <div className="flex gap-2">
+          <button
+            onClick={submit}
+            disabled={pin.length !== 4 || busy}
+            className="flex flex-1 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+          >
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+            Reset PIN
+          </button>
+          <button
+            onClick={onClose}
+            className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+          >
+            Cancel
+          </button>
+        </div>
+      </Modal>
+    </>
   );
 }
 

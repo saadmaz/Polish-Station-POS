@@ -1,11 +1,14 @@
 "use server";
 import { createServerFn } from "@tanstack/react-start";
+import { getCookie, getRequestIP } from "@tanstack/react-start/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { adminAuth, adminDb } from "./firebase-admin";
 import { withTimeout } from "./retry";
 import { toStaffPassword } from "@/lib/staff-auth";
 import { syncAuthUser, offlineBlobFields } from "./staff-admin";
+import { SESSION_COOKIE_NAME, hashSessionToken, revokeAllSessions } from "./sessions";
+import { createRateLimiter } from "./public-api";
 import { sanitizePermissions, type StaffRole } from "@/lib/permissions";
 
 // ── Shared vocabulary ─────────────────────────────────────────────────────────
@@ -131,5 +134,66 @@ export const changeOwnPinFn = createServerFn({ method: "POST" })
       },
     }).catch((err) => console.error(`[auth] syncAuthUser(${uid}) after PIN change failed:`, err));
 
+    // Changing your own PIN must end every OTHER device's session (an
+    // unattended tablet elsewhere shouldn't keep working on the old PIN),
+    // but not the one that just performed the change. getCookie must be
+    // called here, inside the handler body, not from a plain top-level
+    // helper: TanStack Start's import-protection plugin hard-blocks
+    // "@tanstack/react-start/server" from any code path reachable in the
+    // client bundle, and only a createServerFn handler's body is stripped
+    // out of that bundle.
+    const currentToken = getCookie(SESSION_COOKIE_NAME);
+    void revokeAllSessions(uid, currentToken ? hashSessionToken(currentToken) : undefined);
+
     return { success: true };
+  });
+
+// ── Step-up re-authentication ─────────────────────────────────────────────────
+// Re-proves the currently signed-in user's own PIN before a sensitive action
+// (deleting a record, changing another user's access, exporting data) even
+// inside an already auto-resumed session. Deliberately reuses the same
+// pinHash field/bcrypt check as everything else here rather than a separate
+// credential -- this is a lightweight re-proof of "it's still you holding
+// this device", not a second factor.
+
+const VerifyStepUpSchema = z.object({ idToken: z.string().min(1), pin: PinSchema });
+
+export type VerifyStepUpResult =
+  { success: true } | { success: false; error: "invalid" | "unauthorized" };
+
+// Keyed on uid+IP: an account-level lockout so a stolen unlocked session
+// can't be brute-forced against the 10,000 four-digit PIN space, without
+// locking out every OTHER device signed in as the same user.
+const isStepUpRateLimited = createRateLimiter(5 * 60 * 1000, 10);
+
+export const verifyStepUpPinFn = createServerFn({ method: "POST" })
+  .validator((raw: unknown) => VerifyStepUpSchema.parse(raw))
+  .handler(async ({ data }): Promise<VerifyStepUpResult> => {
+    let uid: string;
+    try {
+      const decoded = await withTimeout(
+        adminAuth.verifyIdToken(data.idToken),
+        8_000,
+        "token verify",
+      );
+      uid = decoded.uid;
+    } catch {
+      return { success: false, error: "unauthorized" };
+    }
+
+    const ip = getRequestIP({ xForwardedFor: true }) ?? "unknown";
+    if (isStepUpRateLimited(`${uid}:${ip}`)) return { success: false, error: "invalid" };
+
+    const snap = await withTimeout(
+      adminDb.collection("staff").doc(uid).get(),
+      8_000,
+      "staff lookup",
+    );
+    if (!snap.exists) return { success: false, error: "unauthorized" };
+
+    const staff = snap.data()!;
+    if (staff.active === false) return { success: false, error: "unauthorized" };
+
+    const ok = await bcrypt.compare(data.pin, staff.pinHash as string);
+    return ok ? { success: true } : { success: false, error: "invalid" };
   });

@@ -7,6 +7,7 @@ import { isManagerOrAbove } from "@/lib/permissions";
 import { formatCurrency } from "@/lib/currency";
 import { formatDate } from "@/lib/date-format";
 import { useConfirm } from "@/hooks/use-confirm";
+import { useStepUpAuth } from "@/hooks/use-step-up";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
 import {
@@ -214,11 +215,14 @@ function useCustomerHistory(customer: Customer) {
   const { invoices } = useStore();
   const customerInvoices = invoices.filter((i) => i.customerId === customer.id).reverse();
   const history = customerInvoices.slice(0, 5);
+  const { requireStepUp, StepUpDialog } = useStepUpAuth();
 
   // A data-subject export: everything this business holds on one customer
   // (profile, vehicles, loyalty balance, and full invoice history), not
-  // just the 5-row preview shown in the expanded panel.
-  function exportCustomerData() {
+  // just the 5-row preview shown in the expanded panel. Step-up gated: bulk
+  // customer data leaving the building is exactly what that's for.
+  async function exportCustomerData() {
+    if (!(await requireStepUp())) return;
     const payload = {
       exportedAt: new Date().toISOString(),
       customer,
@@ -231,7 +235,7 @@ function useCustomerHistory(customer: Customer) {
     a.click();
   }
 
-  return { history, exportCustomerData };
+  return { history, exportCustomerData, StepUpDialog };
 }
 
 function CustomerDetailPanel({
@@ -311,10 +315,11 @@ function CustomerRow({
   onDelete: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const { history, exportCustomerData } = useCustomerHistory(customer);
+  const { history, exportCustomerData, StepUpDialog } = useCustomerHistory(customer);
 
   return (
     <>
+      {StepUpDialog}
       <tr className="hover:bg-muted/40 cursor-pointer" onClick={() => setExpanded((v) => !v)}>
         <td className="px-5 py-3">
           <div className="flex items-center gap-2.5">
@@ -414,10 +419,11 @@ function CustomerCard({
   onDelete: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const { history, exportCustomerData } = useCustomerHistory(customer);
+  const { history, exportCustomerData, StepUpDialog } = useCustomerHistory(customer);
 
   return (
     <div className="p-4">
+      {StepUpDialog}
       <button
         className="flex w-full items-start gap-2.5 text-left"
         onClick={() => setExpanded((v) => !v)}
@@ -643,7 +649,8 @@ function CouponsPanel() {
   }
 
   async function handleDelete(id: string) {
-    if (!(await confirm({ title: "Delete this coupon? This cannot be undone." }))) return;
+    if (!(await confirm({ title: "Delete this coupon? This cannot be undone.", requirePin: true })))
+      return;
     deleteCoupon(id);
     toast.error("Coupon deleted");
   }
@@ -828,6 +835,7 @@ function Customers() {
   const [tierFilter, setTierFilter] = useState("All");
   const [formMode, setFormMode] = useState<null | "add" | Customer>(null);
   const { confirm, ConfirmDialog } = useConfirm();
+  const { requireStepUp, StepUpDialog } = useStepUpAuth();
 
   const filtered = customers.filter((c) => {
     const q = search.toLowerCase();
@@ -855,7 +863,10 @@ function Customers() {
   }
 
   async function handleDelete(id: string) {
-    if (!(await confirm({ title: "Delete this customer? This cannot be undone." }))) return;
+    if (
+      !(await confirm({ title: "Delete this customer? This cannot be undone.", requirePin: true }))
+    )
+      return;
     deleteCustomer(id);
     toast.error("Customer deleted");
   }
@@ -863,13 +874,15 @@ function Customers() {
   return (
     <div className="p-4 sm:p-6">
       {ConfirmDialog}
+      {StepUpDialog}
       <PageHeader
         title="Customers"
         subtitle={`${customers.length} customers · ${totalVehicles} vehicles on file`}
         actions={
           <>
             <button
-              onClick={() => {
+              onClick={async () => {
+                if (!(await requireStepUp())) return;
                 const csv = [
                   ["Name", "Phone", "Email", "Tier", "Visits", "Spend", "Vehicles"].join(","),
                   ...customers.map((c) =>

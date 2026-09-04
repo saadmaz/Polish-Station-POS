@@ -447,7 +447,7 @@ function EquipmentRow({ eq }: { eq: Equipment }) {
             </button>
             <button
               onClick={async () => {
-                if (await confirm({ title: "Delete this equipment record?" }))
+                if (await confirm({ title: "Delete this equipment record?", requirePin: true }))
                   deleteEquipment(eq.id);
               }}
               className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
@@ -581,7 +581,12 @@ function EquipmentRow({ eq }: { eq: Equipment }) {
                           <td className="px-3 py-2">
                             <button
                               onClick={async () => {
-                                if (await confirm({ title: "Delete this log entry?" }))
+                                if (
+                                  await confirm({
+                                    title: "Delete this log entry?",
+                                    requirePin: true,
+                                  })
+                                )
                                   deleteMaintenanceLog(log.id);
                               }}
                               className="rounded p-1 text-muted-foreground hover:text-destructive"

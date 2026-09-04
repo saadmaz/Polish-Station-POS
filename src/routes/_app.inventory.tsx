@@ -271,7 +271,7 @@ function Inventory() {
   }
 
   async function handleDelete(id: string, name: string) {
-    if (!(await confirm({ title: `Delete "${name}"?` }))) return;
+    if (!(await confirm({ title: `Delete "${name}"?`, requirePin: true }))) return;
     deleteInventoryItem(id);
     toast.error("Item removed");
   }

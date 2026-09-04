@@ -8,7 +8,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { signInWithEmailAndPassword, signOut, onIdTokenChanged } from "firebase/auth";
+import {
+  signInWithEmailAndPassword,
+  signInWithCustomToken,
+  signOut,
+  onIdTokenChanged,
+} from "firebase/auth";
 import { toast } from "sonner";
 import { doc, getDoc } from "firebase/firestore";
 import { auth as firebaseAuth, db } from "./firebase";
@@ -20,6 +25,7 @@ import {
   fetchAndCacheOfflineCredential,
   isDeviceEnrolled,
 } from "./offline-auth";
+import { createSessionFn, resumeSessionFn, logoutFn } from "@/server/sessions";
 
 // Re-exported so the many `import { type StaffRole } from "@/lib/auth"` call
 // sites keep working; permissions.ts is the definition.
@@ -177,12 +183,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [mustChangePin, setMustChangePin] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Gates the "no session" branch of onIdTokenChanged below until the
+  // cookie-based resume attempt (see the mount effect further down) has had
+  // its chance to sign in via a custom token -- otherwise the synchronous
+  // "no Firebase user yet" firing on first mount would flip `loading` to
+  // false and flash the PIN picker before the async resume call returns.
+  const [resumeChecked, setResumeChecked] = useState(false);
 
   const logout = useCallback(async () => {
     if (timerRef.current) clearTimeout(timerRef.current);
     localStorage.removeItem(ACTIVITY_KEY);
     setMustChangePin(false);
     setIsOffline(false);
+    // Revoking client-side state alone is not logout: the server-side
+    // session doc backing auto-resume must be revoked too, or this same
+    // cookie would just resume again on the next visit. Best-effort/short
+    // timeout -- a stalled revoke shouldn't block someone locking the till,
+    // and this is also a no-op when there's no session cookie at all (an
+    // offline-unlock "session" never created one).
+    void withClientTimeout(logoutFn(), 5_000, "session logout").catch(() => {});
     // An offline session has no real Firebase user to sign out of.
     if (firebaseAuth.currentUser) await signOut(firebaseAuth);
     else setStaff(null);
@@ -216,7 +235,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsub = onIdTokenChanged(firebaseAuth, async (user) => {
       if (!user) {
         setStaff(null);
-        setLoading(false);
+        if (resumeChecked) setLoading(false);
         return;
       }
 
@@ -277,7 +296,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return unsub;
-  }, [resetTimer]);
+  }, [resetTimer, resumeChecked]);
+
+  // Cookie-based auto-resume: on every mount (including a reload), the
+  // session cookie is the actual source of truth for whether this device
+  // gets to stay signed in -- not Firebase Auth's own independent client-side
+  // persistence, which would otherwise keep restoring a session on its own
+  // regardless of what the cookie says. So this always asks the server, even
+  // when Firebase already has a persisted user: if the cookie is valid, it
+  // mints a fresh custom token (harmless even if that user is already
+  // signed in); if the server explicitly says no (missing/expired/revoked/
+  // deactivated), any already-persisted Firebase session is force-signed-out
+  // too, so a revoke actually takes effect on the very next load rather than
+  // only once Firebase's own token happens to expire on its own. A network/
+  // timeout failure is treated differently: that's not the server saying no,
+  // so an already-valid Firebase session is left alone rather than punishing
+  // a connectivity blip with an unwanted logout. `resumeChecked` is only set
+  // once this settles, which is what keeps the "no session" branch above
+  // from flashing the PIN picker before this had a chance to resolve.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        // Bounded like every other call to this host: a stalled resume check
+        // must not leave the screen blank indefinitely -- fail open to the
+        // PIN picker instead (same fallback as an outright network error).
+        const result = await withClientTimeout(resumeSessionFn(), 8_000, "session resume");
+        if (cancelled) return;
+        if (result.success) {
+          // onIdTokenChanged (re-subscribed once resumeChecked flips below)
+          // picks up staff/claims from this exactly like a normal login.
+          await signInWithCustomToken(firebaseAuth, result.customToken).catch(() => {});
+        } else {
+          await signOut(firebaseAuth).catch(() => {});
+        }
+      } catch {
+        // Network/server failure: fail open, leaving any already-persisted
+        // Firebase session exactly as it was rather than hanging or forcing
+        // a logout the cookie's own state didn't actually call for.
+      } finally {
+        if (!cancelled) setResumeChecked(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Inactivity detection: reset the timer on any user interaction
   useEffect(() => {
@@ -357,6 +421,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // in the background, best-effort. onIdTokenChanged picks up
         // staff/mustChangePin from the real token above.
         if (staffId) void fetchAndCacheOfflineCredential(staffId).catch(() => {});
+        // Establish the persistent auto-resume session, also best-effort and
+        // in the background -- a stalled/failed call here just means this
+        // device won't auto-resume next visit and shows the PIN screen
+        // again, not that this login failed.
+        void firebaseAuth.currentUser
+          ?.getIdToken()
+          .then((idToken) => createSessionFn({ data: { idToken } }))
+          .catch(() => {});
         return null;
       } catch (err) {
         const code = err instanceof Error ? (err as { code?: string }).code : undefined;

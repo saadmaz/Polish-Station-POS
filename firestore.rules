@@ -64,6 +64,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Persistent auto-resume sessions (see src/server/sessions.ts). Doc id is
+    // a sha256 hash of the session token, never the raw token itself, but the
+    // doc is still session metadata a client has no business reading or
+    // writing directly -- Admin SDK only, same as usernames/{username}.
+    match /sessions/{sessionId} {
+      allow read, write: if false;
+    }
+
     // ── Audit log ─────────────────────────────────────────────────────────
     // Append-only. No updates or deletes — ever. A create must be attributed
     // to the caller's own uid, so no staff member can forge log lines in a

@@ -63,6 +63,11 @@ await fresh.close();
 await check("SuperAdmin deletes the user (deleteStaffFn)", async () => {
   await admin.locator("tr", { hasText: newUsername }).locator('[title="Delete user"]').click();
   await admin.click('button:has-text("Delete user")'); // confirm dialog
+  // Deleting a record is step-up gated (src/hooks/use-step-up.tsx): re-enter
+  // the admin's own PIN before the delete actually goes through.
+  const stepUp = admin.locator('[role="dialog"]', { hasText: "Confirm your PIN" });
+  await stepUp.waitFor({ timeout: 5000 });
+  for (const d of TEST_STAFF.pin) await stepUp.locator(`button:text-is("${d}")`).click();
   await admin.waitForSelector(`text=${newName} deleted`, { timeout: 15000 });
 });
 

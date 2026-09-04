@@ -3,6 +3,7 @@ import { useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Download } from "lucide-react";
 import { useStore } from "@/lib/store";
+import { useStepUpAuth } from "@/hooks/use-step-up";
 import { sumPaymentsByMethod, describePaymentMethods, type Invoice } from "@/lib/db";
 import { formatCurrency } from "@/lib/currency";
 import {
@@ -75,6 +76,7 @@ function Reports() {
   const { invoices, bookings, customers, inventory, expenses, listenerErrors } = useStore();
   const expensesErrored = listenerErrors.has("expenses");
   const [period, setPeriod] = useState<Period>("30d");
+  const { requireStepUp, StepUpDialog } = useStepUpAuth();
 
   const sinceBusinessDate = periodStartBusinessDate(period);
   const since = businessDayBoundsUtc(sinceBusinessDate).startUtc.toISOString();
@@ -295,6 +297,7 @@ function Reports() {
 
   return (
     <div className="p-4 sm:p-6">
+      {StepUpDialog}
       <PageHeader
         title="Reports"
         subtitle={`Period · ${periodLabel[period]}`}
@@ -325,7 +328,10 @@ function Reports() {
                 <p className="text-xs text-muted-foreground mt-1">{r.desc}</p>
               </div>
               <button
-                onClick={r.exportFn}
+                onClick={async () => {
+                  if (!(await requireStepUp())) return;
+                  r.exportFn();
+                }}
                 className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
                 title="Export CSV"
               >

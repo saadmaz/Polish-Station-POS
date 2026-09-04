@@ -223,7 +223,7 @@ function Bookings() {
   }
 
   async function handleDelete(id: string) {
-    if (!(await confirm({ title: "Delete this booking?" }))) return;
+    if (!(await confirm({ title: "Delete this booking?", requirePin: true }))) return;
     deleteBooking(id);
     toast.error("Booking deleted");
     setActiveCard(null);
