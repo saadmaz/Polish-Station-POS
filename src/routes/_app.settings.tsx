@@ -42,13 +42,13 @@ const SECTIONS = [
     id: "business",
     icon: Building2,
     name: "Business",
-    desc: "Name, logo, hours, receipt header",
+    desc: "Name, hours, receipt header",
   },
   {
     id: "catalog",
     icon: Tag,
     name: "Services Catalog",
-    desc: "Services, add-ons, bundles, pricing tiers",
+    desc: "Services and pricing",
   },
   {
     id: "bays",
