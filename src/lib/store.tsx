@@ -45,9 +45,12 @@ import {
 import { synthesizeWalkInJob } from "./job-linking";
 import { buildTransitionEvent } from "./job";
 import type { Job } from "./job";
+import { assertLegalLeadTransition, LeadAlreadyConvertedError } from "./lead";
+import { normalizePhone } from "./phone";
 import type {
   AuditLog,
   Booking,
+  BookingType,
   Coupon,
   Customer,
   Equipment,
@@ -168,8 +171,33 @@ interface Store {
   updateCustomer: (c: Customer) => void;
   deleteCustomer: (id: string) => void;
 
-  // Leads (contact/booking inquiries from the public site)
-  updateLead: (l: Lead) => void;
+  // Leads (contact/booking inquiries from the public site, plus manual
+  // WhatsApp/phone/walk-in entry) — see src/lib/lead.ts for the status graph
+  addLead: (
+    data: Omit<Lead, "id" | "createdAt" | "status" | "lostReason" | "duplicateOf" | "convertedTo">,
+  ) => Lead;
+  transitionLeadStatus: (lead: Lead, status: "contacted" | "quoted" | "archived") => void;
+  markLeadLost: (lead: Lead, reason: string) => void;
+  markLeadDuplicate: (lead: Lead, duplicateOfId: string) => void;
+  // Atomic: creates/links a Customer, creates the Booking, and flips the
+  // lead to converted — or fails entirely with no partial writes. Throws
+  // LeadAlreadyConvertedError if the lead was converted by someone else
+  // first.
+  convertLeadToBooking: (
+    lead: Lead,
+    bookingType: BookingType,
+    data: Omit<Booking, "id" | "createdAt" | "type" | "leadId" | "source" | "customerId">,
+  ) => Promise<Booking>;
+  // Atomic: links an already-created walk-in Invoice (and its Job, if any)
+  // to this lead, stamping leadId/source, and flips the lead to converted.
+  convertLeadToInvoiceLink: (lead: Lead, invoiceId: string) => Promise<void>;
+  // The inspection -> service hop: a plain booking carrying leadId/source
+  // forward from an already-converted booking. Does NOT touch lead status —
+  // it is deliberately not a second conversion.
+  createFollowUpBooking: (
+    sourceBooking: Booking,
+    data: Omit<Booking, "id" | "createdAt" | "leadId" | "source">,
+  ) => Promise<Booking>;
 
   // Coupons
   addCoupon: (c: Omit<Coupon, "id" | "createdAt" | "redeemedCount">) => Coupon;
@@ -692,7 +720,276 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── Lead mutations ─────────────────────────────────────────────────────────
-  const updateLead = useCallback((l: Lead) => write("leads", l), []);
+  // See src/lib/lead.ts for the status transition graph and
+  // firestore.rules' isLegalLeadUpdate() for its server-side mirror.
+  const addLead = useCallback(
+    (
+      data: Omit<
+        Lead,
+        "id" | "createdAt" | "status" | "lostReason" | "duplicateOf" | "convertedTo"
+      >,
+    ): Lead => {
+      const l: Lead = {
+        ...data,
+        id: newId(),
+        status: "new",
+        createdAt: new Date().toISOString(),
+      };
+      write("leads", l);
+      logAudit(actorRef.current, {
+        action: "ADD_LEAD",
+        entity: "Lead",
+        entityId: l.id,
+        before: null,
+        after: l,
+      });
+      return l;
+    },
+    [],
+  );
+
+  const transitionLeadStatus = useCallback(
+    (lead: Lead, status: "contacted" | "quoted" | "archived") => {
+      assertLegalLeadTransition(lead.status, status);
+      const after: Lead = { ...lead, status };
+      write("leads", after);
+      logAudit(actorRef.current, {
+        action: "UPDATE_LEAD_STATUS",
+        entity: "Lead",
+        entityId: lead.id,
+        before: lead,
+        after,
+      });
+    },
+    [],
+  );
+
+  const markLeadLost = useCallback((lead: Lead, reason: string) => {
+    assertLegalLeadTransition(lead.status, "lost");
+    const after: Lead = { ...lead, status: "lost", lostReason: reason };
+    write("leads", after);
+    logAudit(actorRef.current, {
+      action: "LOSE_LEAD",
+      entity: "Lead",
+      entityId: lead.id,
+      before: lead,
+      after,
+    });
+  }, []);
+
+  const markLeadDuplicate = useCallback((lead: Lead, duplicateOfId: string) => {
+    assertLegalLeadTransition(lead.status, "duplicate");
+    const after: Lead = { ...lead, status: "duplicate", duplicateOf: duplicateOfId };
+    write("leads", after);
+    logAudit(actorRef.current, {
+      action: "MARK_LEAD_DUPLICATE",
+      entity: "Lead",
+      entityId: lead.id,
+      before: lead,
+      after,
+    });
+  }, []);
+
+  const convertLeadToBooking = useCallback(
+    async (
+      lead: Lead,
+      bookingType: BookingType,
+      data: Omit<Booking, "id" | "createdAt" | "type" | "leadId" | "source" | "customerId">,
+    ): Promise<Booking> => {
+      // Cheap client-side pre-check before any round trip; the real
+      // guarantee is the transactional read of the lead doc below, which
+      // is what actually stops two staff converting the same lead at once.
+      assertLegalLeadTransition(lead.status, "converted");
+
+      // Match against the phone the staff member is actually submitting
+      // with this booking (pre-filled from the lead, but editable), not the
+      // lead's original phone.
+      const normalized = data.phone ? normalizePhone(data.phone) : null;
+      const matchedCustomer = normalized
+        ? S.current.customers.find((c) => normalizePhone(c.phone) === normalized)
+        : undefined;
+
+      // Allocated before the guarded transaction, same precedent as
+      // addInvoice's jobId/invoiceId allocation: a booking id "burned" by a
+      // transaction that then aborts (e.g. LeadAlreadyConvertedError) is an
+      // accepted, pre-existing tradeoff of nextSeqId, not something this
+      // function needs to fix.
+      const bookingId = await nextSeqId("bookings", "B-", S.current.bookings, 200);
+      const actor = actorRef.current;
+
+      const { booking, afterLead } = await runTransaction(fsDb, async (tx) => {
+        const leadSnap = await tx.get(fd("leads", lead.id));
+        const currentLead = leadSnap.data() as Lead | undefined;
+        if (!currentLead || currentLead.status === "converted" || currentLead.convertedTo) {
+          throw new LeadAlreadyConvertedError(lead.id);
+        }
+
+        let customerId = matchedCustomer?.id ?? null;
+        if (!customerId) {
+          const newCustomer: Customer = {
+            id: newId(),
+            name: data.customerName,
+            phone: data.phone,
+            email: "",
+            vehicles: data.vehicleModel
+              ? [{ plate: data.plate, model: data.vehicleModel, color: "" }]
+              : [],
+            visits: 0,
+            spend: 0,
+            tier: "Bronze",
+            lastVisit: null,
+            loyaltyPoints: 0,
+            createdAt: new Date().toISOString(),
+          };
+          customerId = newCustomer.id;
+          tx.set(fd("customers", newCustomer.id), newCustomer);
+        }
+
+        const newBooking: Booking = {
+          ...data,
+          id: bookingId,
+          createdAt: new Date().toISOString(),
+          type: bookingType,
+          leadId: lead.id,
+          source: lead.source,
+          customerId,
+        };
+        tx.set(fd("bookings", bookingId), newBooking);
+
+        const updatedLead: Lead = {
+          ...currentLead,
+          status: "converted",
+          convertedTo: { type: bookingType, id: bookingId },
+        };
+        tx.set(fd("leads", lead.id), updatedLead);
+
+        return { booking: newBooking, afterLead: updatedLead };
+      });
+
+      // Single headline audit entry, matching addInvoice's convention of
+      // auditing only the user-facing action even though the transaction
+      // also touched customers/bookings.
+      logAudit(actor, {
+        action: "CONVERT_LEAD",
+        entity: "Lead",
+        entityId: lead.id,
+        before: lead,
+        after: afterLead,
+      });
+      return booking;
+    },
+    [],
+  );
+
+  const convertLeadToInvoiceLink = useCallback(async (lead: Lead, invoiceId: string) => {
+    assertLegalLeadTransition(lead.status, "converted");
+
+    const normalized = lead.phone ? normalizePhone(lead.phone) : null;
+    const matchedCustomer = normalized
+      ? S.current.customers.find((c) => normalizePhone(c.phone) === normalized)
+      : undefined;
+
+    const actor = actorRef.current;
+
+    const afterLead = await runTransaction(fsDb, async (tx) => {
+      const [leadSnap, invoiceSnap] = await Promise.all([
+        tx.get(fd("leads", lead.id)),
+        tx.get(fd("invoices", invoiceId)),
+      ]);
+      const currentLead = leadSnap.data() as Lead | undefined;
+      if (!currentLead || currentLead.status === "converted" || currentLead.convertedTo) {
+        throw new LeadAlreadyConvertedError(lead.id);
+      }
+      const invoice = invoiceSnap.data() as Invoice | undefined;
+      if (!invoice) throw new Error(`Invoice ${invoiceId} not found`);
+      if (invoice.leadId && invoice.leadId !== lead.id) {
+        throw new Error(`Invoice ${invoiceId} is already linked to a different lead`);
+      }
+
+      // Reads must all happen before any writes below.
+      const jobSnap = invoice.jobId ? await tx.get(fd("jobs", invoice.jobId)) : null;
+
+      let customerId = invoice.customerId ?? matchedCustomer?.id ?? null;
+      if (!customerId) {
+        const newCustomer: Customer = {
+          id: newId(),
+          name: lead.name,
+          phone: lead.phone ?? "",
+          email: lead.email ?? "",
+          vehicles: [],
+          visits: 0,
+          spend: 0,
+          tier: "Bronze",
+          lastVisit: null,
+          loyaltyPoints: 0,
+          createdAt: new Date().toISOString(),
+        };
+        customerId = newCustomer.id;
+        tx.set(fd("customers", newCustomer.id), newCustomer);
+      }
+
+      const updatedInvoice: Invoice = {
+        ...invoice,
+        leadId: lead.id,
+        source: lead.source,
+        customerId,
+        customerName: invoice.customerName || lead.name,
+        // Omit rather than set to undefined when neither side has one (see
+        // the Firestore undefined-field write bug this codebase avoids
+        // elsewhere) — only touch the key when there's a real value to add.
+        ...(!invoice.phone && lead.phone ? { phone: lead.phone } : {}),
+      };
+      tx.set(fd("invoices", invoiceId), updatedInvoice);
+
+      if (jobSnap && jobSnap.exists() && invoice.jobId) {
+        const job = jobSnap.data() as Job;
+        tx.set(fd("jobs", invoice.jobId), { ...job, leadId: lead.id, source: lead.source });
+      }
+
+      const updatedLead: Lead = {
+        ...currentLead,
+        status: "converted",
+        convertedTo: { type: "walk-in", id: invoiceId },
+      };
+      tx.set(fd("leads", lead.id), updatedLead);
+      return updatedLead;
+    });
+
+    logAudit(actor, {
+      action: "CONVERT_LEAD",
+      entity: "Lead",
+      entityId: lead.id,
+      before: lead,
+      after: afterLead,
+    });
+  }, []);
+
+  const createFollowUpBooking = useCallback(
+    async (
+      sourceBooking: Booking,
+      data: Omit<Booking, "id" | "createdAt" | "leadId" | "source">,
+    ): Promise<Booking> => {
+      const b: Booking = {
+        ...data,
+        id: await nextSeqId("bookings", "B-", S.current.bookings, 200),
+        createdAt: new Date().toISOString(),
+        // Omit rather than set to undefined: sourceBooking may not have
+        // come from a lead at all.
+        ...(sourceBooking.leadId ? { leadId: sourceBooking.leadId } : {}),
+        ...(sourceBooking.source ? { source: sourceBooking.source } : {}),
+      };
+      write("bookings", b);
+      logAudit(actorRef.current, {
+        action: "ADD_BOOKING",
+        entity: "Booking",
+        entityId: b.id,
+        before: null,
+        after: b,
+      });
+      return b;
+    },
+    [],
+  );
 
   // ── Coupon mutations ───────────────────────────────────────────────────────
   const addCoupon = useCallback(
@@ -1346,7 +1643,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addCustomer,
     updateCustomer,
     deleteCustomer,
-    updateLead,
+    addLead,
+    transitionLeadStatus,
+    markLeadLost,
+    markLeadDuplicate,
+    convertLeadToBooking,
+    convertLeadToInvoiceLink,
+    createFollowUpBooking,
     addCoupon,
     updateCoupon,
     deleteCoupon,

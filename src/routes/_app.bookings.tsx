@@ -51,12 +51,16 @@ function BookingCard({
   onCancel,
   onDelete,
   onMarkDepositPaid,
+  onMarkCompleted,
+  onCreateServiceBooking,
 }: {
   booking: Booking;
   onCheckin: () => void;
   onCancel: () => void;
   onDelete: () => void;
   onMarkDepositPaid: () => void;
+  onMarkCompleted: () => void;
+  onCreateServiceBooking: () => void;
 }) {
   const hasDeposit = booking.depositStatus && booking.depositStatus !== "none";
   const depositPaid = booking.depositStatus === "paid";
@@ -139,6 +143,27 @@ function BookingCard({
             <LogIn className="h-3.5 w-3.5" /> Check In
           </button>
         )}
+        {/* Inspections are free — there's no invoice to complete them, so
+            this is the only live path that marks a booking "Completed"
+            outside a historical migration, deliberately scoped to
+            inspections only. See src/lib/job-linking.ts for why service
+            bookings still only complete via POS checkout. */}
+        {booking.type === "inspection" && booking.status === "Checked-In" && (
+          <button
+            onClick={onMarkCompleted}
+            className="flex items-center justify-center gap-1.5 w-full rounded-md bg-success/10 border border-success/30 text-success py-1.5 text-xs font-semibold hover:bg-success/20"
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" /> Mark Completed
+          </button>
+        )}
+        {booking.type === "inspection" && booking.status === "Completed" && (
+          <button
+            onClick={onCreateServiceBooking}
+            className="flex items-center justify-center gap-1.5 w-full rounded-md bg-primary/10 border border-primary/30 text-primary py-1.5 text-xs font-semibold hover:bg-primary/20"
+          >
+            <Plus className="h-3.5 w-3.5" /> Create Service Booking
+          </button>
+        )}
         {booking.status !== "Cancelled" &&
           booking.status !== "Checked-In" &&
           booking.status !== "Completed" && (
@@ -171,6 +196,7 @@ function Bookings() {
   const [activeCard, setActiveCard] = useState<string | null>(null);
   const [widgetOpen, setWidgetOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [followUpBooking, setFollowUpBooking] = useState<Booking | null>(null);
   const { confirm, ConfirmDialog } = useConfirm();
 
   const widgetUrl = typeof window !== "undefined" ? `${window.location.origin}/book` : "/book";
@@ -210,6 +236,21 @@ function Bookings() {
     updateBooking({ ...b, status });
     toast.success(`Booking ${status.toLowerCase()}`);
     setActiveCard(null);
+  }
+
+  function handleMarkCompleted(id: string) {
+    const b = bookings.find((x) => x.id === id);
+    if (!b) return;
+    updateBooking({ ...b, status: "Completed" });
+    toast.success("Inspection completed");
+    setActiveCard(null);
+  }
+
+  function handleCreateServiceBooking(id: string) {
+    const b = bookings.find((x) => x.id === id);
+    if (!b) return;
+    setActiveCard(null);
+    setFollowUpBooking(b);
   }
 
   async function handleCheckin(id: string) {
@@ -326,6 +367,8 @@ function Bookings() {
                         onCancel={() => handleStatusChange(b.id, "Cancelled")}
                         onDelete={() => handleDelete(b.id)}
                         onMarkDepositPaid={() => handleMarkDepositPaid(b.id)}
+                        onMarkCompleted={() => handleMarkCompleted(b.id)}
+                        onCreateServiceBooking={() => handleCreateServiceBooking(b.id)}
                       />
                     ) : (
                       <>
@@ -627,6 +670,11 @@ function Bookings() {
         </div>
 
         <BookingSheet open={bookingOpen} onOpenChange={setBookingOpen} />
+        <BookingSheet
+          open={followUpBooking !== null}
+          onOpenChange={(v) => !v && setFollowUpBooking(null)}
+          followUpFrom={followUpBooking ?? undefined}
+        />
 
         {/* Online Widget modal */}
         {widgetOpen && (

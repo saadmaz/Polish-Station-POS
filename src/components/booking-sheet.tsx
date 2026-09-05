@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { todayBusinessDate } from "@/lib/business-day";
@@ -13,10 +13,22 @@ import {
 import { Search, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
+import type { Booking, BookingType, Lead } from "@/lib/db";
 
 interface BookingSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // When set, submitting creates the booking atomically via
+  // convertLeadToBooking (customer find/create + booking + lead status,
+  // all-or-nothing) instead of the plain addBooking path below. Mutually
+  // exclusive with followUpFrom.
+  convertLead?: { lead: Lead; bookingType: BookingType };
+  // When set (the inspection -> service hop), submitting creates a plain
+  // follow-up booking via createFollowUpBooking, carrying leadId/source
+  // forward from this booking WITHOUT touching any lead's status — this is
+  // deliberately not a second conversion. Mutually exclusive with
+  // convertLead.
+  followUpFrom?: Booking;
 }
 
 const today = todayBusinessDate();
@@ -69,8 +81,9 @@ async function decodeVIN(vin: string): Promise<string | null> {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
-  const { services, customers, addBooking, bays } = useStore();
+export function BookingSheet({ open, onOpenChange, convertLead, followUpFrom }: BookingSheetProps) {
+  const { services, customers, addBooking, convertLeadToBooking, createFollowUpBooking, bays } =
+    useStore();
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
 
@@ -85,6 +98,33 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
     vehicleColor?: string;
   } | null>(null);
   const lookupRef = useRef<AbortController | null>(null);
+
+  // Prefill from the lead (convert mode) or the source booking (follow-up
+  // mode) when opening; plain "New Booking" opens blank, same as before
+  // either prop existed.
+  useEffect(() => {
+    if (!open) return;
+    if (convertLead) {
+      setForm({
+        ...EMPTY,
+        name: convertLead.lead.name,
+        phone: convertLead.lead.phone ?? "",
+        vehicleModel: convertLead.lead.vehicle ?? "",
+      });
+    } else if (followUpFrom) {
+      setForm({
+        ...EMPTY,
+        name: followUpFrom.customerName,
+        phone: followUpFrom.phone,
+        plate: followUpFrom.plate,
+        vehicleModel: followUpFrom.vehicleModel,
+      });
+    } else {
+      setForm(EMPTY);
+    }
+    setLookupState("idle");
+    setLookupSuggestion(null);
+  }, [open, convertLead, followUpFrom]);
 
   function set<K extends keyof typeof EMPTY>(field: K, value: (typeof EMPTY)[K]) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -181,7 +221,7 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
     }));
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name.trim() || !form.serviceId || !form.date || !form.time) return;
     const svc = services.find((s) => s.id === form.serviceId);
@@ -193,8 +233,7 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
         c.name.toLowerCase() === form.name.toLowerCase(),
     );
 
-    setSubmitting(true);
-    addBooking({
+    const bookingData = {
       customerId: customer?.id ?? null,
       customerName: form.name.trim(),
       phone: form.phone.trim(),
@@ -215,19 +254,63 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
       // trustworthy).
       tech: form.tech,
       bay: form.bay || "—",
-      status: "Confirmed",
+      status: "Confirmed" as const,
       notes: form.notes,
       // Omit rather than set to `undefined`: Firestore's client SDK
       // setDoc() throws on an explicit undefined field value (this
       // previously broke every booking created with no deposit required).
       ...(form.requireDeposit ? { depositAmount: form.depositAmount } : {}),
-      depositStatus: form.requireDeposit ? "required" : "none",
-    });
+      depositStatus: form.requireDeposit ? ("required" as const) : ("none" as const),
+    };
 
     const depositNote = form.requireDeposit
       ? ` · Deposit ${formatCurrency(form.depositAmount)} required`
       : "";
 
+    setSubmitting(true);
+
+    if (convertLead) {
+      // convertLeadToBooking computes customerId itself (phone match against
+      // the live customer list); the extra customerId here is harmless —
+      // it's overwritten inside that function, never read from this object.
+      try {
+        await convertLeadToBooking(convertLead.lead, convertLead.bookingType, bookingData);
+        const kind = convertLead.bookingType === "inspection" ? "Inspection" : "Service";
+        toast.success(`${kind} booking created`, {
+          description: `${form.name}: ${svc.name} on ${form.date} at ${form.time}${depositNote}`,
+        });
+        setForm(EMPTY);
+        onOpenChange(false);
+      } catch (err) {
+        const name = err instanceof Error ? err.name : "";
+        toast.error(
+          name === "LeadAlreadyConvertedError"
+            ? "This lead was already converted"
+            : "Couldn't create the booking, please try again",
+        );
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    if (followUpFrom) {
+      try {
+        await createFollowUpBooking(followUpFrom, bookingData);
+        toast.success("Service booking created", {
+          description: `${form.name}: ${svc.name} on ${form.date} at ${form.time}${depositNote}`,
+        });
+        setForm(EMPTY);
+        onOpenChange(false);
+      } catch {
+        toast.error("Couldn't create the booking, please try again");
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    addBooking(bookingData);
     toast.success("Booking confirmed", {
       description: `${form.name}: ${svc.name} on ${form.date} at ${form.time}${depositNote}`,
     });
@@ -245,8 +328,20 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-md flex flex-col overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>New Booking</SheetTitle>
-          <SheetDescription>Schedule an appointment for a customer.</SheetDescription>
+          <SheetTitle>
+            {convertLead
+              ? `Create ${convertLead.bookingType === "inspection" ? "Inspection" : "Service"} Booking`
+              : followUpFrom
+                ? "Create Service Booking"
+                : "New Booking"}
+          </SheetTitle>
+          <SheetDescription>
+            {convertLead
+              ? `Converting lead: ${convertLead.lead.name}`
+              : followUpFrom
+                ? `Follow-up from inspection ${followUpFrom.id}`
+                : "Schedule an appointment for a customer."}
+          </SheetDescription>
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 gap-4 py-4">
@@ -535,7 +630,11 @@ export function BookingSheet({ open, onOpenChange }: BookingSheetProps) {
               disabled={submitting}
               className="flex-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90 disabled:opacity-60"
             >
-              {submitting ? "Confirming…" : "Confirm Booking"}
+              {submitting
+                ? "Confirming…"
+                : convertLead || followUpFrom
+                  ? "Create Booking"
+                  : "Confirm Booking"}
             </button>
           </SheetFooter>
         </form>

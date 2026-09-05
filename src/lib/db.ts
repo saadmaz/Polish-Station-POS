@@ -52,6 +52,11 @@ export function calcTier(spend: number): CustomerTier {
 
 export type DepositStatus = "none" | "required" | "paid";
 
+// Absent on every booking written before this field existed — treat a
+// missing type as "service", the only kind of booking that could exist
+// before "inspection" did.
+export type BookingType = "inspection" | "service";
+
 export interface Booking {
   id: string;
   customerId: string | null;
@@ -73,14 +78,28 @@ export interface Booking {
   createdAt: string;
   depositAmount?: number;
   depositStatus?: DepositStatus;
+  type?: BookingType;
+  // Attribution, carried forward from the Lead this booking was created
+  // from — see convertLeadToBooking/createFollowUpBooking in store.tsx.
+  // Absent for bookings not created from a lead.
+  leadId?: string;
+  source?: string;
 }
 
-// ── Leads (contact/booking inquiries from the public polishstation.lk site) ───
+// ── Leads (contact/booking inquiries from the public polishstation.lk site,
+//    plus manual WhatsApp/phone/walk-in entry — see src/lib/lead.ts for the
+//    status transition graph) ─────────────────────────────────────────────
 // Written by the Admin SDK from the unauthenticated src/routes/api.public.*
-// routes (see src/server/public-api.ts); staff triage them here into a real
-// Customer/Booking by hand.
+// routes (see src/server/public-api.ts) for the website source, or directly
+// by staff (see addLead in store.tsx) for the three manual sources. Staff
+// triage them here into a real Customer/Booking/Invoice via the Convert
+// action (see convertLeadToBooking/convertLeadToInvoiceLink in store.tsx).
 export type LeadType = "contact" | "booking";
-export type LeadStatus = "new" | "contacted" | "converted" | "archived";
+// "archived" predates the rest of this list and stays as the existing
+// one-way Archive button's target; lost/duplicate are separate, newer
+// terminal states with their own required fields below.
+export type LeadStatus =
+  "new" | "contacted" | "quoted" | "converted" | "lost" | "duplicate" | "archived";
 
 export interface Lead {
   id: string;
@@ -98,6 +117,13 @@ export interface Lead {
   source: string;
   createdAt: string;
   ip?: string | null;
+  // Set iff status === "lost". Required by both the UI and firestore.rules.
+  lostReason?: string;
+  // Set iff status === "duplicate" — id of the lead this one was merged into.
+  duplicateOf?: string;
+  // Set iff status === "converted". Written once, atomically with the
+  // status flip, and never overwritten afterward (immutable in rules).
+  convertedTo?: { type: "inspection" | "service" | "walk-in"; id: string };
 }
 
 export type NewsletterStatus = "subscribed" | "unsubscribed";
@@ -181,6 +207,11 @@ export interface Invoice {
   pointsRedeemed?: number;
   pointsRedeemedValue?: number;
   pointsEarned?: number;
+  // Attribution — set only when this invoice was linked to a Lead via
+  // convertLeadToInvoiceLink in store.tsx (the "walk-in invoice" convert
+  // target). Absent for every other invoice.
+  leadId?: string;
+  source?: string;
 }
 
 // ─── Loyalty & coupons ───────────────────────────────────────────────────────

@@ -48,6 +48,10 @@ const cashierNoPos = ctx("cash1", "Cashier", ["dashboard"]); // POS revoked
 const cashierPos = ctx("cash2", "Cashier", ["pos", "dashboard"]);
 const advisorLeads = ctx("adv1", "Advisor", ["leads", "dashboard"]);
 const advisorNoLeads = ctx("adv2", "Advisor", ["dashboard"]); // leads revoked
+// Edge case: a SuperAdmin manually grants "leads" to a Cashier, even though
+// ROLE_DEFAULT_PERMISSIONS never does this -- module access alone must not
+// be enough to create a lead, the role check matters too.
+const cashierLeadsGranted = ctx("cash3", "Cashier", ["leads"]);
 // Default-permissioned Advisor (mirrors ROLE_DEFAULT_PERMISSIONS.Advisor) --
 // holds "customers" and "inventory" but is NOT Manager+, the exact profile
 // Finding 4's coupons/inventory field-restriction tests need.
@@ -138,6 +142,20 @@ await env.withSecurityRulesDisabled(async (c) => {
   await setDoc(doc(d, "inventory/i2"), freshInventoryItem);
   await setDoc(doc(d, "settings/notifications"), { x: 1 });
   await setDoc(doc(d, "leads/lead1"), { name: "Test Lead", type: "contact", status: "new" });
+  // Separate docs per transition-graph test below, same reasoning as the
+  // invoices inv1..inv6 split above: each assertSucceeds test actually
+  // mutates emulator state.
+  const freshLead = (name, status, source) => ({
+    id: name, type: "contact", name, status, source, createdAt: "t",
+  });
+  await setDoc(doc(d, "leads/leadNew1"), freshLead("leadNew1", "new", "whatsapp"));
+  await setDoc(doc(d, "leads/leadNew2"), freshLead("leadNew2", "new", "whatsapp"));
+  await setDoc(doc(d, "leads/leadNew3"), freshLead("leadNew3", "new", "whatsapp"));
+  await setDoc(doc(d, "leads/leadQuoted"), freshLead("leadQuoted", "quoted", "phone"));
+  await setDoc(doc(d, "leads/leadConverted"), {
+    ...freshLead("leadConverted", "converted", "walk-in"),
+    convertedTo: { type: "walk-in", id: "INV-1" },
+  });
   await setDoc(doc(d, "newsletterSubscribers/a@example.com"), {
     email: "a@example.com",
     status: "subscribed",
@@ -575,14 +593,153 @@ await check(
   ),
 );
 await check(
-  "staff (non-Manager) CANNOT create a lead directly (Admin SDK only)",
-  assertFails(
-    setDoc(doc(advisorLeads, "leads/lead3"), { name: "X", type: "contact", status: "new" }),
+  "advisor (not Manager+) cannot delete a lead",
+  assertFails(deleteDoc(doc(advisorLeads, "leads/lead1"))),
+);
+
+console.log(
+  "\nLeads — manual entry create (staff-side, distinct from the Admin-SDK public routes):",
+);
+await check(
+  "advisor WITH leads module can manually log a WhatsApp lead",
+  assertSucceeds(
+    setDoc(doc(advisorLeads, "leads/leadManual1"), {
+      id: "leadManual1",
+      type: "contact",
+      name: "Manual WA",
+      status: "new",
+      source: "whatsapp",
+      createdAt: "t",
+    }),
   ),
 );
 await check(
-  "advisor (not Manager+) cannot delete a lead",
-  assertFails(deleteDoc(doc(advisorLeads, "leads/lead1"))),
+  "advisor WITHOUT leads module cannot manually log a lead",
+  assertFails(
+    setDoc(doc(advisorNoLeads, "leads/leadManual2"), {
+      id: "leadManual2",
+      type: "contact",
+      name: "X",
+      status: "new",
+      source: "phone",
+      createdAt: "t",
+    }),
+  ),
+);
+await check(
+  "Cashier granted the leads module still cannot create one (role must be Advisor or Manager+)",
+  assertFails(
+    setDoc(doc(cashierLeadsGranted, "leads/leadManual3"), {
+      id: "leadManual3",
+      type: "contact",
+      name: "X",
+      status: "new",
+      source: "phone",
+      createdAt: "t",
+    }),
+  ),
+);
+await check(
+  "cannot spoof the website's source on a manually-created lead",
+  assertFails(
+    setDoc(doc(advisorLeads, "leads/leadManual4"), {
+      id: "leadManual4",
+      type: "contact",
+      name: "X",
+      status: "new",
+      source: "polishstation.lk",
+      createdAt: "t",
+    }),
+  ),
+);
+await check(
+  "a manually-created lead cannot start at any status other than new",
+  assertFails(
+    setDoc(doc(advisorLeads, "leads/leadManual5"), {
+      id: "leadManual5",
+      type: "contact",
+      name: "X",
+      status: "contacted",
+      source: "walk-in",
+      createdAt: "t",
+    }),
+  ),
+);
+
+console.log("\nLeads — status transition graph (src/lib/lead.ts):");
+await check(
+  "new -> contacted is legal",
+  assertSucceeds(
+    setDoc(doc(advisorLeads, "leads/leadNew1"), { status: "contacted" }, { merge: true }),
+  ),
+);
+await check(
+  "new -> converted is legal (contacted/quoted are skippable), but requires convertedTo",
+  assertFails(setDoc(doc(advisorLeads, "leads/leadNew2"), { status: "converted" }, { merge: true })),
+);
+await check(
+  "new -> converted with a valid convertedTo succeeds",
+  assertSucceeds(
+    setDoc(
+      doc(advisorLeads, "leads/leadNew2"),
+      { status: "converted", convertedTo: { type: "service", id: "B-1" } },
+      { merge: true },
+    ),
+  ),
+);
+await check(
+  "converted is terminal -- cannot move back to any other status",
+  assertFails(setDoc(doc(advisorLeads, "leads/leadNew2"), { status: "new" }, { merge: true })),
+);
+await check(
+  "convertedTo is immutable once status is already converted",
+  assertFails(
+    setDoc(
+      doc(advisorLeads, "leads/leadNew2"),
+      { convertedTo: { type: "walk-in", id: "INV-9" } },
+      { merge: true },
+    ),
+  ),
+);
+await check(
+  "lost requires a non-empty lostReason",
+  assertFails(setDoc(doc(advisorLeads, "leads/leadNew3"), { status: "lost" }, { merge: true })),
+);
+await check(
+  "lost with a reason succeeds",
+  assertSucceeds(
+    setDoc(
+      doc(advisorLeads, "leads/leadNew3"),
+      { status: "lost", lostReason: "Went with a competitor" },
+      { merge: true },
+    ),
+  ),
+);
+await check(
+  "duplicate requires a non-empty duplicateOf",
+  assertFails(
+    setDoc(doc(advisorLeads, "leads/leadQuoted"), { status: "duplicate" }, { merge: true }),
+  ),
+);
+await check(
+  "duplicate with a target lead id succeeds",
+  assertSucceeds(
+    setDoc(
+      doc(advisorLeads, "leads/leadQuoted"),
+      { status: "duplicate", duplicateOf: "lead1" },
+      { merge: true },
+    ),
+  ),
+);
+await check(
+  "an already-converted lead cannot be re-pointed to a different artifact",
+  assertFails(
+    setDoc(
+      doc(advisorLeads, "leads/leadConverted"),
+      { convertedTo: { type: "service", id: "B-2" } },
+      { merge: true },
+    ),
+  ),
 );
 await check(
   "anon CANNOT read newsletter subscribers",

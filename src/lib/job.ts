@@ -36,6 +36,10 @@ export interface Job {
   notes: string;
   createdAt: string;
   updatedAt: string;
+  // Attribution — set only when this job's invoice was linked to a Lead via
+  // convertLeadToInvoiceLink in store.tsx. Absent for every other job.
+  leadId?: string;
+  source?: string;
 }
 
 export interface JobEvent {

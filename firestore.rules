@@ -29,6 +29,39 @@ service cloud.firestore {
       );
     }
 
+    // ── Lead status transitions ──────────────────────────────────────────
+    // Mirrors src/lib/lead.ts's LEGAL_LEAD_TRANSITIONS exactly -- keep the
+    // two in sync by hand (same precedent as job.ts's LEGAL_TRANSITIONS vs.
+    // the jobEvents rule below, which are also two independently-kept
+    // copies). Also enforces the required field for each terminal status
+    // and makes `convertedTo` immutable once status is already "converted".
+    function legalLeadTransitions() {
+      return {
+        "new":       ["contacted", "quoted", "converted", "lost", "duplicate", "archived"],
+        "contacted": ["quoted", "converted", "lost", "duplicate", "archived"],
+        "quoted":    ["converted", "lost", "duplicate", "archived"],
+        "converted": [],
+        "lost":      [],
+        "duplicate": [],
+        "archived":  [],
+      };
+    }
+
+    function isLegalLeadUpdate() {
+      let before = resource.data.status;
+      let after = request.resource.data;
+      return (before == after.status || after.status in legalLeadTransitions()[before])
+        && (after.status != "lost" ||
+            (after.lostReason is string && after.lostReason.size() > 0))
+        && (after.status != "duplicate" ||
+            (after.duplicateOf is string && after.duplicateOf.size() > 0))
+        && (after.status != "converted" ||
+            (after.convertedTo is map
+             && after.convertedTo.type in ["inspection", "service", "walk-in"]
+             && after.convertedTo.id is string && after.convertedTo.id.size() > 0))
+        && (before != "converted" || after.convertedTo == resource.data.convertedTo);
+    }
+
     // ── Staff ─────────────────────────────────────────────────────────────
     // DRAFTED + TESTED, NOT YET DEPLOYED (see
     // [[project_firestore_rules_audit]] Finding 1 and
@@ -361,17 +394,25 @@ service cloud.firestore {
     }
 
     // ── Leads (contact/booking inquiries from the public polishstation.lk
-    //    marketing site) ────────────────────────────────────────────────────
-    // Written exclusively by the Admin SDK from the unauthenticated
-    // src/routes/api.public.*.ts routes, which bypasses these rules entirely
-    // by design — that's how an anonymous site visitor is able to create one
-    // at all. `create` is false here for everyone else. Staff triage (status
-    // changes, convert-to-customer) is a normal authenticated client write,
-    // gated behind the new "leads" module like every other staff-facing list.
+    //    marketing site, plus manual WhatsApp/phone/walk-in entry) ─────────
+    // The website source is still written exclusively by the Admin SDK from
+    // the unauthenticated src/routes/api.public.*.ts routes, which bypasses
+    // these rules entirely by design — that's how an anonymous site visitor
+    // is able to create one at all. `create` below is for the newer,
+    // authenticated path: staff manually logging a WhatsApp/phone/walk-in
+    // inquiry (see addLead in store.tsx) — gated like bookings create, and
+    // restricted to the three manual sources so a client can never spoof a
+    // "polishstation.lk"-attributed lead. `update` enforces the status
+    // transition graph and per-status required fields (see
+    // isLegalLeadUpdate() above / src/lib/lead.ts).
     match /leads/{leadId} {
       allow read:   if hasModule("leads");
-      allow create: if false;
-      allow update: if hasModule("leads");
+      allow create: if hasModule("leads") && (isManagerOrAbove() || role() == "Advisor")
+                    && request.resource.data.status == "new"
+                    && request.resource.data.source in ["whatsapp", "phone", "walk-in"]
+                    && request.resource.data.keys().hasAll(
+                         ["id", "type", "name", "status", "source", "createdAt"]);
+      allow update: if hasModule("leads") && isLegalLeadUpdate();
       allow delete: if hasModule("leads") && isManagerOrAbove();
     }
 
