@@ -16,6 +16,8 @@ import {
   Bell,
   Inbox,
   WifiOff,
+  ClipboardCheck,
+  MessageCircleQuestion,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
@@ -32,6 +34,8 @@ const ICONS: Record<ModuleKey, React.ComponentType<{ className?: string }>> = {
   bookings: Calendar,
   customers: Users,
   leads: Inbox,
+  inspection: ClipboardCheck,
+  inquiry: MessageCircleQuestion,
   inventory: Boxes,
   equipment: Hammer,
   "purchase-orders": ShoppingCart,

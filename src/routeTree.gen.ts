@@ -24,6 +24,8 @@ import { Route as AppPosRouteImport } from './routes/_app.pos'
 import { Route as AppNotificationsRouteImport } from './routes/_app.notifications'
 import { Route as AppLeadsRouteImport } from './routes/_app.leads'
 import { Route as AppInventoryRouteImport } from './routes/_app.inventory'
+import { Route as AppInspectionRouteImport } from './routes/_app.inspection'
+import { Route as AppInquiryRouteImport } from './routes/_app.inquiry'
 import { Route as AppEquipmentRouteImport } from './routes/_app.equipment'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppCustomersRouteImport } from './routes/_app.customers'
@@ -106,6 +108,16 @@ const AppInventoryRoute = AppInventoryRouteImport.update({
   path: '/inventory',
   getParentRoute: () => AppRoute,
 } as any)
+const AppInspectionRoute = AppInspectionRouteImport.update({
+  id: '/inspection',
+  path: '/inspection',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppInquiryRoute = AppInquiryRouteImport.update({
+  id: '/inquiry',
+  path: '/inquiry',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppEquipmentRoute = AppEquipmentRouteImport.update({
   id: '/equipment',
   path: '/equipment',
@@ -153,6 +165,8 @@ export interface FileRoutesByFullPath {
   '/customers': typeof AppCustomersRoute
   '/dashboard': typeof AppDashboardRoute
   '/equipment': typeof AppEquipmentRoute
+  '/inquiry': typeof AppInquiryRoute
+  '/inspection': typeof AppInspectionRoute
   '/inventory': typeof AppInventoryRoute
   '/leads': typeof AppLeadsRoute
   '/notifications': typeof AppNotificationsRoute
@@ -176,6 +190,8 @@ export interface FileRoutesByTo {
   '/customers': typeof AppCustomersRoute
   '/dashboard': typeof AppDashboardRoute
   '/equipment': typeof AppEquipmentRoute
+  '/inquiry': typeof AppInquiryRoute
+  '/inspection': typeof AppInspectionRoute
   '/inventory': typeof AppInventoryRoute
   '/leads': typeof AppLeadsRoute
   '/notifications': typeof AppNotificationsRoute
@@ -201,6 +217,8 @@ export interface FileRoutesById {
   '/_app/customers': typeof AppCustomersRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/equipment': typeof AppEquipmentRoute
+  '/_app/inquiry': typeof AppInquiryRoute
+  '/_app/inspection': typeof AppInspectionRoute
   '/_app/inventory': typeof AppInventoryRoute
   '/_app/leads': typeof AppLeadsRoute
   '/_app/notifications': typeof AppNotificationsRoute
@@ -226,6 +244,8 @@ export interface FileRouteTypes {
     | '/customers'
     | '/dashboard'
     | '/equipment'
+    | '/inquiry'
+    | '/inspection'
     | '/inventory'
     | '/leads'
     | '/notifications'
@@ -249,6 +269,8 @@ export interface FileRouteTypes {
     | '/customers'
     | '/dashboard'
     | '/equipment'
+    | '/inquiry'
+    | '/inspection'
     | '/inventory'
     | '/leads'
     | '/notifications'
@@ -273,6 +295,8 @@ export interface FileRouteTypes {
     | '/_app/customers'
     | '/_app/dashboard'
     | '/_app/equipment'
+    | '/_app/inquiry'
+    | '/_app/inspection'
     | '/_app/inventory'
     | '/_app/leads'
     | '/_app/notifications'
@@ -406,6 +430,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppInventoryRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/inspection': {
+      id: '/_app/inspection'
+      path: '/inspection'
+      fullPath: '/inspection'
+      preLoaderRoute: typeof AppInspectionRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/inquiry': {
+      id: '/_app/inquiry'
+      path: '/inquiry'
+      fullPath: '/inquiry'
+      preLoaderRoute: typeof AppInquiryRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/equipment': {
       id: '/_app/equipment'
       path: '/equipment'
@@ -463,6 +501,8 @@ interface AppRouteChildren {
   AppCustomersRoute: typeof AppCustomersRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppEquipmentRoute: typeof AppEquipmentRoute
+  AppInquiryRoute: typeof AppInquiryRoute
+  AppInspectionRoute: typeof AppInspectionRoute
   AppInventoryRoute: typeof AppInventoryRoute
   AppLeadsRoute: typeof AppLeadsRoute
   AppNotificationsRoute: typeof AppNotificationsRoute
@@ -478,6 +518,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppCustomersRoute: AppCustomersRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppEquipmentRoute: AppEquipmentRoute,
+  AppInquiryRoute: AppInquiryRoute,
+  AppInspectionRoute: AppInspectionRoute,
   AppInventoryRoute: AppInventoryRoute,
   AppLeadsRoute: AppLeadsRoute,
   AppNotificationsRoute: AppNotificationsRoute,
