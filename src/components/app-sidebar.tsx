@@ -71,7 +71,10 @@ function NavLinks({
   }));
 
   return (
-    <nav aria-label="Main navigation" className="flex-1 space-y-0.5 px-2 pt-2">
+    <nav
+      aria-label="Main navigation"
+      className="flex-1 min-h-0 overflow-y-auto space-y-0.5 px-2 pt-2"
+    >
       {visibleNav.map(({ to, label, icon: Icon }) => {
         const active = pathname.startsWith(to);
         const isNotifications = to === "/notifications";
