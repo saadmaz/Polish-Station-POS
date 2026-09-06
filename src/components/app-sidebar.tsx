@@ -18,6 +18,7 @@ import {
   WifiOff,
   ClipboardCheck,
   MessageCircleQuestion,
+  Rss,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
@@ -36,6 +37,7 @@ const ICONS: Record<ModuleKey, React.ComponentType<{ className?: string }>> = {
   leads: Inbox,
   inspection: ClipboardCheck,
   inquiry: MessageCircleQuestion,
+  subscribers: Rss,
   inventory: Boxes,
   equipment: Hammer,
   "purchase-orders": ShoppingCart,

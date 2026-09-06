@@ -16,6 +16,7 @@ import { Route as ChangePinRouteImport } from './routes/change-pin'
 import { Route as BookRouteImport } from './routes/book'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppSubscribersRouteImport } from './routes/_app.subscribers'
 import { Route as AppStaffRouteImport } from './routes/_app.staff'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppReportsRouteImport } from './routes/_app.reports'
@@ -67,6 +68,11 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppSubscribersRoute = AppSubscribersRouteImport.update({
+  id: '/subscribers',
+  path: '/subscribers',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppStaffRoute = AppStaffRouteImport.update({
   id: '/staff',
@@ -175,6 +181,7 @@ export interface FileRoutesByFullPath {
   '/reports': typeof AppReportsRoute
   '/settings': typeof AppSettingsRoute
   '/staff': typeof AppStaffRoute
+  '/subscribers': typeof AppSubscribersRoute
   '/api/public/booking': typeof ApiPublicBookingRoute
   '/api/public/contact': typeof ApiPublicContactRoute
   '/api/public/newsletter': typeof ApiPublicNewsletterRoute
@@ -200,6 +207,7 @@ export interface FileRoutesByTo {
   '/reports': typeof AppReportsRoute
   '/settings': typeof AppSettingsRoute
   '/staff': typeof AppStaffRoute
+  '/subscribers': typeof AppSubscribersRoute
   '/api/public/booking': typeof ApiPublicBookingRoute
   '/api/public/contact': typeof ApiPublicContactRoute
   '/api/public/newsletter': typeof ApiPublicNewsletterRoute
@@ -227,6 +235,7 @@ export interface FileRoutesById {
   '/_app/reports': typeof AppReportsRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/staff': typeof AppStaffRoute
+  '/_app/subscribers': typeof AppSubscribersRoute
   '/api/public/booking': typeof ApiPublicBookingRoute
   '/api/public/contact': typeof ApiPublicContactRoute
   '/api/public/newsletter': typeof ApiPublicNewsletterRoute
@@ -254,6 +263,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/staff'
+    | '/subscribers'
     | '/api/public/booking'
     | '/api/public/contact'
     | '/api/public/newsletter'
@@ -279,6 +289,7 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/staff'
+    | '/subscribers'
     | '/api/public/booking'
     | '/api/public/contact'
     | '/api/public/newsletter'
@@ -305,6 +316,7 @@ export interface FileRouteTypes {
     | '/_app/reports'
     | '/_app/settings'
     | '/_app/staff'
+    | '/_app/subscribers'
     | '/api/public/booking'
     | '/api/public/contact'
     | '/api/public/newsletter'
@@ -373,6 +385,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_app/subscribers': {
+      id: '/_app/subscribers'
+      path: '/subscribers'
+      fullPath: '/subscribers'
+      preLoaderRoute: typeof AppSubscribersRouteImport
+      parentRoute: typeof AppRoute
     }
     '/_app/staff': {
       id: '/_app/staff'
@@ -511,6 +530,7 @@ interface AppRouteChildren {
   AppReportsRoute: typeof AppReportsRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppStaffRoute: typeof AppStaffRoute
+  AppSubscribersRoute: typeof AppSubscribersRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -528,6 +548,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppReportsRoute: AppReportsRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppStaffRoute: AppStaffRoute,
+  AppSubscribersRoute: AppSubscribersRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
