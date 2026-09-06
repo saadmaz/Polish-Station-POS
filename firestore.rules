@@ -432,6 +432,7 @@ service cloud.firestore {
       allow create: if request.resource.data.keys().hasOnly(
                          ["id", "name", "contactNumber", "email", "message", "createdAt"])
                     && request.resource.data.id is string
+                    && request.resource.data.id == inquiryId
                     && request.resource.data.name is string
                     && request.resource.data.name.size() >= 2
                     && request.resource.data.name.size() <= 80
