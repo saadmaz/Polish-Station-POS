@@ -92,7 +92,12 @@ async function renameExisting(entry: RosterEntry & { oldUsername: string }) {
     password: toStaffPassword(entry.pin),
     disabled: false,
   });
-  await adminAuth.setCustomUserClaims(staffId, { role, perms, name: entry.name, mustChangePin: true });
+  await adminAuth.setCustomUserClaims(staffId, {
+    role,
+    perms,
+    name: entry.name,
+    mustChangePin: true,
+  });
 
   console.log(`✅ renamed ${entry.oldUsername} -> ${entry.username}`);
 }

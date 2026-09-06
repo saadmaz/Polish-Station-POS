@@ -13,6 +13,7 @@ export interface PublicStaff {
   color: string;
   active: boolean;
   username: string;
+  order: number;
 }
 
 // Module-level cache, fetched once per page load, shared across all consumers.
@@ -38,10 +39,16 @@ async function fetchStaffList(): Promise<PublicStaff[]> {
           // case-insensitively, so there's no meaning lost normalizing the
           // display too.
           username: ((v.username as string) ?? "").toLowerCase(),
+          // Firestore returns docs in no meaningful order. Staff without an
+          // explicit `order` (new hires created before this field existed on
+          // their doc) sort after everyone who has one, alphabetically by
+          // name among themselves.
+          order: typeof v.order === "number" ? v.order : Number.MAX_SAFE_INTEGER,
         } satisfies PublicStaff;
       })
       // Deactivated staff never appear in pickers or the staff grid.
-      .filter((s) => s.active);
+      .filter((s) => s.active)
+      .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
     cache = list;
     inFlight = null;
     return list;
