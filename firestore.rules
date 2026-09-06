@@ -447,10 +447,17 @@ service cloud.firestore {
     }
 
     // Doc id = email, so the public newsletter route's upsert is idempotent.
-    // No staff UI mutates this collection yet, so writes stay Admin-SDK-only.
+    // `create` stays Admin-SDK-only (the api.public.newsletter.ts route is the
+    // only writer for a brand-new subscriber) — gated on "subscribers", not
+    // "leads": this collection now has its own staff-facing screen and its
+    // own module permission, so it must be checked against that, not a
+    // different module's grant (see the "Inquiries" permission-vs-rules
+    // mismatch this mirrors and fixes preemptively).
     match /newsletterSubscribers/{subscriberId} {
-      allow read:  if hasModule("leads");
-      allow write: if false;
+      allow read:   if hasModule("subscribers");
+      allow update: if hasModule("subscribers") && isManagerOrAbove();
+      allow delete: if hasModule("subscribers") && isManagerOrAbove();
+      allow create: if false;
     }
   }
 }

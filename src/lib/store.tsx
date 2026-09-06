@@ -60,6 +60,7 @@ import type {
   Invoice,
   Lead,
   MaintenanceLog,
+  NewsletterSubscriber,
   NotificationSettings,
   PaymentRecord,
   POLine,
@@ -134,6 +135,7 @@ interface Store {
   auditList: AuditLog[];
   leads: Lead[];
   inquiries: Inquiry[];
+  newsletterSubscribers: NewsletterSubscriber[];
 
   // computed
   lowStockItems: InventoryItem[];
@@ -205,6 +207,12 @@ interface Store {
   // site, written directly by that site via the client SDK). No status
   // workflow — staff can only view and delete.
   deleteInquiry: (id: string) => void;
+
+  // Newsletter subscribers (newsletter/blog signups from the public site,
+  // written by the Admin SDK from api.public.newsletter.ts). Staff can
+  // toggle subscribed/unsubscribed and delete, but never create one here.
+  toggleSubscriberStatus: (subscriber: NewsletterSubscriber) => void;
+  deleteSubscriber: (id: string) => void;
 
   // Coupons
   addCoupon: (c: Omit<Coupon, "id" | "createdAt" | "redeemedCount">) => Coupon;
@@ -324,6 +332,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [purchaseOrdersList, setPurchaseOrdersList] = useState<PurchaseOrder[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [inquiries, setInquiries] = useState<Inquiry[]>([]);
+  const [newsletterSubscribers, setNewsletterSubscribers] = useState<NewsletterSubscriber[]>([]);
   const [notificationSettingsData, setNotificationSettingsData] = useState<NotificationSettings>(
     DEFAULT_NOTIFICATION_SETTINGS,
   );
@@ -355,6 +364,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     businessInfo,
     bays,
     inquiries,
+    newsletterSubscribers,
   });
   useEffect(() => {
     S.current = {
@@ -374,6 +384,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       businessInfo,
       bays,
       inquiries,
+      newsletterSubscribers,
     };
   }, [
     services,
@@ -388,6 +399,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     maintenanceLogsList,
     purchaseOrdersList,
     inquiries,
+    newsletterSubscribers,
     sentNotificationsList,
     notificationSettingsData,
     businessInfo,
@@ -599,6 +611,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           fail("inquiries"),
         ),
       );
+    if (allowed("subscribers"))
+      add(() =>
+        onSnapshot(
+          newestFirst("newsletterSubscribers", "subscribedAt", 1000),
+          (s) => {
+            setNewsletterSubscribers(
+              s.docs.map((d) => ({ id: d.id, ...d.data() }) as NewsletterSubscriber),
+            );
+            done();
+          },
+          fail("newsletterSubscribers"),
+        ),
+      );
     if (allowed("notifications") && isManagerOrAbove(staff.role))
       add(() =>
         onSnapshot(
@@ -750,6 +775,39 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     logAudit(actorRef.current, {
       action: "DELETE_INQUIRY",
       entity: "Inquiry",
+      entityId: id,
+      before,
+      after: null,
+    });
+  }, []);
+
+  const toggleSubscriberStatus = useCallback((subscriber: NewsletterSubscriber) => {
+    const unsubscribing = subscriber.status === "subscribed";
+    // write() does a full setDoc, not a merge -- omitting unsubscribedAt
+    // (rather than setting it to undefined, which Firestore's SDK rejects
+    // outright) is what actually clears it back off the doc on resubscribe.
+    const { unsubscribedAt: _drop, ...rest } = subscriber;
+    const after: NewsletterSubscriber = {
+      ...rest,
+      status: unsubscribing ? "unsubscribed" : "subscribed",
+      ...(unsubscribing ? { unsubscribedAt: new Date().toISOString() } : {}),
+    };
+    write("newsletterSubscribers", after);
+    logAudit(actorRef.current, {
+      action: unsubscribing ? "UNSUBSCRIBE" : "RESUBSCRIBE",
+      entity: "NewsletterSubscriber",
+      entityId: subscriber.id,
+      before: subscriber,
+      after,
+    });
+  }, []);
+
+  const deleteSubscriber = useCallback((id: string) => {
+    const before = S.current.newsletterSubscribers.find((s) => s.id === id) ?? null;
+    remove("newsletterSubscribers", id);
+    logAudit(actorRef.current, {
+      action: "DELETE_SUBSCRIBER",
+      entity: "NewsletterSubscriber",
       entityId: id,
       before,
       after: null,
@@ -1657,6 +1715,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     leads,
     inquiries,
     deleteInquiry,
+    newsletterSubscribers,
+    toggleSubscriberStatus,
+    deleteSubscriber,
     lowStockItems,
     overdueEquipment,
     upsertEquipment,
