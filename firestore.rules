@@ -226,14 +226,19 @@ service cloud.firestore {
 
     // ── Jobs ──────────────────────────────────────────────────────────────
     // The work record (see src/lib/job.ts) — Booking above is still just
-    // "the promise". Only POS checkout writes these today: a walk-in sale
-    // synthesizes one, or transitions an existing job to delivered.
-    // Check-in/technician-facing transitions are a later stage, so this
-    // stays scoped to what's actually used rather than opened up ahead of
-    // need.
+    // "the promise". Two independent writers now: POS checkout (a walk-in
+    // sale synthesizes one, or transitions an existing job to delivered —
+    // the original, `pos`-gated path) and the job-intake screen (creates a
+    // job directly from a vehicle drop-off, before any invoice exists, and
+    // drives it through arrived/checked_in/in_progress/qc/ready — the new
+    // `jobs`-gated path). No field-diff restriction on either path, same as
+    // before this change: this collection has never had one (unlike
+    // `invoices`), and status-legality is enforced by job.ts's
+    // assertLegalTransition on every write path, not by firestore.rules.
     match /jobs/{jobId} {
       allow read:   if isAuth();
-      allow create, update: if hasModule("pos") && (isManagerOrAbove() || role() in ["Cashier", "Advisor"]);
+      allow create, update: if (hasModule("pos") && (isManagerOrAbove() || role() in ["Cashier", "Advisor"]))
+                             || (hasModule("jobs") && (isManagerOrAbove() || role() == "Advisor"));
       allow delete: if isManagerOrAbove();
     }
 

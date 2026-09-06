@@ -4,6 +4,8 @@ import {
   assertLegalTransition,
   buildTransitionEvent,
   durationBetweenMs,
+  legalNextStatuses,
+  nextQuoteVersion,
   IllegalJobTransitionError,
   TERMINAL_STATUSES,
   type JobStatus,
@@ -178,5 +180,54 @@ describe("durationBetweenMs", () => {
 
   it("returns null when a boundary status was never reached — this is never a stored/guessed field", () => {
     expect(durationBetweenMs(events, "checked_in", "delivered")).toBeNull();
+  });
+});
+
+describe("legalNextStatuses", () => {
+  it("matches isLegalTransition for every status", () => {
+    const all: JobStatus[] = [
+      "booked",
+      "arrived",
+      "checked_in",
+      "in_progress",
+      "qc",
+      "ready",
+      "delivered",
+      "cancelled",
+      "no_show",
+    ];
+    for (const from of all) {
+      for (const to of all) {
+        expect(legalNextStatuses(from).includes(to)).toBe(isLegalTransition(from, to));
+      }
+    }
+  });
+
+  it("is empty for a terminal status", () => {
+    for (const status of TERMINAL_STATUSES) {
+      expect(legalNextStatuses(status)).toEqual([]);
+    }
+  });
+});
+
+describe("nextQuoteVersion", () => {
+  it("bumps when the price actually changed", () => {
+    expect(
+      nextQuoteVersion({ price: 15000, estimate: { isProvisional: true, quoteVersion: 1 } }, 18000),
+    ).toBe(2);
+  });
+
+  it("does not bump when the price is unchanged", () => {
+    expect(
+      nextQuoteVersion({ price: 15000, estimate: { isProvisional: true, quoteVersion: 2 } }, 15000),
+    ).toBe(2);
+  });
+
+  it("defaults to version 1 for a job with no estimate yet", () => {
+    expect(nextQuoteVersion({ price: 15000, estimate: undefined }, 15000)).toBe(1);
+  });
+
+  it("bumps from the implicit version 1 when a price changes with no prior estimate", () => {
+    expect(nextQuoteVersion({ price: 15000, estimate: undefined }, 18000)).toBe(2);
   });
 });

@@ -24,6 +24,7 @@ import { Route as AppPurchaseOrdersRouteImport } from './routes/_app.purchase-or
 import { Route as AppPosRouteImport } from './routes/_app.pos'
 import { Route as AppNotificationsRouteImport } from './routes/_app.notifications'
 import { Route as AppLeadsRouteImport } from './routes/_app.leads'
+import { Route as AppJobsRouteImport } from './routes/_app.jobs'
 import { Route as AppInventoryRouteImport } from './routes/_app.inventory'
 import { Route as AppInspectionRouteImport } from './routes/_app.inspection'
 import { Route as AppInquiryRouteImport } from './routes/_app.inquiry'
@@ -109,6 +110,11 @@ const AppLeadsRoute = AppLeadsRouteImport.update({
   path: '/leads',
   getParentRoute: () => AppRoute,
 } as any)
+const AppJobsRoute = AppJobsRouteImport.update({
+  id: '/jobs',
+  path: '/jobs',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppInventoryRoute = AppInventoryRouteImport.update({
   id: '/inventory',
   path: '/inventory',
@@ -174,6 +180,7 @@ export interface FileRoutesByFullPath {
   '/inquiry': typeof AppInquiryRoute
   '/inspection': typeof AppInspectionRoute
   '/inventory': typeof AppInventoryRoute
+  '/jobs': typeof AppJobsRoute
   '/leads': typeof AppLeadsRoute
   '/notifications': typeof AppNotificationsRoute
   '/pos': typeof AppPosRoute
@@ -200,6 +207,7 @@ export interface FileRoutesByTo {
   '/inquiry': typeof AppInquiryRoute
   '/inspection': typeof AppInspectionRoute
   '/inventory': typeof AppInventoryRoute
+  '/jobs': typeof AppJobsRoute
   '/leads': typeof AppLeadsRoute
   '/notifications': typeof AppNotificationsRoute
   '/pos': typeof AppPosRoute
@@ -228,6 +236,7 @@ export interface FileRoutesById {
   '/_app/inquiry': typeof AppInquiryRoute
   '/_app/inspection': typeof AppInspectionRoute
   '/_app/inventory': typeof AppInventoryRoute
+  '/_app/jobs': typeof AppJobsRoute
   '/_app/leads': typeof AppLeadsRoute
   '/_app/notifications': typeof AppNotificationsRoute
   '/_app/pos': typeof AppPosRoute
@@ -256,6 +265,7 @@ export interface FileRouteTypes {
     | '/inquiry'
     | '/inspection'
     | '/inventory'
+    | '/jobs'
     | '/leads'
     | '/notifications'
     | '/pos'
@@ -282,6 +292,7 @@ export interface FileRouteTypes {
     | '/inquiry'
     | '/inspection'
     | '/inventory'
+    | '/jobs'
     | '/leads'
     | '/notifications'
     | '/pos'
@@ -309,6 +320,7 @@ export interface FileRouteTypes {
     | '/_app/inquiry'
     | '/_app/inspection'
     | '/_app/inventory'
+    | '/_app/jobs'
     | '/_app/leads'
     | '/_app/notifications'
     | '/_app/pos'
@@ -442,6 +454,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppLeadsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/jobs': {
+      id: '/_app/jobs'
+      path: '/jobs'
+      fullPath: '/jobs'
+      preLoaderRoute: typeof AppJobsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/inventory': {
       id: '/_app/inventory'
       path: '/inventory'
@@ -523,6 +542,7 @@ interface AppRouteChildren {
   AppInquiryRoute: typeof AppInquiryRoute
   AppInspectionRoute: typeof AppInspectionRoute
   AppInventoryRoute: typeof AppInventoryRoute
+  AppJobsRoute: typeof AppJobsRoute
   AppLeadsRoute: typeof AppLeadsRoute
   AppNotificationsRoute: typeof AppNotificationsRoute
   AppPosRoute: typeof AppPosRoute
@@ -541,6 +561,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppInquiryRoute: AppInquiryRoute,
   AppInspectionRoute: AppInspectionRoute,
   AppInventoryRoute: AppInventoryRoute,
+  AppJobsRoute: AppJobsRoute,
   AppLeadsRoute: AppLeadsRoute,
   AppNotificationsRoute: AppNotificationsRoute,
   AppPosRoute: AppPosRoute,

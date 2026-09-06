@@ -1,9 +1,12 @@
 import jsPDF from "jspdf";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import type { Invoice, InvoiceLine, PurchaseOrder } from "./db";
 import { getPayments, getAmountRefunded, getBusinessInfo } from "./db";
 import { formatCurrency } from "./currency";
 import { formatDate } from "./date-format";
 import { LOGO_PNG_BASE64 } from "./logo-asset";
+import { storage } from "./firebase";
+import type { Job } from "./job";
 
 // Letterhead details come from the settings/business Firestore doc (cached in
 // db.ts by the store), except the website and the two landline/mobile
@@ -868,4 +871,200 @@ export function downloadQuotationPDF(opts: {
     notes: opts.notes,
   });
   doc.save(`${opts.id}.pdf`);
+}
+
+// ─── Job card ──────────────────────────────────────────────────────────────
+// Unlike every builder above (ephemeral — `doc.save()` and gone), this one
+// also uploads the generated PDF to Storage and returns where it landed, so
+// the job's `documents.jobCard` field (src/lib/job.ts) can point at a real,
+// shareable URL — see the module note there on why a job card, specifically,
+// needs to be persisted rather than regenerated on demand.
+
+function jobField(doc: jsPDF, x: number, y: number, w: number, label: string, value: string): void {
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7);
+  doc.setTextColor(...MUTED);
+  doc.text(label.toUpperCase(), x, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(...CHARCOAL);
+  const lines = doc.splitTextToSize(value || "—", w);
+  doc.text(lines[0] ?? "—", x, y + 5);
+}
+
+export interface JobCardResult {
+  url: string;
+  storagePath: string;
+  version: number;
+}
+
+/**
+ * Builds the job card PDF, uploads it to
+ * `jobs/{jobId}/documents/job-card-v{version}.pdf` in Storage (never
+ * overwriting an earlier version — see Job.documents.jobCard's header
+ * comment), and returns where it landed. Supervisor/technician names are
+ * passed in rather than looked up here, since this is a plain lib module
+ * with no access to the staff roster (see src/lib/use-staff-list.ts) —
+ * callers already have both loaded.
+ */
+export async function generateJobCardPDF(
+  job: Job,
+  names: { supervisorName: string; technicianNames: string[] },
+): Promise<JobCardResult> {
+  const version = job.estimate?.quoteVersion ?? 1;
+
+  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+  let y = 0;
+
+  // Header bar — matches buildDoc()/downloadPOPDF().
+  doc.setFillColor(...CHARCOAL);
+  doc.rect(0, 0, PW, 42, "F");
+
+  const LOGO_BOX = 15;
+  drawLogo(doc, ML, 5, LOGO_BOX);
+  const TX = ML + LOGO_BOX + 4;
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.setTextColor(...WHITE);
+  doc.text(getBusinessInfo().trading.toUpperCase(), TX, 16);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(255, 200, 200);
+  doc.text("Professional Car Detailing & Protection", TX, 22);
+  drawHeaderContact(doc, TX, 28);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(22);
+  doc.setTextColor(...WHITE);
+  doc.text("JOB CARD", MR, 16, { align: "right" });
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(255, 220, 220);
+  doc.text(`Ref:  ${job.id}`, MR, 23, { align: "right" });
+  doc.text(`Date:  ${fmtDate(job.createdAt)}`, MR, 28.5, { align: "right" });
+  doc.text(`Version:  ${version}`, MR, 34, { align: "right" });
+
+  y = 52;
+
+  // ── Customer / vehicle block ────────────────────────────────────────────
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7);
+  doc.setTextColor(...MUTED);
+  doc.text("CUSTOMER", ML, y);
+
+  const statusLabel = job.status.toUpperCase().replace(/_/g, " ");
+  badge(doc, statusLabel, MR - doc.getTextWidth(statusLabel) - 8, y + 0.5, CHARCOAL);
+
+  y += 6;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(...CHARCOAL);
+  doc.text(job.customerSnapshot?.name || job.customerName, ML, y);
+
+  y += 5.5;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...SLATE);
+  if (job.customerSnapshot?.phone) {
+    doc.text(`Contact:  ${job.customerSnapshot.phone}`, ML, y);
+    y += 4.5;
+  }
+  const v = job.vehicle;
+  if (v) {
+    const vehicleLine = [v.year, v.make, v.model].filter(Boolean).join(" ");
+    doc.text(`Vehicle:  ${vehicleLine}  ·  ${v.plate}  ·  ${v.colour}`, ML, y);
+    y += 4.5;
+  }
+
+  y += 4;
+  rule(doc, y);
+  y += 10;
+
+  // ── Job detail grid (two columns, matching the Ref/Customer/Contact/
+  // Vehicle/Colour/Service/Work Scheduled/Supervisor/Technician field list). ──
+  const GAP = 8;
+  const colW = (CW - GAP) / 2;
+  const leftX = ML;
+  const rightX = ML + colW + GAP;
+  const ROW_H = 15;
+
+  const scheduledAt = `${fmtDate(job.date)}  ${job.time}`;
+  const rows: [string, string][] = [
+    ["Colour", v?.colour ?? "—"],
+    ["Service", job.serviceName],
+    ["Work Scheduled", scheduledAt],
+    ["Assigned Supervisor", names.supervisorName || "—"],
+    ["Assigned Technician", names.technicianNames.join(", ") || "—"],
+    ["Total Amount (LKR)", fmt(job.price)],
+  ];
+  for (let i = 0; i < rows.length; i += 2) {
+    const [l1, v1] = rows[i];
+    jobField(doc, leftX, y, colW, l1, v1);
+    if (rows[i + 1]) {
+      const [l2, v2] = rows[i + 1];
+      jobField(doc, rightX, y, colW, l2, v2);
+    }
+    y += ROW_H;
+  }
+
+  // Estimate not yet confirmed: printed, not silently omitted — a customer
+  // reading this card must see the price can still move.
+  if (job.estimate?.isProvisional) {
+    y += 2;
+    doc.setFillColor(254, 252, 232); // amber-50
+    doc.setDrawColor(...AMBER);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(ML, y - 5, CW, 11, 1.5, 1.5, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...AMBER);
+    doc.text("Estimate subject to on-site inspection.", ML + 4, y + 1.5);
+    y += 15;
+  } else {
+    y += 6;
+  }
+
+  // ── Notes ────────────────────────────────────────────────────────────────
+  if (job.notes) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(...MUTED);
+    doc.text("NOTES", ML, y);
+    y += 5;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...SLATE);
+    const noteLines = doc.splitTextToSize(job.notes, CW);
+    doc.text(noteLines, ML, y);
+    y += noteLines.length * 5 + 4;
+  }
+
+  // ── Footer ───────────────────────────────────────────────────────────────
+  const footerY = 277;
+  rule(doc, footerY - 5);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(...RED);
+  doc.text("POLISH STATION", ML, footerY);
+  drawFooterContact(doc, ML, footerY + 5, SLATE);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(...MUTED);
+  doc.text("Please retain this job card for your records.", ML, footerY + 10);
+  doc.setFontSize(7);
+  doc.text("Page 1 of 1", MR, footerY + 10, { align: "right" });
+
+  // ── Persist: upload, never overwriting an earlier version ──────────────────
+  const storagePath = `jobs/${job.id}/documents/job-card-v${version}.pdf`;
+  const blob = doc.output("blob");
+  const fileRef = storageRef(storage, storagePath);
+  await uploadBytes(fileRef, blob, { contentType: "application/pdf" });
+  const url = await getDownloadURL(fileRef);
+
+  doc.save(`${job.id}-v${version}.pdf`);
+
+  return { url, storagePath, version };
 }

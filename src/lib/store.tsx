@@ -26,6 +26,7 @@ import {
   limit,
   type Query,
   type Unsubscribe,
+  type WriteBatch,
 } from "firebase/firestore";
 import { db as fsDb } from "./firebase";
 import { useAuth } from "./auth";
@@ -43,8 +44,8 @@ import {
   type BusinessInfo,
 } from "./db";
 import { synthesizeWalkInJob } from "./job-linking";
-import { buildTransitionEvent } from "./job";
-import type { Job } from "./job";
+import { buildTransitionEvent, nextQuoteVersion } from "./job";
+import type { Job, JobEvent, JobStatus } from "./job";
 import { assertLegalLeadTransition, LeadAlreadyConvertedError } from "./lead";
 import { normalizePhone } from "./phone";
 import type {
@@ -226,6 +227,15 @@ interface Store {
   checkinBooking: (id: string) => Promise<void>;
   markDepositPaid: (bookingId: string) => void;
 
+  // Jobs (job intake / job card — see src/lib/job.ts). Booking above is
+  // still just "the promise"; POS checkout (addInvoice) remains the other
+  // writer of this same collection, transitioning a job to "delivered".
+  addJob: (
+    data: Omit<Job, "id" | "createdAt" | "updatedAt" | "status" | "bookingId" | "vehicleId">,
+  ) => Promise<Job>;
+  updateJob: (job: Job) => void;
+  transitionJobStatus: (id: string, toStatus: JobStatus) => Promise<void>;
+
   // Services
   upsertService: (s: Service) => void;
   deleteService: (id: string) => void;
@@ -280,6 +290,24 @@ function remove(collPath: string, id: string): void {
   deleteDoc(fd(collPath, id)).catch((err) =>
     console.error(`[store] delete ${collPath}/${id}:`, err),
   );
+}
+
+// Batches a legal Job status transition: updates the job doc and appends
+// the corresponding JobEvent, atomically. Shared by addInvoice's
+// checkout-driven transition to "delivered" and transitionJobStatus's
+// direct staff-driven transitions, so the two paths can never drift apart
+// on what a "transition" actually writes. Throws IllegalJobTransitionError
+// (via buildTransitionEvent) rather than writing an illegal move.
+function applyJobStatusTransition(
+  batch: WriteBatch,
+  job: Job,
+  toStatus: JobStatus,
+  actor: { id: string; name: string },
+  at: string,
+): void {
+  const event = buildTransitionEvent(job, toStatus, actor, at);
+  batch.set(fd("jobs", job.id), { ...job, status: toStatus, updatedAt: at });
+  batch.set(fd("jobEvents", event.id), event);
 }
 
 // Audit entries always carry the *actor's* verified identity: firestore.rules
@@ -1202,6 +1230,91 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // ── Job mutations (job intake) ─────────────────────────────────────────────
+  // Direct job creation/editing, distinct from the walk-in synthesis inside
+  // addInvoice above: this is a vehicle logged in for work *before* any
+  // invoice exists, so the job starts at "booked" the same way a real
+  // Booking-derived job would.
+  const addJob = useCallback(
+    async (
+      data: Omit<Job, "id" | "createdAt" | "updatedAt" | "status" | "bookingId" | "vehicleId">,
+    ): Promise<Job> => {
+      const id = await nextSeqId("jobs", "J-", S.current.jobs, 1);
+      const now = new Date().toISOString();
+      const actor = actorRef.current ?? { id: "", name: "" };
+      const job: Job = {
+        ...data,
+        id,
+        bookingId: null,
+        vehicleId: null, // Vehicle cutover not wired into Job in this stage
+        status: "booked",
+        createdAt: now,
+        updatedAt: now,
+      };
+      // The creation event, built directly rather than via
+      // buildTransitionEvent (which transitions an EXISTING job's status —
+      // there is no prior status here), same precedent as
+      // synthesizeWalkInJob's first chain link in job-linking.ts.
+      const event: JobEvent = {
+        id: newId(),
+        jobId: id,
+        fromStatus: null,
+        toStatus: "booked",
+        actorId: actor.id,
+        actorName: actor.name,
+        at: now,
+        note: null,
+      };
+      const batch = writeBatch(fsDb);
+      batch.set(fd("jobs", id), job);
+      batch.set(fd("jobEvents", event.id), event);
+      await batch.commit();
+      logAudit(actor, { action: "ADD_JOB", entity: "Job", entityId: id, before: null, after: job });
+      return job;
+    },
+    [],
+  );
+
+  const updateJob = useCallback((job: Job) => {
+    const before = S.current.jobs.find((j) => j.id === job.id) ?? null;
+    const now = new Date().toISOString();
+    const after: Job = {
+      ...job,
+      updatedAt: now,
+      // Only ever advances via nextQuoteVersion — never set by hand — so a
+      // job card PDF already handed to a customer is never silently
+      // superseded by an edit that didn't actually change the price.
+      estimate: job.estimate
+        ? { ...job.estimate, quoteVersion: nextQuoteVersion(before ?? job, job.price) }
+        : job.estimate,
+    };
+    write("jobs", after);
+    logAudit(actorRef.current, {
+      action: "UPDATE_JOB",
+      entity: "Job",
+      entityId: job.id,
+      before,
+      after,
+    });
+  }, []);
+
+  const transitionJobStatus = useCallback(async (id: string, toStatus: JobStatus) => {
+    const job = S.current.jobs.find((j) => j.id === id);
+    if (!job) return;
+    const actor = actorRef.current ?? { id: "", name: "" };
+    const at = new Date().toISOString();
+    const batch = writeBatch(fsDb);
+    applyJobStatusTransition(batch, job, toStatus, actor, at);
+    await batch.commit();
+    logAudit(actor, {
+      action: "TRANSITION_JOB_STATUS",
+      entity: "Job",
+      entityId: id,
+      before: job,
+      after: { ...job, status: toStatus, updatedAt: at },
+    });
+  }, []);
+
   // ── Service mutations ──────────────────────────────────────────────────────
   const upsertService = useCallback((s: Service) => {
     const before = S.current.services.find((x) => x.id === s.id) ?? null;
@@ -1300,13 +1413,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (jobId) {
         const existing = S.current.jobs.find((j) => j.id === jobId);
         if (existing && existing.status !== "delivered") {
-          const event = buildTransitionEvent(existing, "delivered", actor, draft.createdAt);
-          batch.set(fd("jobs", jobId), {
-            ...existing,
-            status: "delivered",
-            updatedAt: draft.createdAt,
-          });
-          batch.set(fd("jobEvents", event.id), event);
+          applyJobStatusTransition(batch, existing, "delivered", actor, draft.createdAt);
         }
       } else {
         jobId = await nextSeqId("jobs", "J-", S.current.jobs, 1);
@@ -1755,6 +1862,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     deleteBooking,
     checkinBooking,
     markDepositPaid,
+    addJob,
+    updateJob,
+    transitionJobStatus,
     upsertService,
     deleteService,
     upsertInventoryItem,

@@ -40,6 +40,33 @@ export interface Job {
   // convertLeadToInvoiceLink in store.tsx. Absent for every other job.
   leadId?: string;
   source?: string;
+
+  // ── Job intake / job card (added alongside the intake screen — see
+  // store.tsx's addJob/updateJob). Absent on every job created before this
+  // existed (migration-backfilled bookings, walk-in POS sales) — those keep
+  // working exactly as before by simply lacking these fields. ──────────────
+  vehicle?: {
+    plate: string;
+    make: string;
+    model: string;
+    year: number | null;
+    colour: string;
+    bodyType: "sedan" | "hatchback" | "suv" | "double_cab" | "van" | "coupe";
+    mileage: number | null;
+    vin: string;
+  };
+  customerSnapshot?: { name: string; phone: string; email: string; address: string };
+  // Provisional until staff explicitly confirm it (or, once the inspection
+  // stage exists, until a signed inspection settles the price) — the job
+  // card PDF prints "Estimate subject to on-site inspection" whenever
+  // isProvisional is true. quoteVersion only advances via nextQuoteVersion
+  // below, never by hand, so a customer's printed job card is never silently
+  // superseded without the PDF layer knowing to regenerate.
+  estimate?: { isProvisional: boolean; quoteVersion: number };
+  schedule?: { supervisorId: string | null; technicianIds: string[] };
+  documents?: {
+    jobCard?: { version: number; storagePath: string; url: string; generatedAt: string };
+  };
 }
 
 export interface JobEvent {
@@ -94,6 +121,13 @@ export function isLegalTransition(from: JobStatus, to: JobStatus): boolean {
   return LEGAL_TRANSITIONS[from].includes(to);
 }
 
+/** The statuses `from` may legally move to next — empty for a terminal
+ *  status. Lets a status-transition control render only buttons that would
+ *  actually succeed, instead of hand-duplicating LEGAL_TRANSITIONS in UI code. */
+export function legalNextStatuses(from: JobStatus): readonly JobStatus[] {
+  return LEGAL_TRANSITIONS[from];
+}
+
 /** Throws IllegalJobTransitionError rather than allowing (or silently
  *  ignoring) an illegal move. */
 export function assertLegalTransition(from: JobStatus, to: JobStatus): void {
@@ -145,4 +179,19 @@ export function durationBetweenMs(
   const toEvent = events.find((e) => e.toStatus === toStatus);
   if (!fromEvent || !toEvent) return null;
   return new Date(toEvent.at).getTime() - new Date(fromEvent.at).getTime();
+}
+
+/**
+ * The quoteVersion a job's estimate should carry after its price is set to
+ * `afterPrice`. Bumps only when the price actually moved from what it was
+ * before — editing an unrelated field (notes, schedule, vehicle details)
+ * must never mint a new PDF version, since that's what would silently
+ * supersede a job card a customer may already have in hand.
+ */
+export function nextQuoteVersion(
+  before: Pick<Job, "price" | "estimate">,
+  afterPrice: number,
+): number {
+  const currentVersion = before.estimate?.quoteVersion ?? 1;
+  return before.price !== afterPrice ? currentVersion + 1 : currentVersion;
 }

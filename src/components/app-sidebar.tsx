@@ -19,6 +19,7 @@ import {
   ClipboardCheck,
   MessageCircleQuestion,
   Rss,
+  Wrench,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
@@ -34,6 +35,7 @@ const ICONS: Record<ModuleKey, React.ComponentType<{ className?: string }>> = {
   dashboard: LayoutDashboard,
   bookings: Calendar,
   customers: Users,
+  jobs: Wrench,
   leads: Inbox,
   inspection: ClipboardCheck,
   inquiry: MessageCircleQuestion,
