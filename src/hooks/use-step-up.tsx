@@ -15,7 +15,7 @@
 // One hook call per component covers every step-up gate it needs, same as
 // useConfirm (src/hooks/use-confirm.tsx) -- each call to `requireStepUp()`
 // reuses the single dialog.
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { auth as firebaseAuth } from "@/lib/firebase";
 import { verifyStepUpPinFn } from "@/server/auth";
 import {
@@ -29,6 +29,8 @@ import { cn } from "@/lib/utils";
 
 const PIN_LEN = 4;
 const STEP_UP_TIMEOUT_MS = 20_000;
+
+class StepUpSessionExpiredError extends Error {}
 
 function withStepUpTimeout<T>(p: Promise<T>): Promise<T> {
   return Promise.race([
@@ -69,15 +71,19 @@ export function useStepUpAuth() {
       setBusy(true);
       setError(null);
       try {
-        const idToken = await firebaseAuth.currentUser?.getIdToken();
-        if (!idToken) {
-          setError("Your session has expired. Sign in again.");
-          setBusy(false);
-          setPin("");
-          return;
-        }
+        // The whole round trip -- including the client-side getIdToken()
+        // call, not just the server request -- must sit under one timeout.
+        // getIdToken() can itself stall (a flaky connection, the SDK stuck
+        // silently refreshing an expired token) with no timeout of its own,
+        // which used to leave `busy` stuck true forever: pressDigit() and
+        // backspace() both bail out while busy, so the keypad looked dead
+        // with no way back short of dismissing the whole dialog.
         const result = await withStepUpTimeout(
-          verifyStepUpPinFn({ data: { idToken, pin: value } }),
+          (async () => {
+            const idToken = await firebaseAuth.currentUser?.getIdToken();
+            if (!idToken) throw new StepUpSessionExpiredError();
+            return verifyStepUpPinFn({ data: { idToken, pin: value } });
+          })(),
         );
         if (result.success) {
           settle(true);
@@ -86,8 +92,12 @@ export function useStepUpAuth() {
           setBusy(false);
           setPin("");
         }
-      } catch {
-        setError("Couldn't reach the server, check your connection");
+      } catch (err) {
+        setError(
+          err instanceof StepUpSessionExpiredError
+            ? "Your session has expired. Sign in again."
+            : "Couldn't reach the server, check your connection",
+        );
         setBusy(false);
         setPin("");
       }
@@ -109,6 +119,27 @@ export function useStepUpAuth() {
     if (busy) return;
     setPin((p) => p.slice(0, -1));
   }, [busy]);
+
+  // The dialog only ever exposed an on-screen keypad -- no <input> and no
+  // keydown handler -- so a physical keyboard did nothing at all. Listen
+  // globally rather than putting a keydown handler on the dialog content:
+  // Radix's focus trap moves focus into DialogContent, but wherever focus
+  // lands, the event still bubbles to window, so this catches digits/
+  // backspace regardless of which element inside the dialog is focused.
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key >= "0" && e.key <= "9") {
+        e.preventDefault();
+        pressDigit(e.key);
+      } else if (e.key === "Backspace" || e.key === "Delete") {
+        e.preventDefault();
+        backspace();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, pressDigit, backspace]);
 
   const StepUpDialog = (
     <Dialog
