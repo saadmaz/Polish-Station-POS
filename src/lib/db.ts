@@ -320,7 +320,12 @@ function legacyPayments(inv: Invoice): PaymentRecord[] {
 }
 
 export function getPayments(inv: Invoice): PaymentRecord[] {
-  return inv.payments && inv.payments.length > 0 ? inv.payments : legacyPayments(inv);
+  // Presence of the field, not its length: a genuinely unpaid invoice
+  // (status "Issued"/"Draft", awaiting a bank transfer that hasn't landed
+  // yet) has an explicit empty array and must read as $0 collected, not
+  // fall through to the legacy full-payment synthesis below — that fallback
+  // exists only for invoices written before this field existed at all.
+  return inv.payments !== undefined ? inv.payments : legacyPayments(inv);
 }
 
 // A deposit collected earlier (via the booking flow) is tracked separately
