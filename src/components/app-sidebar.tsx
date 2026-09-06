@@ -73,7 +73,7 @@ function NavLinks({
   return (
     <nav
       aria-label="Main navigation"
-      className="flex-1 min-h-0 overflow-y-auto space-y-0.5 px-2 pt-2"
+      className="sidebar-scroll flex-1 min-h-0 overflow-y-auto space-y-0.5 px-2 pt-2"
     >
       {visibleNav.map(({ to, label, icon: Icon }) => {
         const active = pathname.startsWith(to);
@@ -248,7 +248,7 @@ export function MobileNavSheet({
             <span className="text-sm font-bold">STATION OS</span>
           </SheetTitle>
         </SheetHeader>
-        <div className="flex-1 overflow-y-auto pb-2">
+        <div className="sidebar-scroll flex-1 overflow-y-auto pb-2">
           <NavLinks onNavigate={() => onOpenChange(false)} />
         </div>
         <div className="mt-auto border-t border-sidebar-border p-2">
