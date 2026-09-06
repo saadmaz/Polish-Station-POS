@@ -45,17 +45,22 @@ export function outranks(actor: StaffRole, target: StaffRole): boolean {
 
 // ── Modules ───────────────────────────────────────────────────────────────────
 
+// Order here drives the sidebar (see app-sidebar.tsx, which additionally
+// excludes "purchase-orders" from the top-level list -- that module is
+// reachable from within Inventory instead) and the access-panel permission
+// checklist. "purchase-orders" is kept adjacent to "inventory" since that's
+// where it's surfaced.
 export const MODULES = [
   { key: "dashboard", label: "Dashboard", route: "/dashboard" },
-  { key: "bookings", label: "Bookings", route: "/bookings" },
-  { key: "customers", label: "Customers", route: "/customers" },
   { key: "leads", label: "Leads", route: "/leads" },
-  { key: "inventory", label: "Inventory", route: "/inventory" },
-  { key: "equipment", label: "Equipment", route: "/equipment" },
-  { key: "purchase-orders", label: "Purchase Orders", route: "/purchase-orders" },
-  { key: "notifications", label: "Notifications", route: "/notifications" },
+  { key: "customers", label: "Customers", route: "/customers" },
+  { key: "bookings", label: "Bookings", route: "/bookings" },
   { key: "pos", label: "POS / Checkout", route: "/pos" },
+  { key: "inventory", label: "Inventory", route: "/inventory" },
+  { key: "purchase-orders", label: "Purchase Orders", route: "/purchase-orders" },
+  { key: "equipment", label: "Equipment", route: "/equipment" },
   { key: "staff", label: "Staff", route: "/staff" },
+  { key: "notifications", label: "Notifications", route: "/notifications" },
   { key: "reports", label: "Reports", route: "/reports" },
   { key: "settings", label: "Settings", route: "/settings" },
 ] as const;

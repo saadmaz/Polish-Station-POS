@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useStore } from "@/lib/store";
@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { isManagerOrAbove } from "@/lib/permissions";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
-import { Plus, Pencil, Trash2, Minus, X, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Minus, X, Search, ShoppingCart } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { InventoryItem } from "@/lib/db";
 import { newId } from "@/lib/db";
@@ -237,7 +237,7 @@ function AdjustWidget({ item }: { item: InventoryItem }) {
 
 function Inventory() {
   const { inventory, upsertInventoryItem, deleteInventoryItem } = useStore();
-  const { staff } = useAuth();
+  const { staff, can } = useAuth();
   // Matches firestore.rules: a non-Manager inventory-module holder may only
   // adjust stock (the Adjust widget below), never edit an item's other
   // fields or add/delete items outright -- see Finding 4,
@@ -291,14 +291,24 @@ function Inventory() {
         title="Inventory"
         subtitle={`${inventory.length} SKUs · ${formatCurrency(totalValue)} on hand`}
         actions={
-          canManage && (
-            <button
-              onClick={() => setFormMode("add")}
-              className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90"
-            >
-              <Plus className="h-4 w-4" /> Add Item
-            </button>
-          )
+          <>
+            {can("purchase-orders") && (
+              <Link
+                to="/purchase-orders"
+                className="inline-flex items-center gap-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent"
+              >
+                <ShoppingCart className="h-4 w-4" /> Purchase Orders
+              </Link>
+            )}
+            {canManage && (
+              <button
+                onClick={() => setFormMode("add")}
+                className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90"
+              >
+                <Plus className="h-4 w-4" /> Add Item
+              </button>
+            )}
+          </>
         }
       />
 

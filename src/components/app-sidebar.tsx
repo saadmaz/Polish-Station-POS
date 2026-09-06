@@ -56,7 +56,9 @@ function NavLinks({
 
   const notificationCount = customersNeedingReminder.length;
 
-  const visibleNav = MODULES.filter((m) => can(m.key)).map((m) => ({
+  // "purchase-orders" is deliberately absent from the top-level sidebar; it's
+  // reachable from within Inventory instead (see the entry point there).
+  const visibleNav = MODULES.filter((m) => m.key !== "purchase-orders" && can(m.key)).map((m) => ({
     to: m.route,
     label: m.label,
     icon: ICONS[m.key],
