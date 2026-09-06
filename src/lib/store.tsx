@@ -56,6 +56,7 @@ import type {
   Equipment,
   Expense,
   InventoryItem,
+  Inquiry,
   Invoice,
   Lead,
   MaintenanceLog,
@@ -132,6 +133,7 @@ interface Store {
   purchaseOrdersList: PurchaseOrder[];
   auditList: AuditLog[];
   leads: Lead[];
+  inquiries: Inquiry[];
 
   // computed
   lowStockItems: InventoryItem[];
@@ -198,6 +200,11 @@ interface Store {
     sourceBooking: Booking,
     data: Omit<Booking, "id" | "createdAt" | "leadId" | "source">,
   ) => Promise<Booking>;
+
+  // Inquiries (contact-form submissions from the public polishstation.lk
+  // site, written directly by that site via the client SDK). No status
+  // workflow — staff can only view and delete.
+  deleteInquiry: (id: string) => void;
 
   // Coupons
   addCoupon: (c: Omit<Coupon, "id" | "createdAt" | "redeemedCount">) => Coupon;
@@ -316,6 +323,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [maintenanceLogsList, setMaintenanceLogsList] = useState<MaintenanceLog[]>([]);
   const [purchaseOrdersList, setPurchaseOrdersList] = useState<PurchaseOrder[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [notificationSettingsData, setNotificationSettingsData] = useState<NotificationSettings>(
     DEFAULT_NOTIFICATION_SETTINGS,
   );
@@ -346,6 +354,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     notificationSettingsData,
     businessInfo,
     bays,
+    inquiries,
   });
   useEffect(() => {
     S.current = {
@@ -364,6 +373,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       notificationSettingsData,
       businessInfo,
       bays,
+      inquiries,
     };
   }, [
     services,
@@ -377,6 +387,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     equipmentList,
     maintenanceLogsList,
     purchaseOrdersList,
+    inquiries,
     sentNotificationsList,
     notificationSettingsData,
     businessInfo,
@@ -577,6 +588,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           fail("leads"),
         ),
       );
+    if (allowed("inquiry"))
+      add(() =>
+        onSnapshot(
+          newestFirst("inquiries", "createdAt", 500),
+          (s) => {
+            setInquiries(s.docs.map((d) => ({ id: d.id, ...d.data() }) as Inquiry));
+            done();
+          },
+          fail("inquiries"),
+        ),
+      );
     if (allowed("notifications") && isManagerOrAbove(staff.role))
       add(() =>
         onSnapshot(
@@ -722,6 +744,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // ── Lead mutations ─────────────────────────────────────────────────────────
   // See src/lib/lead.ts for the status transition graph and
   // firestore.rules' isLegalLeadUpdate() for its server-side mirror.
+  const deleteInquiry = useCallback((id: string) => {
+    const before = S.current.inquiries.find((i) => i.id === id) ?? null;
+    remove("inquiries", id);
+    logAudit(actorRef.current, {
+      action: "DELETE_INQUIRY",
+      entity: "Inquiry",
+      entityId: id,
+      before,
+      after: null,
+    });
+  }, []);
+
   const addLead = useCallback(
     (
       data: Omit<
@@ -1621,6 +1655,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     purchaseOrdersList,
     auditList,
     leads,
+    inquiries,
+    deleteInquiry,
     lowStockItems,
     overdueEquipment,
     upsertEquipment,

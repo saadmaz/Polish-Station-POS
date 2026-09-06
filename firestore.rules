@@ -416,6 +416,35 @@ service cloud.firestore {
       allow delete: if hasModule("leads") && isManagerOrAbove();
     }
 
+    // ── Inquiries (contact-form submissions from the public polishstation.lk
+    //    marketing site) ─────────────────────────────────────────────────────
+    // Unlike Leads/Newsletter, there's no server route in front of this
+    // collection — the marketing site writes here directly with the client
+    // Firestore SDK, so `create` below is the only thing standing between an
+    // open project and this collection. It checks shape/type/length only, not
+    // authenticity (no App Check / honeypot yet) — acceptable for a low-stakes
+    // contact form; revisit if spam becomes a real problem. No status
+    // workflow exists, so `update` is closed — staff can only read and delete.
+    match /inquiries/{inquiryId} {
+      allow read:   if hasModule("inquiry");
+      allow delete: if hasModule("inquiry") && isManagerOrAbove();
+      allow update: if false;
+      allow create: if request.resource.data.keys().hasOnly(
+                         ["id", "name", "contactNumber", "email", "message", "createdAt"])
+                    && request.resource.data.id is string
+                    && request.resource.data.name is string
+                    && request.resource.data.name.size() >= 2
+                    && request.resource.data.name.size() <= 80
+                    && request.resource.data.contactNumber is string
+                    && request.resource.data.contactNumber.size() >= 7
+                    && request.resource.data.contactNumber.size() <= 20
+                    && (request.resource.data.email == null || request.resource.data.email is string)
+                    && request.resource.data.message is string
+                    && request.resource.data.message.size() >= 5
+                    && request.resource.data.message.size() <= 2000
+                    && request.resource.data.createdAt is string;
+    }
+
     // Doc id = email, so the public newsletter route's upsert is idempotent.
     // No staff UI mutates this collection yet, so writes stay Admin-SDK-only.
     match /newsletterSubscribers/{subscriberId} {

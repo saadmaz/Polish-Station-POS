@@ -126,6 +126,21 @@ export interface Lead {
   convertedTo?: { type: "inspection" | "service" | "walk-in"; id: string };
 }
 
+// ── Inquiries (contact-form submissions from the public polishstation.lk
+//    site) ─────────────────────────────────────────────────────────────────
+// Written directly by the marketing site via the client Firestore SDK
+// (firestore.rules gates the public `create`); staff can only read/delete
+// here, there is no status workflow — see FEATURES.md / the inquiry handoff
+// note for the marketing site's contract.
+export interface Inquiry {
+  id: string;
+  name: string;
+  contactNumber: string;
+  email: string | null;
+  message: string;
+  createdAt: string;
+}
+
 export type NewsletterStatus = "subscribed" | "unsubscribed";
 
 export interface NewsletterSubscriber {

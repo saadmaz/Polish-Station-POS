@@ -57,7 +57,7 @@ export const MODULES = [
   { key: "inspection", label: "Inspection", route: "/inspection" },
   { key: "bookings", label: "Bookings", route: "/bookings" },
   { key: "pos", label: "POS / Checkout", route: "/pos" },
-  { key: "inquiry", label: "Inquiry", route: "/inquiry" },
+  { key: "inquiry", label: "Inquiries", route: "/inquiry" },
   { key: "subscribers", label: "Subscribers", route: "/subscribers" },
   { key: "inventory", label: "Inventory", route: "/inventory" },
   { key: "purchase-orders", label: "Purchase Orders", route: "/purchase-orders" },
