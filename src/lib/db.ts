@@ -101,6 +101,25 @@ export type LeadType = "contact" | "booking";
 export type LeadStatus =
   "new" | "contacted" | "quoted" | "converted" | "lost" | "duplicate" | "archived";
 
+// The polishstation.lk booking-request page's fixed checkbox list (plus a
+// free-text "Other"). Distinct from the internal `Service` catalog: an
+// anonymous site visitor has no visibility into real service ids/prices, so
+// this is a separate, marketing-friendly menu -- kept here as the single
+// source of truth so api.public.booking.ts's Zod schema and any future UI
+// stay in sync with each other.
+export const WEBSITE_BOOKING_SERVICES = [
+  "Paint Correction",
+  "Cut & Polish",
+  "Ceramic Coating",
+  "Graphene Coating",
+  "Interior Detailing",
+  "Exterior Detailing",
+  "Engine Bay Cleaning",
+  "Headlight Restoration",
+  "Other",
+] as const;
+export type WebsiteBookingService = (typeof WEBSITE_BOOKING_SERVICES)[number];
+
 export interface Lead {
   id: string;
   type: LeadType;
@@ -109,7 +128,15 @@ export interface Lead {
   phone?: string;
   message?: string;
   vehicle?: string;
+  // Set by the staff "New Lead" dialog (WhatsApp/phone/walk-in), matching a
+  // real Service catalog id. Website-sourced booking leads use `services`/
+  // `otherService` below instead -- the two are never both set on one lead.
   serviceId?: string;
+  // Set by the polishstation.lk booking-request page: the checkboxes picked
+  // from WEBSITE_BOOKING_SERVICES, e.g. ["Paint Correction", "Other"].
+  services?: WebsiteBookingService[];
+  // Required by api.public.booking.ts whenever "Other" is among `services`.
+  otherService?: string;
   preferredDate?: string;
   timeWindow?: string;
   notes?: string;

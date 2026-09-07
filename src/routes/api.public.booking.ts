@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type {} from "@tanstack/react-start";
 import { z } from "zod";
+import { WEBSITE_BOOKING_SERVICES } from "@/lib/db";
 import {
   preflight,
   json,
@@ -9,32 +10,51 @@ import {
   GENERIC_ERROR,
 } from "@/server/public-api";
 
-// Public, unauthenticated intake for the polishstation.lk booking form.
+// Public, unauthenticated intake for the polishstation.lk booking-request
+// page (Full name / Phone / Email optional / Vehicle make & model / Services
+// checkboxes + "Other" / Preferred date / Notes optional).
 //
 // Deliberately does NOT call createBookingFn (src/server/bookings.ts): that
 // schema wants an exact HH:MM slot and a serviceId that resolves against a
 // real `services` doc, has no `email` field, and wants `plate` +
-// `vehicleModel` as separate fields. The site instead collects a broad
-// `timeWindow`, a free-text `vehicle` string, and a `serviceId` that's one of
-// the site's own static slugs, not guaranteed to match a `services` doc id.
-// So this is a request, not a confirmed slotted Booking — which matches the
+// `vehicleModel` as separate fields. The site instead collects a free-text
+// `vehicle` string and a checkbox list of its own static service names (not
+// guaranteed to match a `services` doc id), with no time slot at all. So
+// this is a request, not a confirmed slotted Booking — which matches the
 // site's own copy ("we'll confirm your slot by phone shortly"). It's stored
 // in `leads` with type "booking"; staff triage it into a real Booking by
 // hand from the Leads screen.
 
-const BookingSchema = z.object({
-  name: z.string().trim().min(1).max(100),
-  phone: z.string().trim().min(6).max(24),
-  email: z.string().trim().email().max(200).optional().or(z.literal("")),
-  vehicle: z.string().trim().min(1).max(150),
-  serviceId: z.string().trim().min(1).max(100),
-  preferredDate: z.string().trim().min(1).max(40),
-  timeWindow: z.string().trim().min(1).max(100),
-  notes: z.string().trim().max(1000).optional().default(""),
-  // Honeypot: always sent by the site, normally empty. Any non-empty value
-  // means a bot bypassed the client-side check and posted directly.
-  company: z.string().trim().max(200).optional().default(""),
-});
+const BookingSchema = z
+  .object({
+    name: z.string().trim().min(2).max(100),
+    phone: z.string().trim().min(6).max(24),
+    email: z.string().trim().email().max(200).optional().or(z.literal("")),
+    vehicle: z.string().trim().min(1).max(150),
+    // At least one checkbox. Each value must be one of the site's own fixed
+    // labels -- WEBSITE_BOOKING_SERVICES is the single source of truth
+    // shared with src/lib/db.ts, so the site and this endpoint can't drift
+    // out of sync with each other.
+    services: z.array(z.enum(WEBSITE_BOOKING_SERVICES)).min(1, "Select at least one service"),
+    // Required only when "Other" is among `services` -- enforced below via
+    // .refine, since Zod can't express a cross-field requirement inline.
+    otherService: z.string().trim().max(200).optional().default(""),
+    // A native <input type="date"> always posts YYYY-MM-DD regardless of the
+    // mm/dd/yyyy format it displays to the visitor -- this is NOT the same
+    // string as what's shown on screen.
+    preferredDate: z
+      .string()
+      .trim()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date"),
+    notes: z.string().trim().max(1000).optional().default(""),
+    // Honeypot: always sent by the site, normally empty. Any non-empty value
+    // means a bot bypassed the client-side check and posted directly.
+    company: z.string().trim().max(200).optional().default(""),
+  })
+  .refine((data) => !data.services.includes("Other") || data.otherService.length > 0, {
+    message: "Please describe the 'Other' service",
+    path: ["otherService"],
+  });
 
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
 const RATE_LIMIT_MAX = 3;
@@ -77,9 +97,13 @@ export const Route = createFileRoute("/api/public/booking")({
               phone: data.phone,
               email: data.email || null,
               vehicle: data.vehicle,
-              serviceId: data.serviceId,
+              services: data.services,
+              // Omit rather than write "" when "Other" wasn't picked -- see
+              // the Firestore undefined-field convention this codebase
+              // follows elsewhere; an empty string is a real (wrong) value
+              // here, not the same as "field not applicable".
+              ...(data.otherService ? { otherService: data.otherService } : {}),
               preferredDate: data.preferredDate,
-              timeWindow: data.timeWindow,
               notes: data.notes,
               status: "new",
               source: "polishstation.lk",
@@ -96,9 +120,9 @@ export const Route = createFileRoute("/api/public/booking")({
           Phone: data.phone,
           ...(data.email ? { Email: data.email } : {}),
           Vehicle: data.vehicle,
-          Service: data.serviceId,
+          Services: data.services.join(", "),
+          ...(data.otherService ? { "Other service": data.otherService } : {}),
           "Preferred date": data.preferredDate,
-          "Time window": data.timeWindow,
           ...(data.notes ? { Notes: data.notes } : {}),
         });
 

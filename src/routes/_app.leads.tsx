@@ -28,7 +28,7 @@ import {
   Plus,
 } from "lucide-react";
 import type { Lead, LeadStatus, LeadType, BookingType } from "@/lib/db";
-import { formatDate } from "@/lib/date-format";
+import { formatDate, formatDateTime } from "@/lib/date-format";
 import { formatCurrency } from "@/lib/currency";
 import { isLegalLeadTransition } from "@/lib/lead";
 import { normalizePhone } from "@/lib/phone";
@@ -65,6 +65,29 @@ const MANUAL_SOURCES = [
 function sourceLabel(source: string): string {
   const manual = MANUAL_SOURCES.find((s) => s.value === source);
   return manual?.label ?? source;
+}
+
+// The website's date input always posts YYYY-MM-DD; the staff "New Lead"
+// dialog's preferredDate is free text (e.g. "this weekend") that formatDate()
+// can't parse. Only format the ones that are actually dates.
+const ISO_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+function displayPreferredDate(value: string): string {
+  return ISO_DATE_ONLY.test(value) ? formatDate(value) : value;
+}
+
+// A booking lead carries its requested service one of two ways depending on
+// origin: `services`/`otherService` (the website's checkbox list) or
+// `serviceId` (the staff "New Lead" dialog's real-catalog dropdown) — never
+// both on the same lead. This is the one place that reconciles them for
+// display.
+function requestedServices(lead: Lead): string | null {
+  if (lead.services && lead.services.length > 0) {
+    const parts = lead.services.map((s) =>
+      s === "Other" && lead.otherService ? `Other: ${lead.otherService}` : s,
+    );
+    return parts.join(", ");
+  }
+  return lead.serviceId ?? null;
 }
 
 const BUTTON =
@@ -692,7 +715,7 @@ function LeadCard({
             <StatusChip variant={STATUS_TONE[lead.status]}>{lead.status}</StatusChip>
           </div>
           <div className="mt-0.5 text-[11px] uppercase tracking-wider text-muted-foreground">
-            {TYPE_LABEL[lead.type]} · {sourceLabel(lead.source)} · {formatDate(lead.createdAt)}
+            {TYPE_LABEL[lead.type]} · {sourceLabel(lead.source)} · {formatDateTime(lead.createdAt)}
           </div>
         </div>
       </div>
@@ -711,12 +734,12 @@ function LeadCard({
         {lead.vehicle && (
           <div className="flex items-center gap-1.5">
             <Car className="h-3.5 w-3.5 shrink-0" /> {lead.vehicle}
-            {lead.serviceId && <span> · {lead.serviceId}</span>}
+            {requestedServices(lead) && <span> · {requestedServices(lead)}</span>}
           </div>
         )}
         {lead.preferredDate && (
           <div className="flex items-center gap-1.5">
-            <Calendar className="h-3.5 w-3.5 shrink-0" /> {lead.preferredDate}
+            <Calendar className="h-3.5 w-3.5 shrink-0" /> {displayPreferredDate(lead.preferredDate)}
             {lead.timeWindow && <span> · {lead.timeWindow}</span>}
           </div>
         )}
@@ -883,19 +906,29 @@ function Leads() {
                   <td className="px-3 py-3 max-w-xs text-xs text-muted-foreground">
                     {l.type === "booking" ? (
                       <>
-                        <div>
-                          {l.vehicle} {l.serviceId && `· ${l.serviceId}`}
+                        <div className="font-medium text-foreground">
+                          {l.vehicle}
+                          {requestedServices(l) && (
+                            <span className="font-normal text-muted-foreground">
+                              {" "}
+                              · {requestedServices(l)}
+                            </span>
+                          )}
                         </div>
-                        <div>
-                          {l.preferredDate} {l.timeWindow && `· ${l.timeWindow}`}
-                        </div>
+                        {l.preferredDate && (
+                          <div>
+                            {displayPreferredDate(l.preferredDate)}
+                            {l.timeWindow && <span> · {l.timeWindow}</span>}
+                          </div>
+                        )}
+                        {l.notes && <div className="line-clamp-2 italic">{l.notes}</div>}
                       </>
                     ) : (
                       <div className="line-clamp-2">{l.message}</div>
                     )}
                   </td>
-                  <td className="px-3 py-3 text-xs text-muted-foreground">
-                    {formatDate(l.createdAt)}
+                  <td className="px-3 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                    {formatDateTime(l.createdAt)}
                   </td>
                   <td className="px-3 py-3">
                     <StatusChip variant={STATUS_TONE[l.status]}>{l.status}</StatusChip>
