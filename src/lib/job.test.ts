@@ -208,6 +208,11 @@ describe("legalNextStatuses", () => {
       expect(legalNextStatuses(status)).toEqual([]);
     }
   });
+
+  it("is empty (not a crash) for a status that isn't a real JobStatus — a Job read out of Firestore is never actually guaranteed to match the type at runtime", () => {
+    expect(legalNextStatuses("some-legacy-status" as JobStatus)).toEqual([]);
+    expect(legalNextStatuses(undefined as unknown as JobStatus)).toEqual([]);
+  });
 });
 
 describe("nextQuoteVersion", () => {

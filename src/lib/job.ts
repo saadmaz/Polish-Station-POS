@@ -123,9 +123,17 @@ export function isLegalTransition(from: JobStatus, to: JobStatus): boolean {
 
 /** The statuses `from` may legally move to next — empty for a terminal
  *  status. Lets a status-transition control render only buttons that would
- *  actually succeed, instead of hand-duplicating LEGAL_TRANSITIONS in UI code. */
+ *  actually succeed, instead of hand-duplicating LEGAL_TRANSITIONS in UI code.
+ *
+ *  Falls back to `[]` for a status that isn't one of the known JobStatus
+ *  literals, rather than returning `undefined` — unlike every other caller
+ *  of LEGAL_TRANSITIONS, this one is reached from a Job doc just read out of
+ *  Firestore (job-intake's detail panel), which TypeScript's `JobStatus`
+ *  type cannot actually guarantee at runtime. A legacy/malformed doc with an
+ *  unrecognized status must render with no transition buttons available, not
+ *  crash the page. */
 export function legalNextStatuses(from: JobStatus): readonly JobStatus[] {
-  return LEGAL_TRANSITIONS[from];
+  return LEGAL_TRANSITIONS[from] ?? [];
 }
 
 /** Throws IllegalJobTransitionError rather than allowing (or silently
