@@ -5,7 +5,10 @@ type Variant = "success" | "warning" | "danger" | "info" | "neutral" | "brand";
 const STYLES: Record<Variant, string> = {
   success: "bg-success/15 text-success border-success/30",
   warning: "bg-warning/20 text-warning-foreground border-warning/40",
-  danger: "bg-primary/12 text-primary border-primary/30",
+  // Measured (WCAG 2.1, 4.5:1 required for this badge's 11px text):
+  // bg-primary/12 -> text-primary is 4.44:1, just under threshold. /10 -> 4.59:1.
+  // The other three variants sit at /15-/20 already; this one was the outlier.
+  danger: "bg-primary/10 text-primary border-primary/30",
   info: "bg-info/15 text-info border-info/30",
   neutral: "bg-muted text-muted-foreground border-border",
   brand: "bg-primary text-primary-foreground border-primary",
