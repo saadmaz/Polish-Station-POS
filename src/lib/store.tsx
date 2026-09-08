@@ -52,6 +52,7 @@ import {
   LeadAlreadyConvertedError,
   reconcileServiceIds,
   stampFirstResponse,
+  LOST_REASON_LABELS,
 } from "./lead";
 import { normalizePhone, toE164 } from "./phone";
 import type {
@@ -66,6 +67,8 @@ import type {
   Inquiry,
   Invoice,
   Lead,
+  LeadEventType,
+  LeadStatus,
   LostReason,
   MaintenanceLog,
   NewsletterSubscriber,
@@ -195,10 +198,12 @@ interface Store {
     lead: Lead,
     status: "new" | "contacted" | "quoted" | "archived",
     quote?: { quotedAmount?: number; quoteValidUntil?: string },
-  ) => void;
-  markLeadLost: (lead: Lead, reason: LostReason) => void;
-  markLeadDuplicate: (lead: Lead, duplicateOfId: string) => void;
-  assignLead: (lead: Lead, staffId: string | null) => void;
+  ) => Promise<void>;
+  markLeadLost: (lead: Lead, reason: LostReason) => Promise<void>;
+  markLeadDuplicate: (lead: Lead, duplicateOfId: string) => Promise<void>;
+  assignLead: (lead: Lead, staffId: string | null) => Promise<void>;
+  addLeadNote: (lead: Lead, text: string) => void;
+  updateLeadFields: (lead: Lead, fields: Partial<Lead>) => Promise<void>;
   // Batched, not transactional: a manual bulk-selection action (Phase 3's
   // "Mark as Test" bulk bar item), not a data-integrity-sensitive one like
   // the convert paths below -- a partial failure just leaves a few leads
@@ -312,6 +317,23 @@ function write<T extends { id: string }>(collPath: string, item: T): void {
   );
 }
 
+// Awaited sibling of write()/patch() above, for the handful of Lead status
+// mutations whose caller (the Leads screen) needs to know a write failed --
+// Firestore's own local-cache optimism already reverts the doc to the
+// server's true value the moment a write is rejected (the UI is never stuck
+// showing a change that didn't actually happen), but nothing tells the user
+// that happened unless the caller awaits and shows a toast. Every OTHER
+// write()/patch() call site in this file stays fire-and-forget on purpose;
+// this isn't a replacement for those, just what the Leads mutations below
+// specifically need.
+function writeAsync<T extends { id: string }>(collPath: string, item: T): Promise<void> {
+  return setDoc(fd(collPath, item.id), item);
+}
+
+function patchAsync(collPath: string, id: string, fields: Record<string, unknown>): Promise<void> {
+  return updateDoc(fd(collPath, id), fields);
+}
+
 function remove(collPath: string, id: string): void {
   deleteDoc(fd(collPath, id)).catch((err) =>
     console.error(`[store] delete ${collPath}/${id}:`, err),
@@ -368,6 +390,33 @@ function logAudit(
     id: newId(),
     createdAt: new Date().toISOString(),
   }).catch(() => {});
+}
+
+// Writes to the Leads detail panel's own timeline -- see LeadEvent in db.ts
+// for why this is a separate collection from `audit` above rather than a
+// second write into it. Called alongside (never instead of) logAudit at
+// every lead mutation site.
+function logLeadEvent(
+  actor: { id: string; name: string } | null,
+  entry: {
+    leadId: string;
+    type: LeadEventType;
+    fromStatus?: LeadStatus | null;
+    toStatus?: LeadStatus | null;
+    note?: string | null;
+  },
+): void {
+  if (!actor) return;
+  addDoc(fs("leadEvents"), {
+    leadId: entry.leadId,
+    type: entry.type,
+    fromStatus: entry.fromStatus ?? null,
+    toStatus: entry.toStatus ?? null,
+    note: entry.note ?? null,
+    actorId: actor.id,
+    actorName: actor.name,
+    at: new Date().toISOString(),
+  }).catch((err) => console.error(`[store] logLeadEvent ${entry.leadId}:`, err));
 }
 
 // ── Provider ──────────────────────────────────────────────────────────────────
@@ -920,7 +969,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const transitionLeadStatus = useCallback(
-    (
+    async (
       lead: Lead,
       status: "new" | "contacted" | "quoted" | "archived",
       quote?: { quotedAmount?: number; quoteValidUntil?: string },
@@ -933,7 +982,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ...(quote?.quotedAmount !== undefined ? { quotedAmount: quote.quotedAmount } : {}),
         ...(quote?.quoteValidUntil ? { quoteValidUntil: quote.quoteValidUntil } : {}),
       };
-      write("leads", after);
+      await writeAsync("leads", after);
       logAudit(actorRef.current, {
         action: "UPDATE_LEAD_STATUS",
         entity: "Lead",
@@ -941,11 +990,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         before: lead,
         after,
       });
+      logLeadEvent(actorRef.current, {
+        leadId: lead.id,
+        type: "status_change",
+        fromStatus: lead.status,
+        toStatus: status,
+        note:
+          quote?.quotedAmount !== undefined
+            ? `Quoted ${quote.quotedAmount}${quote.quoteValidUntil ? ` · valid until ${quote.quoteValidUntil}` : ""}`
+            : null,
+      });
     },
     [],
   );
 
-  const markLeadLost = useCallback((lead: Lead, reason: LostReason) => {
+  const markLeadLost = useCallback(async (lead: Lead, reason: LostReason) => {
     assertLegalLeadTransition(lead.status, "lost");
     const after: Lead = {
       ...lead,
@@ -953,7 +1012,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       lostReason: reason,
       ...stampFirstResponse(lead),
     };
-    write("leads", after);
+    await writeAsync("leads", after);
     logAudit(actorRef.current, {
       action: "LOSE_LEAD",
       entity: "Lead",
@@ -961,9 +1020,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       before: lead,
       after,
     });
+    logLeadEvent(actorRef.current, {
+      leadId: lead.id,
+      type: "status_change",
+      fromStatus: lead.status,
+      toStatus: "lost",
+      note: LOST_REASON_LABELS[reason],
+    });
   }, []);
 
-  const markLeadDuplicate = useCallback((lead: Lead, duplicateOfId: string) => {
+  const markLeadDuplicate = useCallback(async (lead: Lead, duplicateOfId: string) => {
     assertLegalLeadTransition(lead.status, "duplicate");
     const after: Lead = {
       ...lead,
@@ -971,7 +1037,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       duplicateOf: duplicateOfId,
       ...stampFirstResponse(lead),
     };
-    write("leads", after);
+    await writeAsync("leads", after);
     logAudit(actorRef.current, {
       action: "MARK_LEAD_DUPLICATE",
       entity: "Lead",
@@ -979,11 +1045,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       before: lead,
       after,
     });
+    logLeadEvent(actorRef.current, {
+      leadId: lead.id,
+      type: "status_change",
+      fromStatus: lead.status,
+      toStatus: "duplicate",
+      note: `Merged into ${duplicateOfId}`,
+    });
   }, []);
 
-  const assignLead = useCallback((lead: Lead, staffId: string | null) => {
+  const assignLead = useCallback(async (lead: Lead, staffId: string | null) => {
     const after: Lead = { ...lead, assignedTo: staffId };
-    patch("leads", lead.id, { assignedTo: staffId });
+    await patchAsync("leads", lead.id, { assignedTo: staffId });
     logAudit(actorRef.current, {
       action: "ASSIGN_LEAD",
       entity: "Lead",
@@ -991,7 +1064,48 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       before: lead,
       after,
     });
+    logLeadEvent(actorRef.current, {
+      leadId: lead.id,
+      type: "note",
+      note: staffId ? `Assigned` : "Unassigned",
+    });
   }, []);
+
+  // Timeline-only: a staff note is never written onto Lead.notes (that field
+  // is reserved for the customer's own free text, see db.ts) -- it only ever
+  // exists as a "note"-type LeadEvent, which is why this doesn't call
+  // write()/patch() against the lead doc at all.
+  const addLeadNote = useCallback((lead: Lead, text: string) => {
+    logLeadEvent(actorRef.current, { leadId: lead.id, type: "note", note: text });
+  }, []);
+
+  // Patches the editable-field set (Phase 5 detail panel): contact details
+  // and the split vehicle fields, none of which are part of the status
+  // transition graph, so this is a plain merge with no assertLegalLeadTransition
+  // guard -- same reasoning as assignLead.
+  const updateLeadFields = useCallback(
+    // Partial, not a strict Pick: the caller must only include keys with a
+    // real value to send (see the Firestore undefined-field convention this
+    // codebase follows everywhere else) -- a field the staff member left
+    // blank is omitted here, not sent as undefined.
+    async (lead: Lead, fields: Partial<Lead>) => {
+      const after: Lead = { ...lead, ...fields };
+      await patchAsync("leads", lead.id, fields);
+      logAudit(actorRef.current, {
+        action: "UPDATE_LEAD_FIELDS",
+        entity: "Lead",
+        entityId: lead.id,
+        before: lead,
+        after,
+      });
+      logLeadEvent(actorRef.current, {
+        leadId: lead.id,
+        type: "note",
+        note: "Edited lead details",
+      });
+    },
+    [],
+  );
 
   const markLeadsTest = useCallback(async (leads: Lead[], isTest: boolean) => {
     const actor = actorRef.current;
@@ -1095,6 +1209,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         before: lead,
         after: afterLead,
       });
+      logLeadEvent(actor, {
+        leadId: lead.id,
+        type: "status_change",
+        fromStatus: lead.status,
+        toStatus: "converted",
+        note: `Converted to ${bookingType} booking ${bookingId}`,
+      });
       return booking;
     },
     [],
@@ -1189,6 +1310,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         before: lead,
         after: afterLead,
       });
+      logLeadEvent(actor, {
+        leadId: lead.id,
+        type: "status_change",
+        fromStatus: lead.status,
+        toStatus: "converted",
+        note: `Converted to job ${jobId}`,
+      });
       return job;
     },
     [],
@@ -1275,6 +1403,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       entityId: lead.id,
       before: lead,
       after: afterLead,
+    });
+    logLeadEvent(actor, {
+      leadId: lead.id,
+      type: "status_change",
+      fromStatus: lead.status,
+      toStatus: "converted",
+      note: `Linked to invoice ${invoiceId}`,
     });
   }, []);
 
@@ -2046,6 +2181,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     markLeadLost,
     markLeadDuplicate,
     assignLead,
+    addLeadNote,
+    updateLeadFields,
     markLeadsTest,
     convertLeadToBooking,
     convertLeadToInvoiceLink,

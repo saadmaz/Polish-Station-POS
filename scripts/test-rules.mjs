@@ -796,6 +796,78 @@ await check(
     ),
   ),
 );
+
+console.log("\nLead timeline (leadEvents, Phase 5 detail-panel):");
+await check(
+  "anon CANNOT read leadEvents",
+  assertFails(getDoc(doc(anon, "leadEvents/ev1"))),
+);
+await check(
+  "anon CANNOT create a leadEvent",
+  assertFails(
+    setDoc(doc(anon, "leadEvents/ev1"), {
+      leadId: "leadNew1",
+      type: "note",
+      fromStatus: null,
+      toStatus: null,
+      note: "hi",
+      actorId: "anon",
+      actorName: "Anon",
+      at: "t",
+    }),
+  ),
+);
+await check(
+  "advisor WITH leads module can create a well-shaped leadEvent attributed to themselves",
+  assertSucceeds(
+    setDoc(doc(advisorLeads, "leadEvents/ev2"), {
+      leadId: "leadNew1",
+      type: "note",
+      fromStatus: null,
+      toStatus: null,
+      note: "Called, left voicemail",
+      actorId: "adv1",
+      actorName: "adv1",
+      at: "t",
+    }),
+  ),
+);
+await check(
+  "a leadEvent cannot be attributed to someone else",
+  assertFails(
+    setDoc(doc(advisorLeads, "leadEvents/ev3"), {
+      leadId: "leadNew1",
+      type: "note",
+      fromStatus: null,
+      toStatus: null,
+      note: "spoofed",
+      actorId: "someone-else",
+      actorName: "adv1",
+      at: "t",
+    }),
+  ),
+);
+await check(
+  "a leadEvent missing a required key is rejected",
+  assertFails(
+    setDoc(doc(advisorLeads, "leadEvents/ev4"), {
+      leadId: "leadNew1",
+      type: "note",
+      actorId: "adv1",
+      actorName: "adv1",
+      at: "t",
+    }),
+  ),
+);
+await check(
+  "leadEvents can never be updated or deleted",
+  assertFails(setDoc(doc(advisorLeads, "leadEvents/ev2"), { note: "edited" }, { merge: true })),
+);
+await check(
+  "advisor WITHOUT leads module cannot read leadEvents",
+  assertFails(getDoc(doc(advisorNoLeads, "leadEvents/ev2"))),
+);
+
 await check(
   "anon CANNOT read newsletter subscribers",
   assertFails(getDoc(doc(anon, "newsletterSubscribers/a@example.com"))),

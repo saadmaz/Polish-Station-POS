@@ -1,6 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { toast } from "sonner";
+import { db } from "@/lib/firebase";
 import { useStore } from "@/lib/store";
 import { useStaffList, type PublicStaff } from "@/lib/use-staff-list";
 import { useConfirm } from "@/hooks/use-confirm";
@@ -65,8 +67,22 @@ import {
   RotateCcw,
   ExternalLink,
   DollarSign,
+  Pencil,
+  Send,
+  History,
+  MessageSquareText,
+  Save,
 } from "lucide-react";
-import type { Lead, LeadStatus, LeadType, BookingType, Service, LostReason } from "@/lib/db";
+import type {
+  Lead,
+  LeadStatus,
+  LeadType,
+  BookingType,
+  Service,
+  LostReason,
+  LeadEvent,
+  VehicleBodyType,
+} from "@/lib/db";
 import { LOST_REASONS } from "@/lib/db";
 import { formatDate, formatDateTime, formatRelativeAge } from "@/lib/date-format";
 import { formatCurrency } from "@/lib/currency";
@@ -77,8 +93,39 @@ import {
   LOST_REASON_LABELS,
 } from "@/lib/lead";
 import { normalizePhone } from "@/lib/phone";
-import { toWAPhone } from "@/lib/notifications";
+import { toWAPhone, buildWALink, fillTemplate } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
+
+const VEHICLE_BODY_TYPES: { value: VehicleBodyType; label: string }[] = [
+  { value: "sedan", label: "Sedan" },
+  { value: "hatchback", label: "Hatchback" },
+  { value: "suv", label: "SUV" },
+  { value: "double_cab", label: "Double Cab" },
+  { value: "van", label: "Van" },
+  { value: "coupe", label: "Coupe" },
+];
+
+// Pre-written starting points for the detail panel's WhatsApp buttons --
+// staff can edit the text in WhatsApp itself before sending, this just saves
+// typing the same three messages from scratch every time. {vehicle} falls
+// back gracefully since fillTemplate() only replaces what's present.
+const LEAD_WA_TEMPLATES = [
+  {
+    key: "acknowledge",
+    label: "Acknowledge",
+    text: "Hi {customerName}! Thanks for reaching out to Polish Station about your {vehicle} 🚗 We've got your request and will confirm details shortly.",
+  },
+  {
+    key: "quoteFollowUp",
+    label: "Quote follow-up",
+    text: "Hi {customerName}, following up on the quote for your {vehicle} — LKR {quotedAmount}. Let us know if you'd like to go ahead or have any questions!",
+  },
+  {
+    key: "noResponse",
+    label: "No-response nudge",
+    text: "Hi {customerName}, just checking in about your {vehicle} detailing request — still interested? Happy to answer any questions or get you booked in.",
+  },
+] as const;
 
 const LEAD_STATUSES: LeadStatus[] = [
   "new",
@@ -520,21 +567,167 @@ function LeadRowActions({
   );
 }
 
+// ─── Timeline ───────────────────────────────────────────────────────────────
+// Subscribes on demand (not part of the store's always-on collections --
+// there's no reason to eagerly load every lead's history before its panel is
+// even opened). See LeadEvent in db.ts for why this reads leadEvents rather
+// than the app-wide audit log.
+function useLeadEvents(leadId: string | null): LeadEvent[] {
+  const [events, setEvents] = useState<LeadEvent[]>([]);
+  useEffect(() => {
+    if (!leadId) {
+      setEvents([]);
+      return;
+    }
+    const q = query(
+      collection(db, "leadEvents"),
+      where("leadId", "==", leadId),
+      orderBy("at", "desc"),
+    );
+    return onSnapshot(
+      q,
+      (snap) => setEvents(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as LeadEvent)),
+      () => setEvents([]),
+    );
+  }, [leadId]);
+  return events;
+}
+
+function eventSummary(event: LeadEvent): string {
+  if (event.type === "note") return event.note ?? "";
+  const from = event.fromStatus ?? "new";
+  return `${from} → ${event.toStatus}${event.note ? ` · ${event.note}` : ""}`;
+}
+
+function Timeline({ leadId }: { leadId: string }) {
+  const events = useLeadEvents(leadId);
+  if (events.length === 0) {
+    return <p className="text-xs text-muted-foreground">No activity yet.</p>;
+  }
+  return (
+    <ol className="space-y-3">
+      {events.map((e) => (
+        <li key={e.id} className="flex gap-2 text-xs">
+          <History className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <div className="min-w-0">
+            <div className="text-foreground">{eventSummary(e)}</div>
+            <div className="text-muted-foreground">
+              {e.actorName} · {formatDateTime(e.at)}
+            </div>
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+// ─── Editable field set ─────────────────────────────────────────────────────
+function EditableFields({
+  lead,
+  onSave,
+  onCancel,
+}: {
+  lead: Lead;
+  onSave: (fields: Partial<Lead>) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(lead.name);
+  const [email, setEmail] = useState(lead.email ?? "");
+  const [phone, setPhone] = useState(lead.phone ?? "");
+  const [make, setMake] = useState(lead.vehicleMake ?? "");
+  const [model, setModel] = useState(lead.vehicleModel ?? "");
+  const [year, setYear] = useState(lead.vehicleYear ? String(lead.vehicleYear) : "");
+  const [bodyType, setBodyType] = useState<VehicleBodyType | "">(lead.vehicleBodyType ?? "");
+
+  function handleSave() {
+    onSave({
+      name: name.trim() || lead.name,
+      ...(email.trim() ? { email: email.trim() } : {}),
+      ...(phone.trim() ? { phone: phone.trim() } : {}),
+      ...(make.trim() ? { vehicleMake: make.trim() } : {}),
+      ...(model.trim() ? { vehicleModel: model.trim() } : {}),
+      ...(year.trim() ? { vehicleYear: Number(year) } : {}),
+      ...(bodyType ? { vehicleBodyType: bodyType } : {}),
+    });
+  }
+
+  const inputClass =
+    "w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
+
+  return (
+    <div className="space-y-3 rounded-lg border border-border p-3">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="col-span-2 space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Name</label>
+          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Email</label>
+          <input className={inputClass} value={email} onChange={(e) => setEmail(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Phone</label>
+          <input className={inputClass} value={phone} onChange={(e) => setPhone(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Make</label>
+          <input className={inputClass} value={make} onChange={(e) => setMake(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Model</label>
+          <input className={inputClass} value={model} onChange={(e) => setModel(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Year</label>
+          <input
+            type="number"
+            className={inputClass}
+            value={year}
+            onChange={(e) => setYear(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-muted-foreground">Body type</label>
+          <select
+            className={inputClass}
+            value={bodyType}
+            onChange={(e) => setBodyType(e.target.value as VehicleBodyType)}
+          >
+            <option value="">—</option>
+            {VEHICLE_BODY_TYPES.map((b) => (
+              <option key={b.value} value={b.value}>
+                {b.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="flex justify-end gap-2">
+        <button onClick={onCancel} className={BUTTON}>
+          Cancel
+        </button>
+        <button onClick={handleSave} className={PRIMARY_BUTTON}>
+          <Save className="h-3.5 w-3.5" /> Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Detail panel ───────────────────────────────────────────────────────────
-// Minimal read-only pass for now -- full editable fields, the status
-// timeline, add-note, and WhatsApp templates are Phase 5. This exists so the
-// new clickable row has somewhere real to go.
 function LeadDetailPanel({
   lead,
   staffList,
   services,
   onOpenChange,
+  onNavigate,
   actions,
 }: {
   lead: Lead | null;
   staffList: PublicStaff[];
   services: Service[];
   onOpenChange: (v: boolean) => void;
+  onNavigate: (direction: "prev" | "next") => void;
   actions: {
     onTransition: (lead: Lead, status: "contacted" | "new") => void;
     onConvert: (lead: Lead) => void;
@@ -543,18 +736,61 @@ function LeadDetailPanel({
     onDuplicate: (lead: Lead) => void;
     onAssign: (lead: Lead, staffId: string | null) => void;
     onArchive: (lead: Lead) => void;
+    onSaveFields: (lead: Lead, fields: Partial<Lead>) => void;
+    onAddNote: (lead: Lead, text: string) => void;
   };
 }) {
   const owner = lead ? staffList.find((s) => s.id === lead.assignedTo) : undefined;
+  const [editing, setEditing] = useState(false);
+  const [noteText, setNoteText] = useState("");
+
+  useEffect(() => {
+    setEditing(false);
+    setNoteText("");
+  }, [lead?.id]);
+
+  // J/K move between leads without closing, per the Phase 5 spec -- ignored
+  // while typing anywhere (edit fields, the add-note box) so a "j" or "k"
+  // keystroke there types the letter instead of navigating away.
+  useEffect(() => {
+    if (!lead) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const typing =
+        target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;
+      if (typing) return;
+      if (e.key === "j" || e.key === "J") onNavigate("next");
+      else if (e.key === "k" || e.key === "K") onNavigate("prev");
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [lead, onNavigate]);
+
+  const waPhone = lead?.phone;
+  const templateVars = lead
+    ? {
+        customerName: lead.name,
+        vehicle: vehicleLabel(lead) === "—" ? "vehicle" : vehicleLabel(lead),
+        quotedAmount: lead.quotedAmount !== undefined ? formatCurrency(lead.quotedAmount) : "",
+      }
+    : { customerName: "", vehicle: "", quotedAmount: "" };
+
   return (
     <Sheet open={lead !== null} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-md flex flex-col overflow-y-auto">
         {lead && (
           <>
             <SheetHeader>
-              <SheetTitle className="flex items-center gap-2">
+              <SheetTitle className="flex items-center gap-2 pr-8">
                 {lead.name}
                 <StatusChip variant={STATUS_TONE[lead.status]}>{lead.status}</StatusChip>
+                <button
+                  onClick={() => setEditing((v) => !v)}
+                  aria-label="Edit lead details"
+                  className="ml-auto mr-6 shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
               </SheetTitle>
               <SheetDescription>
                 {TYPE_LABEL[lead.type]} · {sourceLabel(lead.source)} ·{" "}
@@ -563,36 +799,50 @@ function LeadDetailPanel({
             </SheetHeader>
 
             <div className="mt-4 flex-1 space-y-4 text-sm">
-              <div className="space-y-1">
-                {lead.email && (
-                  <div className="flex items-center gap-1.5 text-muted-foreground">
-                    <Mail className="h-3.5 w-3.5 shrink-0" /> {lead.email}
+              {editing ? (
+                <EditableFields
+                  lead={lead}
+                  onCancel={() => setEditing(false)}
+                  onSave={(fields) => {
+                    actions.onSaveFields(lead, fields);
+                    setEditing(false);
+                  }}
+                />
+              ) : (
+                <>
+                  <div className="space-y-1">
+                    {lead.email && (
+                      <div className="flex items-center gap-1.5 text-muted-foreground">
+                        <Mail className="h-3.5 w-3.5 shrink-0" /> {lead.email}
+                      </div>
+                    )}
+                    {lead.phone && (
+                      <div className="flex items-center gap-1.5 text-muted-foreground">
+                        <Phone className="h-3.5 w-3.5 shrink-0" /> {lead.phone}
+                        <a
+                          href={`https://wa.me/${toWAPhone(lead.phone)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={`Message ${lead.name} on WhatsApp`}
+                          className="text-success hover:opacity-70"
+                        >
+                          <MessageCircle className="h-3.5 w-3.5" />
+                        </a>
+                      </div>
+                    )}
                   </div>
-                )}
-                {lead.phone && (
-                  <div className="flex items-center gap-1.5 text-muted-foreground">
-                    <Phone className="h-3.5 w-3.5 shrink-0" /> {lead.phone}
-                    <a
-                      href={`https://wa.me/${toWAPhone(lead.phone)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-success hover:opacity-70"
-                    >
-                      <MessageCircle className="h-3.5 w-3.5" />
-                    </a>
-                  </div>
-                )}
-              </div>
 
-              <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                  Vehicle
-                </h4>
-                <div className="flex items-center gap-1.5">
-                  <Car className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />{" "}
-                  {vehicleLabel(lead)}
-                </div>
-              </div>
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                      Vehicle
+                    </h4>
+                    <div className="flex items-center gap-1.5">
+                      <Car className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />{" "}
+                      {vehicleLabel(lead)}
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div>
                 <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
@@ -664,6 +914,60 @@ function LeadDetailPanel({
                   after received)
                 </div>
               )}
+
+              {waPhone && (
+                <div>
+                  <h4 className="mb-1 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    <MessageSquareText className="h-3.5 w-3.5" /> WhatsApp templates
+                  </h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {LEAD_WA_TEMPLATES.map((t) => (
+                      <a
+                        key={t.key}
+                        href={buildWALink(waPhone, fillTemplate(t.text, templateVars))}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={BUTTON}
+                      >
+                        {t.label}
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <h4 className="mb-1 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  <History className="h-3.5 w-3.5" /> Timeline
+                </h4>
+                <Timeline leadId={lead.id} />
+                <div className="mt-2 flex items-center gap-1.5">
+                  <input
+                    value={noteText}
+                    onChange={(e) => setNoteText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && noteText.trim()) {
+                        actions.onAddNote(lead, noteText.trim());
+                        setNoteText("");
+                      }
+                    }}
+                    placeholder="Add a note…"
+                    className="flex-1 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                  <button
+                    onClick={() => {
+                      if (!noteText.trim()) return;
+                      actions.onAddNote(lead, noteText.trim());
+                      setNoteText("");
+                    }}
+                    disabled={!noteText.trim()}
+                    aria-label="Add note"
+                    className="rounded-md border border-input p-2 hover:bg-accent disabled:opacity-50"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="border-t border-border pt-3">
@@ -924,13 +1228,17 @@ function LostDialog({
   const { markLeadLost } = useStore();
   const [reason, setReason] = useState<LostReason | null>(null);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!lead || !reason) return;
-    markLeadLost(lead, reason);
-    toast.success("Lead marked lost");
-    setReason(null);
-    onOpenChange(false);
+    try {
+      await markLeadLost(lead, reason);
+      toast.success("Lead marked lost");
+      setReason(null);
+      onOpenChange(false);
+    } catch {
+      toast.error("Couldn't mark the lead lost, please try again");
+    }
   }
 
   return (
@@ -1150,13 +1458,17 @@ function DuplicateDialog({
       })
     : [];
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!lead || !targetId) return;
-    markLeadDuplicate(lead, targetId);
-    toast.success("Lead marked as duplicate");
-    setTargetId(null);
-    setSearch("");
-    onOpenChange(false);
+    try {
+      await markLeadDuplicate(lead, targetId);
+      toast.success("Lead marked as duplicate");
+      setTargetId(null);
+      setSearch("");
+      onOpenChange(false);
+    } catch {
+      toast.error("Couldn't mark the lead as a duplicate, please try again");
+    }
   }
 
   return (
@@ -1504,6 +1816,8 @@ function Leads() {
     markLeadLost,
     assignLead,
     markLeadsTest,
+    addLeadNote,
+    updateLeadFields,
     storeLoading,
     listenerErrors,
   } = useStore();
@@ -1674,32 +1988,87 @@ function Leads() {
     );
   }
 
-  function handleTransition(lead: Lead, status: "contacted" | "new") {
-    transitionLeadStatus(lead, status);
-    toast.success(status === "new" ? "Lead reopened" : "Lead marked contacted");
+  // Optimistic: the toast fires as soon as the write is accepted locally
+  // (Firestore's own cache applies it immediately, before the server round
+  // trip), so this reads as instant. If the server later rejects it, the
+  // SDK reverts the local doc on its own -- the catch here exists purely to
+  // tell the user that happened, since nothing else would.
+  async function handleTransition(lead: Lead, status: "contacted" | "new") {
+    try {
+      await transitionLeadStatus(lead, status);
+      toast.success(status === "new" ? "Lead reopened" : "Lead marked contacted");
+    } catch {
+      toast.error("Couldn't update the lead, please try again");
+    }
   }
 
-  function handleQuote(lead: Lead, quotedAmount: number, quoteValidUntil: string) {
-    transitionLeadStatus(lead, "quoted", { quotedAmount, quoteValidUntil });
-    toast.success("Lead marked quoted");
+  async function handleQuote(lead: Lead, quotedAmount: number, quoteValidUntil: string) {
+    try {
+      await transitionLeadStatus(lead, "quoted", { quotedAmount, quoteValidUntil });
+      toast.success("Lead marked quoted");
+    } catch {
+      toast.error("Couldn't update the lead, please try again");
+    }
   }
 
   async function handleArchive(lead: Lead) {
     if (!(await confirm({ title: "Archive this lead?", description: lead.name }))) return;
-    transitionLeadStatus(lead, "archived");
-    toast.success("Lead archived");
+    try {
+      await transitionLeadStatus(lead, "archived");
+      toast.success("Lead archived");
+    } catch {
+      toast.error("Couldn't archive the lead, please try again");
+    }
   }
 
-  function handleAssign(lead: Lead, staffId: string | null) {
-    assignLead(lead, staffId);
-    toast.success(staffId ? "Lead assigned" : "Lead unassigned");
+  async function handleAssign(lead: Lead, staffId: string | null) {
+    try {
+      await assignLead(lead, staffId);
+      toast.success(staffId ? "Lead assigned" : "Lead unassigned");
+    } catch {
+      toast.error("Couldn't update the assignment, please try again");
+    }
+  }
+
+  async function handleSaveFields(lead: Lead, fields: Partial<Lead>) {
+    try {
+      await updateLeadFields(lead, fields);
+      toast.success("Lead details updated");
+    } catch {
+      toast.error("Couldn't save those changes, please try again");
+    }
+  }
+
+  function handleAddNote(lead: Lead, text: string) {
+    addLeadNote(lead, text);
+  }
+
+  // J/K in the detail panel move to the next/previous row in the currently
+  // filtered table order without closing -- looks up detailLead fresh each
+  // call rather than closing over a stale index, since the filtered list can
+  // itself change while the panel is open (another tab's edit, a filter
+  // tweak).
+  function handleNavigateDetail(direction: "prev" | "next") {
+    if (!detailLead) return;
+    const index = filtered.findIndex((l) => l.id === detailLead.id);
+    if (index === -1) return;
+    const nextIndex = direction === "next" ? index + 1 : index - 1;
+    const nextLead = filtered[nextIndex];
+    if (nextLead) setDetailLead(nextLead);
   }
 
   // ── Bulk actions (selected rows only; Convert is deliberately excluded --
   // conversion needs per-lead judgement, per the Phase 3 spec) ─────────────
-  function handleBulkAssign(staffId: string | null) {
-    for (const lead of selectedLeads) assignLead(lead, staffId);
-    toast.success(`${selectedLeads.length} lead(s) ${staffId ? "assigned" : "unassigned"}`);
+  async function handleBulkAssign(staffId: string | null) {
+    const results = await Promise.allSettled(
+      selectedLeads.map((lead) => assignLead(lead, staffId)),
+    );
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) {
+      toast.error(`${failed} of ${selectedLeads.length} lead(s) couldn't be updated`);
+    } else {
+      toast.success(`${selectedLeads.length} lead(s) ${staffId ? "assigned" : "unassigned"}`);
+    }
     setSelectedIds(new Set());
   }
 
@@ -1711,18 +2080,28 @@ function Leads() {
       }))
     )
       return;
-    for (const lead of selectedLeads) {
-      if (isLegalLeadTransition(lead.status, "archived")) transitionLeadStatus(lead, "archived");
+    const eligible = selectedLeads.filter((lead) => isLegalLeadTransition(lead.status, "archived"));
+    const results = await Promise.allSettled(
+      eligible.map((lead) => transitionLeadStatus(lead, "archived")),
+    );
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) {
+      toast.error(`${failed} of ${eligible.length} lead(s) couldn't be archived`);
+    } else {
+      toast.success(`${eligible.length} lead(s) archived`);
     }
-    toast.success(`${selectedLeads.length} lead(s) archived`);
     setSelectedIds(new Set());
   }
 
-  function handleBulkLost(reason: LostReason) {
-    for (const lead of selectedLeads) {
-      if (isLegalLeadTransition(lead.status, "lost")) markLeadLost(lead, reason);
+  async function handleBulkLost(reason: LostReason) {
+    const eligible = selectedLeads.filter((lead) => isLegalLeadTransition(lead.status, "lost"));
+    const results = await Promise.allSettled(eligible.map((lead) => markLeadLost(lead, reason)));
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) {
+      toast.error(`${failed} of ${eligible.length} lead(s) couldn't be marked lost`);
+    } else {
+      toast.success(`${eligible.length} lead(s) marked lost`);
     }
-    toast.success(`${selectedLeads.length} lead(s) marked lost`);
     setSelectedIds(new Set());
     setBulkLostOpen(false);
   }
@@ -2220,6 +2599,7 @@ function Leads() {
           staffList={staffList}
           services={services}
           onOpenChange={(v) => !v && setDetailLead(null)}
+          onNavigate={handleNavigateDetail}
           actions={{
             onTransition: handleTransition,
             onConvert: (lead) => {
@@ -2240,6 +2620,8 @@ function Leads() {
             },
             onAssign: handleAssign,
             onArchive: handleArchive,
+            onSaveFields: handleSaveFields,
+            onAddNote: handleAddNote,
           }}
         />
       </div>

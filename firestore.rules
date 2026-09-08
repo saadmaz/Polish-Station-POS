@@ -424,6 +424,24 @@ service cloud.firestore {
       allow delete: if hasModule("leads") && isManagerOrAbove();
     }
 
+    // Per-lead timeline (detail panel, Phase 5) -- deliberately separate from
+    // `audit` below, which is Manager+-only: anyone who can work leads needs
+    // to see this timeline, same reasoning as jobEvents vs. audit for Jobs.
+    // Append-only, attributed to the caller's own uid, same pattern as
+    // jobEvents.
+    match /leadEvents/{eventId} {
+      allow read:   if hasModule("leads");
+      allow create: if hasModule("leads") && (isManagerOrAbove() || role() == "Advisor")
+                    && request.resource.data.actorId == request.auth.uid
+                    && request.resource.data.actorName is string
+                    && request.resource.data.leadId is string && request.resource.data.leadId.size() > 0
+                    && request.resource.data.type in ["status_change", "note"]
+                    && request.resource.data.at is string
+                    && request.resource.data.keys().hasAll(
+                         ["leadId", "type", "fromStatus", "toStatus", "note", "actorId", "actorName", "at"]);
+      allow update, delete: if false;
+    }
+
     // ── Inquiries (contact-form submissions from the public polishstation.lk
     //    marketing site) ─────────────────────────────────────────────────────
     // Unlike Leads/Newsletter, there's no server route in front of this

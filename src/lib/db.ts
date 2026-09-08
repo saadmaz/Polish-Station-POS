@@ -231,6 +231,32 @@ export interface Lead {
   landingPage?: string;
 }
 
+// Per-lead timeline (Leads detail panel, Phase 5) — a purpose-built event
+// stream separate from the app-wide `audit` collection, same precedent as
+// Job's own `jobEvents` vs. `audit`: `audit` reads are Manager+ only (it
+// carries every entity's before/after, including ones a Leads-module
+// Advisor has no business seeing), so a Leads timeline visible to anyone
+// who can work leads needs its own collection with its own, narrower read
+// gate (see firestore.rules). Written alongside (never instead of) the
+// existing logAudit() call at each mutation site.
+export type LeadEventType = "status_change" | "note";
+
+export interface LeadEvent {
+  id: string;
+  leadId: string;
+  type: LeadEventType;
+  // Set only for type "status_change"; both null for a plain "note" event.
+  fromStatus: LeadStatus | null;
+  toStatus: LeadStatus | null;
+  // Set only for type "note" (the staff member's free text) -- also holds a
+  // short auto-generated summary for a few status changes where the bare
+  // from→to isn't self-explanatory (e.g. lost's reason, duplicate's target).
+  note: string | null;
+  actorId: string;
+  actorName: string;
+  at: string;
+}
+
 // ── Inquiries (contact-form submissions from the public polishstation.lk
 //    site) ─────────────────────────────────────────────────────────────────
 // Written directly by the marketing site via the client Firestore SDK
