@@ -158,6 +158,7 @@ await env.withSecurityRulesDisabled(async (c) => {
   await setDoc(doc(d, "leads/leadNew3"), freshLead("leadNew3", "new", "whatsapp"));
   await setDoc(doc(d, "leads/leadNew4"), freshLead("leadNew4", "new", "whatsapp"));
   await setDoc(doc(d, "leads/leadQuoted"), freshLead("leadQuoted", "quoted", "phone"));
+  await setDoc(doc(d, "leads/leadArchived"), freshLead("leadArchived", "archived", "whatsapp"));
   await setDoc(doc(d, "leads/leadConverted"), {
     ...freshLead("leadConverted", "converted", "walk-in"),
     convertedTo: { type: "walk-in", id: "INV-1" },
@@ -730,17 +731,43 @@ await check(
   ),
 );
 await check(
-  "lost requires a non-empty lostReason",
+  "lost requires a lostReason",
   assertFails(setDoc(doc(advisorLeads, "leads/leadNew3"), { status: "lost" }, { merge: true })),
 );
 await check(
-  "lost with a reason succeeds",
-  assertSucceeds(
+  "lost with a free-text (non-enum) reason is rejected",
+  assertFails(
     setDoc(
       doc(advisorLeads, "leads/leadNew3"),
       { status: "lost", lostReason: "Went with a competitor" },
       { merge: true },
     ),
+  ),
+);
+await check(
+  "lost with a valid enum reason succeeds",
+  assertSucceeds(
+    setDoc(
+      doc(advisorLeads, "leads/leadNew3"),
+      { status: "lost", lostReason: "price" },
+      { merge: true },
+    ),
+  ),
+);
+await check(
+  "lost -> new is legal (Reopen)",
+  assertSucceeds(setDoc(doc(advisorLeads, "leads/leadNew3"), { status: "new" }, { merge: true })),
+);
+await check(
+  "archived cannot skip straight to contacted -- only back to new",
+  assertFails(
+    setDoc(doc(advisorLeads, "leads/leadArchived"), { status: "contacted" }, { merge: true }),
+  ),
+);
+await check(
+  "archived -> new is legal (Restore)",
+  assertSucceeds(
+    setDoc(doc(advisorLeads, "leads/leadArchived"), { status: "new" }, { merge: true }),
   ),
 );
 await check(

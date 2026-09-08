@@ -16,6 +16,7 @@ import {
   collection,
   doc,
   setDoc,
+  updateDoc,
   deleteDoc,
   onSnapshot,
   writeBatch,
@@ -65,6 +66,7 @@ import type {
   Inquiry,
   Invoice,
   Lead,
+  LostReason,
   MaintenanceLog,
   NewsletterSubscriber,
   NotificationSettings,
@@ -186,10 +188,22 @@ interface Store {
   addLead: (
     data: Omit<Lead, "id" | "createdAt" | "status" | "lostReason" | "duplicateOf" | "convertedTo">,
   ) => Lead;
-  transitionLeadStatus: (lead: Lead, status: "contacted" | "quoted" | "archived") => void;
-  markLeadLost: (lead: Lead, reason: string) => void;
+  // "new" as a target is only legal from lost/archived (Reopen/Restore) --
+  // assertLegalLeadTransition is what actually enforces that, this signature
+  // just documents every status this function is ever called with.
+  transitionLeadStatus: (
+    lead: Lead,
+    status: "new" | "contacted" | "quoted" | "archived",
+    quote?: { quotedAmount?: number; quoteValidUntil?: string },
+  ) => void;
+  markLeadLost: (lead: Lead, reason: LostReason) => void;
   markLeadDuplicate: (lead: Lead, duplicateOfId: string) => void;
   assignLead: (lead: Lead, staffId: string | null) => void;
+  // Batched, not transactional: a manual bulk-selection action (Phase 3's
+  // "Mark as Test" bulk bar item), not a data-integrity-sensitive one like
+  // the convert paths below -- a partial failure just leaves a few leads
+  // untagged, which the operator can retry.
+  markLeadsTest: (leads: Lead[], isTest: boolean) => Promise<void>;
   // Atomic: creates/links a Customer, creates the Booking, and flips the
   // lead to converted — or fails entirely with no partial writes. Throws
   // LeadAlreadyConvertedError if the lead was converted by someone else
@@ -202,6 +216,12 @@ interface Store {
   // Atomic: links an already-created walk-in Invoice (and its Job, if any)
   // to this lead, stamping leadId/source, and flips the lead to converted.
   convertLeadToInvoiceLink: (lead: Lead, invoiceId: string) => Promise<void>;
+  // Atomic: creates the Job and flips the lead to converted, mirroring
+  // convertLeadToBooking. Throws LeadAlreadyConvertedError the same way.
+  convertLeadToJob: (
+    lead: Lead,
+    data: Omit<Job, "id" | "createdAt" | "updatedAt" | "status" | "bookingId" | "vehicleId">,
+  ) => Promise<Job>;
   // The inspection -> service hop: a plain booking carrying leadId/source
   // forward from an already-converted booking. Does NOT touch lead status —
   // it is deliberately not a second conversion.
@@ -295,6 +315,23 @@ function write<T extends { id: string }>(collPath: string, item: T): void {
 function remove(collPath: string, id: string): void {
   deleteDoc(fd(collPath, id)).catch((err) =>
     console.error(`[store] delete ${collPath}/${id}:`, err),
+  );
+}
+
+// Partial update for a field-only patch (Lead.assignedTo, Lead.isTest) that
+// has nothing to do with the status transition graph. Deliberately NOT
+// write() (a full-document setDoc): write() resends the caller's whole local
+// copy of the doc, including fields like `convertedTo` that may be stale
+// relative to the server (a listener update not yet applied) or entirely
+// absent on an already-converted lead -- either way, resending it collides
+// with firestore.rules' "convertedTo is immutable/shaped once converted"
+// check for a status that isn't even changing. A merge update only ever
+// touches the given keys, so the server's own already-correct convertedTo
+// (or complete absence of it, for pre-existing malformed records) is what
+// the rule evaluates, not this client's possibly-stale snapshot of it.
+function patch(collPath: string, id: string, fields: Record<string, unknown>): void {
+  updateDoc(fd(collPath, id), fields).catch((err) =>
+    console.error(`[store] patch ${collPath}/${id}:`, err),
   );
 }
 
@@ -883,9 +920,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const transitionLeadStatus = useCallback(
-    (lead: Lead, status: "contacted" | "quoted" | "archived") => {
+    (
+      lead: Lead,
+      status: "new" | "contacted" | "quoted" | "archived",
+      quote?: { quotedAmount?: number; quoteValidUntil?: string },
+    ) => {
       assertLegalLeadTransition(lead.status, status);
-      const after: Lead = { ...lead, status, ...stampFirstResponse(lead) };
+      const after: Lead = {
+        ...lead,
+        status,
+        ...stampFirstResponse(lead),
+        ...(quote?.quotedAmount !== undefined ? { quotedAmount: quote.quotedAmount } : {}),
+        ...(quote?.quoteValidUntil ? { quoteValidUntil: quote.quoteValidUntil } : {}),
+      };
       write("leads", after);
       logAudit(actorRef.current, {
         action: "UPDATE_LEAD_STATUS",
@@ -898,7 +945,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const markLeadLost = useCallback((lead: Lead, reason: string) => {
+  const markLeadLost = useCallback((lead: Lead, reason: LostReason) => {
     assertLegalLeadTransition(lead.status, "lost");
     const after: Lead = {
       ...lead,
@@ -936,7 +983,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const assignLead = useCallback((lead: Lead, staffId: string | null) => {
     const after: Lead = { ...lead, assignedTo: staffId };
-    write("leads", after);
+    patch("leads", lead.id, { assignedTo: staffId });
     logAudit(actorRef.current, {
       action: "ASSIGN_LEAD",
       entity: "Lead",
@@ -944,6 +991,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       before: lead,
       after,
     });
+  }, []);
+
+  const markLeadsTest = useCallback(async (leads: Lead[], isTest: boolean) => {
+    const actor = actorRef.current;
+    for (const lead of leads) {
+      const after: Lead = { ...lead, isTest };
+      patch("leads", lead.id, { isTest });
+      logAudit(actor, {
+        action: "MARK_LEAD_TEST",
+        entity: "Lead",
+        entityId: lead.id,
+        before: lead,
+        after,
+      });
+    }
   }, []);
 
   const convertLeadToBooking = useCallback(
@@ -1034,6 +1096,100 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         after: afterLead,
       });
       return booking;
+    },
+    [],
+  );
+
+  const convertLeadToJob = useCallback(
+    async (
+      lead: Lead,
+      data: Omit<Job, "id" | "createdAt" | "updatedAt" | "status" | "bookingId" | "vehicleId">,
+    ): Promise<Job> => {
+      assertLegalLeadTransition(lead.status, "converted");
+
+      const phone = data.customerSnapshot?.phone;
+      const normalized = phone ? normalizePhone(phone) : null;
+      const matchedCustomer = normalized
+        ? S.current.customers.find((c) => normalizePhone(c.phone) === normalized)
+        : undefined;
+
+      const jobId = await nextSeqId("jobs", "J-", S.current.jobs, 1);
+      const actor = actorRef.current;
+      const now = new Date().toISOString();
+
+      const { job, afterLead } = await runTransaction(fsDb, async (tx) => {
+        const leadSnap = await tx.get(fd("leads", lead.id));
+        const currentLead = leadSnap.data() as Lead | undefined;
+        if (!currentLead || currentLead.status === "converted" || currentLead.convertedTo) {
+          throw new LeadAlreadyConvertedError(lead.id);
+        }
+
+        let customerId = matchedCustomer?.id ?? data.customerId;
+        if (!customerId) {
+          const newCustomer: Customer = {
+            id: newId(),
+            name: data.customerName,
+            phone: phone ?? "",
+            email: data.customerSnapshot?.email ?? "",
+            vehicles: data.vehicle
+              ? [{ plate: data.vehicle.plate, model: data.vehicle.model, color: "" }]
+              : [],
+            visits: 0,
+            spend: 0,
+            tier: "Bronze",
+            lastVisit: null,
+            loyaltyPoints: 0,
+            createdAt: now,
+          };
+          customerId = newCustomer.id;
+          tx.set(fd("customers", newCustomer.id), newCustomer);
+        }
+
+        const newJob: Job = {
+          ...data,
+          id: jobId,
+          bookingId: null,
+          vehicleId: null,
+          customerId,
+          status: "booked",
+          createdAt: now,
+          updatedAt: now,
+          leadId: lead.id,
+          source: lead.source,
+        };
+        tx.set(fd("jobs", jobId), newJob);
+
+        const event: JobEvent = {
+          id: newId(),
+          jobId,
+          fromStatus: null,
+          toStatus: "booked",
+          actorId: actor?.id ?? "",
+          actorName: actor?.name ?? "",
+          at: now,
+          note: null,
+        };
+        tx.set(fd("jobEvents", event.id), event);
+
+        const updatedLead: Lead = {
+          ...currentLead,
+          status: "converted",
+          convertedTo: { type: "job", id: jobId },
+          ...stampFirstResponse(currentLead),
+        };
+        tx.set(fd("leads", lead.id), updatedLead);
+
+        return { job: newJob, afterLead: updatedLead };
+      });
+
+      logAudit(actor, {
+        action: "CONVERT_LEAD",
+        entity: "Lead",
+        entityId: lead.id,
+        before: lead,
+        after: afterLead,
+      });
+      return job;
     },
     [],
   );
@@ -1890,8 +2046,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     markLeadLost,
     markLeadDuplicate,
     assignLead,
+    markLeadsTest,
     convertLeadToBooking,
     convertLeadToInvoiceLink,
+    convertLeadToJob,
     createFollowUpBooking,
     addCoupon,
     updateCoupon,

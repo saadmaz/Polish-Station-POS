@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useStore } from "@/lib/store";
@@ -6,6 +6,7 @@ import { useStaffList, type PublicStaff } from "@/lib/use-staff-list";
 import { useConfirm } from "@/hooks/use-confirm";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip } from "@/components/status-chip";
+import { JobSheet } from "@/components/job-sheet";
 import {
   Dialog,
   DialogContent,
@@ -46,6 +47,8 @@ import {
   Calendar,
   UserPlus,
   Archive,
+  ArchiveRestore,
+  Undo2,
   CheckCircle2,
   Tag,
   XCircle,
@@ -58,14 +61,18 @@ import {
   User,
   AlertTriangle,
   RotateCcw,
+  ExternalLink,
+  DollarSign,
 } from "lucide-react";
-import type { Lead, LeadStatus, LeadType, BookingType, Service } from "@/lib/db";
+import type { Lead, LeadStatus, LeadType, BookingType, Service, LostReason } from "@/lib/db";
+import { LOST_REASONS } from "@/lib/db";
 import { formatDate, formatDateTime, formatRelativeAge } from "@/lib/date-format";
 import { formatCurrency } from "@/lib/currency";
 import {
   isLegalLeadTransition,
   reconcileServiceIds,
   PREFERRED_WINDOW_SHORT_LABELS,
+  LOST_REASON_LABELS,
 } from "@/lib/lead";
 import { normalizePhone } from "@/lib/phone";
 import { toWAPhone } from "@/lib/notifications";
@@ -309,11 +316,20 @@ function ServiceChips({ labels }: { labels: string[] }) {
 // (lost, archived) intentionally get no primary action here -- adding a
 // Reopen/Restore transition is a data-layer change (lead.ts +
 // firestore.rules), not a table-layout one; see the Phase 2 handoff notes.
+// "walk-in" (Invoice) has no dedicated route to link to -- Invoices are
+// viewed inline from POS/reports, not as a standalone page.
+function convertedToHref(convertedTo: NonNullable<Lead["convertedTo"]>): string | null {
+  if (convertedTo.type === "job") return "/jobs";
+  if (convertedTo.type === "inspection" || convertedTo.type === "service") return "/bookings";
+  return null;
+}
+
 function LeadRowActions({
   lead,
   staffList,
   onTransition,
   onConvert,
+  onQuote,
   onLost,
   onDuplicate,
   onAssign,
@@ -322,8 +338,9 @@ function LeadRowActions({
 }: {
   lead: Lead;
   staffList: PublicStaff[];
-  onTransition: (status: "contacted" | "quoted") => void;
+  onTransition: (status: "contacted" | "new") => void;
   onConvert: () => void;
+  onQuote: () => void;
   onLost: () => void;
   onDuplicate: () => void;
   onAssign: (staffId: string | null) => void;
@@ -342,13 +359,19 @@ function LeadRowActions({
       onClick: () => onTransition("contacted"),
     };
   } else if (lead.status === "contacted" && can("quoted")) {
-    primary = { label: "Mark Quoted", icon: Tag, onClick: () => onTransition("quoted") };
+    primary = { label: "Mark Quoted", icon: Tag, onClick: onQuote };
   } else if (
     (lead.status === "new" || lead.status === "contacted" || lead.status === "quoted") &&
     can("converted")
   ) {
     primary = { label: "Convert", icon: UserPlus, onClick: onConvert };
+  } else if (lead.status === "lost" && can("new")) {
+    primary = { label: "Reopen", icon: Undo2, onClick: () => onTransition("new") };
+  } else if (lead.status === "archived" && can("new")) {
+    primary = { label: "Restore", icon: ArchiveRestore, onClick: () => onTransition("new") };
   }
+
+  const jobOrBookingHref = lead.convertedTo ? convertedToHref(lead.convertedTo) : null;
 
   return (
     <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
@@ -360,18 +383,29 @@ function LeadRowActions({
           <primary.icon className="h-3.5 w-3.5" /> {primary.label}
         </button>
       )}
-      {lead.status === "converted" && lead.convertedTo && (
-        <span className="text-[11px] text-muted-foreground truncate">
-          → {lead.convertedTo.type} {lead.convertedTo.id}
-        </span>
-      )}
+      {lead.status === "converted" &&
+        lead.convertedTo &&
+        (jobOrBookingHref ? (
+          <Link
+            to={jobOrBookingHref}
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+          >
+            {lead.convertedTo.type} {lead.convertedTo.id} <ExternalLink className="h-3 w-3" />
+          </Link>
+        ) : (
+          <span className="text-[11px] text-muted-foreground truncate">
+            → {lead.convertedTo.type} {lead.convertedTo.id}
+          </span>
+        ))}
       {lead.status === "duplicate" && lead.duplicateOf && (
         <span className="text-[11px] text-muted-foreground truncate">
           → merged into {lead.duplicateOf}
         </span>
       )}
       {lead.status === "lost" && lead.lostReason && (
-        <span className="text-[11px] text-muted-foreground truncate">{lead.lostReason}</span>
+        <span className="text-[11px] text-muted-foreground truncate">
+          {LOST_REASON_LABELS[lead.lostReason]}
+        </span>
       )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -436,8 +470,9 @@ function LeadDetailPanel({
   services: Service[];
   onOpenChange: (v: boolean) => void;
   actions: {
-    onTransition: (lead: Lead, status: "contacted" | "quoted") => void;
+    onTransition: (lead: Lead, status: "contacted" | "new") => void;
     onConvert: (lead: Lead) => void;
+    onQuote: (lead: Lead) => void;
     onLost: (lead: Lead) => void;
     onDuplicate: (lead: Lead) => void;
     onAssign: (lead: Lead, staffId: string | null) => void;
@@ -510,6 +545,23 @@ function LeadDetailPanel({
                 </div>
               </div>
 
+              {lead.quotedAmount !== undefined && (
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                    Quote
+                  </h4>
+                  <div className="flex items-center gap-1.5">
+                    <DollarSign className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    {formatCurrency(lead.quotedAmount)}
+                    {lead.quoteValidUntil && (
+                      <span className="text-muted-foreground">
+                        · valid until {displayPreferredDate(lead.quoteValidUntil)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {lead.notes && (
                 <div>
                   <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
@@ -554,6 +606,7 @@ function LeadDetailPanel({
                 staffList={staffList}
                 onTransition={(status) => actions.onTransition(lead, status)}
                 onConvert={() => actions.onConvert(lead)}
+                onQuote={() => actions.onQuote(lead)}
                 onLost={() => actions.onLost(lead)}
                 onDuplicate={() => actions.onDuplicate(lead)}
                 onAssign={(staffId) => actions.onAssign(lead, staffId)}
@@ -803,14 +856,14 @@ function LostDialog({
   onOpenChange: (v: boolean) => void;
 }) {
   const { markLeadLost } = useStore();
-  const [reason, setReason] = useState("");
+  const [reason, setReason] = useState<LostReason | null>(null);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!lead || !reason.trim()) return;
-    markLeadLost(lead, reason.trim());
+    if (!lead || !reason) return;
+    markLeadLost(lead, reason);
     toast.success("Lead marked lost");
-    setReason("");
+    setReason(null);
     onOpenChange(false);
   }
 
@@ -818,7 +871,7 @@ function LostDialog({
     <Dialog
       open={lead !== null}
       onOpenChange={(v) => {
-        if (!v) setReason("");
+        if (!v) setReason(null);
         onOpenChange(v);
       }}
     >
@@ -830,23 +883,174 @@ function LostDialog({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <label className="text-sm font-medium">Reason *</label>
-            <textarea
+            <div className="space-y-1.5">
+              {LOST_REASONS.map((r) => (
+                <label
+                  key={r}
+                  className="flex items-center gap-2 rounded-md border border-input px-3 py-2 text-sm cursor-pointer hover:bg-accent has-[:checked]:border-primary has-[:checked]:bg-primary/10"
+                >
+                  <input
+                    type="radio"
+                    name="lost-reason"
+                    checked={reason === r}
+                    onChange={() => setReason(r)}
+                  />
+                  {LOST_REASON_LABELS[r]}
+                </label>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <button
+              type="submit"
+              disabled={!reason}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90 disabled:opacity-60"
+            >
+              Mark Lost
+            </button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Bulk Mark Lost dialog (single reason applied to every selected lead) ──────
+
+function BulkLostDialog({
+  open,
+  count,
+  onOpenChange,
+  onSubmit,
+}: {
+  open: boolean;
+  count: number;
+  onOpenChange: (v: boolean) => void;
+  onSubmit: (reason: LostReason) => void;
+}) {
+  const [reason, setReason] = useState<LostReason | null>(null);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!reason) return;
+    onSubmit(reason);
+    setReason(null);
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) setReason(null);
+        onOpenChange(v);
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Mark Lost</DialogTitle>
+          <DialogDescription>One reason applied to all {count} selected lead(s).</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            {LOST_REASONS.map((r) => (
+              <label
+                key={r}
+                className="flex items-center gap-2 rounded-md border border-input px-3 py-2 text-sm cursor-pointer hover:bg-accent has-[:checked]:border-primary has-[:checked]:bg-primary/10"
+              >
+                <input
+                  type="radio"
+                  name="bulk-lost-reason"
+                  checked={reason === r}
+                  onChange={() => setReason(r)}
+                />
+                {LOST_REASON_LABELS[r]}
+              </label>
+            ))}
+          </div>
+          <DialogFooter>
+            <button
+              type="submit"
+              disabled={!reason}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90 disabled:opacity-60"
+            >
+              Mark Lost
+            </button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Mark Quoted dialog (amount + validity) ────────────────────────────────────
+
+function QuoteDialog({
+  lead,
+  onOpenChange,
+  onSubmit,
+}: {
+  lead: Lead | null;
+  onOpenChange: (v: boolean) => void;
+  onSubmit: (lead: Lead, amount: number, validUntil: string) => void;
+}) {
+  const [amount, setAmount] = useState("");
+  const [validUntil, setValidUntil] = useState("");
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!lead || !amount.trim()) return;
+    onSubmit(lead, Number(amount), validUntil);
+    setAmount("");
+    setValidUntil("");
+    onOpenChange(false);
+  }
+
+  return (
+    <Dialog
+      open={lead !== null}
+      onOpenChange={(v) => {
+        if (!v) {
+          setAmount("");
+          setValidUntil("");
+        }
+        onOpenChange(v);
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Mark Quoted</DialogTitle>
+          <DialogDescription>{lead?.name}</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Amount (LKR) *</label>
+            <input
               required
-              rows={3}
+              type="number"
+              min="0"
+              step="1"
               autoFocus
-              placeholder="Why was this lead lost?"
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Valid until</label>
+            <input
+              type="date"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              value={validUntil}
+              onChange={(e) => setValidUntil(e.target.value)}
             />
           </div>
           <DialogFooter>
             <button
               type="submit"
-              disabled={!reason.trim()}
+              disabled={!amount.trim()}
               className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90 disabled:opacity-60"
             >
-              Mark Lost
+              Mark Quoted
             </button>
           </DialogFooter>
         </form>
@@ -956,11 +1160,13 @@ function ConvertChooserDialog({
   onOpenChange,
   onChooseBooking,
   onChooseInvoice,
+  onChooseJob,
 }: {
   lead: Lead | null;
   onOpenChange: (v: boolean) => void;
   onChooseBooking: (type: BookingType) => void;
   onChooseInvoice: () => void;
+  onChooseJob: () => void;
 }) {
   return (
     <Dialog open={lead !== null} onOpenChange={onOpenChange}>
@@ -995,6 +1201,15 @@ function ConvertChooserDialog({
             Link to invoice
             <div className="text-xs font-normal text-muted-foreground">
               Already rung up at the till — no booking involved
+            </div>
+          </button>
+          <button
+            onClick={onChooseJob}
+            className="rounded-md border border-input px-4 py-3 text-left text-sm font-medium hover:bg-accent"
+          >
+            Create job
+            <div className="text-xs font-normal text-muted-foreground">
+              Full job intake — scheduling, pricing, and a job card
             </div>
           </button>
         </div>
@@ -1110,35 +1325,51 @@ function LeadCard({
   staffList,
   onTransition,
   onConvert,
+  onQuote,
   onLost,
   onDuplicate,
   onAssign,
   onArchive,
   onOpen,
   services,
+  selected,
+  onToggleSelect,
 }: {
   lead: Lead;
   now: Date;
   staffList: PublicStaff[];
-  onTransition: (status: "contacted" | "quoted") => void;
+  onTransition: (status: "contacted" | "new") => void;
   onConvert: () => void;
+  onQuote: () => void;
   onLost: () => void;
   onDuplicate: () => void;
   onAssign: (staffId: string | null) => void;
   onArchive: () => void;
   onOpen: () => void;
   services: Service[];
+  selected: boolean;
+  onToggleSelect: () => void;
 }) {
   return (
     <div className="p-4" onClick={onOpen}>
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold truncate">{lead.name}</span>
-            <StatusChip variant={STATUS_TONE[lead.status]}>{lead.status}</StatusChip>
-          </div>
-          <div className="mt-0.5">
-            <WaitingCell lead={lead} now={now} />
+        <div className="flex min-w-0 items-start gap-2">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelect}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`Select ${lead.name}`}
+            className="mt-1 h-4 w-4 shrink-0"
+          />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold truncate">{lead.name}</span>
+              <StatusChip variant={STATUS_TONE[lead.status]}>{lead.status}</StatusChip>
+            </div>
+            <div className="mt-0.5">
+              <WaitingCell lead={lead} now={now} />
+            </div>
           </div>
         </div>
       </div>
@@ -1169,6 +1400,7 @@ function LeadCard({
           staffList={staffList}
           onTransition={onTransition}
           onConvert={onConvert}
+          onQuote={onQuote}
           onLost={onLost}
           onDuplicate={onDuplicate}
           onAssign={onAssign}
@@ -1187,7 +1419,7 @@ function SkeletonRows() {
     <>
       {Array.from({ length: 6 }).map((_, i) => (
         <tr key={i}>
-          {Array.from({ length: 8 }).map((_, j) => (
+          {Array.from({ length: 9 }).map((_, j) => (
             <td key={j} className="px-3 py-3">
               <Skeleton className="h-4 w-full max-w-32" />
             </td>
@@ -1199,8 +1431,16 @@ function SkeletonRows() {
 }
 
 function Leads() {
-  const { leads, services, transitionLeadStatus, assignLead, storeLoading, listenerErrors } =
-    useStore();
+  const {
+    leads,
+    services,
+    transitionLeadStatus,
+    markLeadLost,
+    assignLead,
+    markLeadsTest,
+    storeLoading,
+    listenerErrors,
+  } = useStore();
   const { staffList } = useStaffList();
   const { confirm, ConfirmDialog } = useConfirm();
   const [search, setSearch] = useState("");
@@ -1210,13 +1450,17 @@ function Leads() {
   const [lostLead, setLostLead] = useState<Lead | null>(null);
   const [duplicateLead, setDuplicateLead] = useState<Lead | null>(null);
   const [convertingLead, setConvertingLead] = useState<Lead | null>(null);
+  const [quotingLead, setQuotingLead] = useState<Lead | null>(null);
   const [bookingConvert, setBookingConvert] = useState<{
     lead: Lead;
     bookingType: BookingType;
   } | null>(null);
+  const [jobConvertLead, setJobConvertLead] = useState<Lead | null>(null);
   const [invoiceLinkLead, setInvoiceLinkLead] = useState<Lead | null>(null);
   const [detailLead, setDetailLead] = useState<Lead | null>(null);
   const [now, setNow] = useState(() => new Date());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkLostOpen, setBulkLostOpen] = useState(false);
 
   // Keeps the Waiting column's relative age (and its color escalation) from
   // going stale while the tab stays open.
@@ -1240,15 +1484,37 @@ function Leads() {
     return matchesSearch && matchesType && matchesStatus;
   });
 
+  const selectedLeads = filtered.filter((l) => selectedIds.has(l.id));
+
   function clearFilters() {
     setSearch("");
     setTypeFilter("All");
     setStatusFilter("All");
   }
 
-  function handleTransition(lead: Lead, status: "contacted" | "quoted") {
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds((prev) =>
+      prev.size === filtered.length ? new Set() : new Set(filtered.map((l) => l.id)),
+    );
+  }
+
+  function handleTransition(lead: Lead, status: "contacted" | "new") {
     transitionLeadStatus(lead, status);
-    toast.success(`Lead marked ${status}`);
+    toast.success(status === "new" ? "Lead reopened" : "Lead marked contacted");
+  }
+
+  function handleQuote(lead: Lead, quotedAmount: number, quoteValidUntil: string) {
+    transitionLeadStatus(lead, "quoted", { quotedAmount, quoteValidUntil });
+    toast.success("Lead marked quoted");
   }
 
   async function handleArchive(lead: Lead) {
@@ -1260,6 +1526,44 @@ function Leads() {
   function handleAssign(lead: Lead, staffId: string | null) {
     assignLead(lead, staffId);
     toast.success(staffId ? "Lead assigned" : "Lead unassigned");
+  }
+
+  // ── Bulk actions (selected rows only; Convert is deliberately excluded --
+  // conversion needs per-lead judgement, per the Phase 3 spec) ─────────────
+  function handleBulkAssign(staffId: string | null) {
+    for (const lead of selectedLeads) assignLead(lead, staffId);
+    toast.success(`${selectedLeads.length} lead(s) ${staffId ? "assigned" : "unassigned"}`);
+    setSelectedIds(new Set());
+  }
+
+  async function handleBulkArchive() {
+    if (
+      !(await confirm({
+        title: `Archive ${selectedLeads.length} lead(s)?`,
+        description: "Only leads that can legally move to Archived will be changed.",
+      }))
+    )
+      return;
+    for (const lead of selectedLeads) {
+      if (isLegalLeadTransition(lead.status, "archived")) transitionLeadStatus(lead, "archived");
+    }
+    toast.success(`${selectedLeads.length} lead(s) archived`);
+    setSelectedIds(new Set());
+  }
+
+  function handleBulkLost(reason: LostReason) {
+    for (const lead of selectedLeads) {
+      if (isLegalLeadTransition(lead.status, "lost")) markLeadLost(lead, reason);
+    }
+    toast.success(`${selectedLeads.length} lead(s) marked lost`);
+    setSelectedIds(new Set());
+    setBulkLostOpen(false);
+  }
+
+  async function handleBulkMarkTest() {
+    await markLeadsTest(selectedLeads, true);
+    toast.success(`${selectedLeads.length} lead(s) marked as test`);
+    setSelectedIds(new Set());
   }
 
   const newCount = visibleLeads.filter((l) => l.status === "new").length;
@@ -1349,11 +1653,14 @@ function Leads() {
                     services={services}
                     onTransition={(status) => handleTransition(l, status)}
                     onConvert={() => setConvertingLead(l)}
+                    onQuote={() => setQuotingLead(l)}
                     onLost={() => setLostLead(l)}
                     onDuplicate={() => setDuplicateLead(l)}
                     onAssign={(staffId) => handleAssign(l, staffId)}
                     onArchive={() => handleArchive(l)}
                     onOpen={() => setDetailLead(l)}
+                    selected={selectedIds.has(l.id)}
+                    onToggleSelect={() => toggleSelect(l.id)}
                   />
                 ))}
                 {filtered.length === 0 && (
@@ -1379,6 +1686,15 @@ function Leads() {
             <table className="w-full text-sm">
               <thead className="sticky top-0 z-10 bg-charcoal text-charcoal-foreground text-[11px] uppercase tracking-wider">
                 <tr>
+                  <th className="px-3 py-2.5">
+                    <input
+                      type="checkbox"
+                      checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                      onChange={toggleSelectAll}
+                      aria-label="Select all leads"
+                      className="h-4 w-4"
+                    />
+                  </th>
                   <th className="text-left px-5 py-2.5">Waiting</th>
                   <th className="text-left px-3 py-2.5">Customer</th>
                   <th className="text-left px-3 py-2.5">Vehicle</th>
@@ -1400,6 +1716,15 @@ function Leads() {
                         onClick={() => setDetailLead(l)}
                         className="h-16 cursor-pointer align-middle hover:bg-muted/40"
                       >
+                        <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(l.id)}
+                            onChange={() => toggleSelect(l.id)}
+                            aria-label={`Select ${l.name}`}
+                            className="h-4 w-4"
+                          />
+                        </td>
                         <td className="px-5 py-3">
                           <WaitingCell lead={l} now={now} />
                         </td>
@@ -1431,6 +1756,7 @@ function Leads() {
                             staffList={staffList}
                             onTransition={(status) => handleTransition(l, status)}
                             onConvert={() => setConvertingLead(l)}
+                            onQuote={() => setQuotingLead(l)}
                             onLost={() => setLostLead(l)}
                             onDuplicate={() => setDuplicateLead(l)}
                             onAssign={(staffId) => handleAssign(l, staffId)}
@@ -1441,7 +1767,7 @@ function Leads() {
                     ))}
                     {filtered.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="text-center py-10 text-muted-foreground">
+                        <td colSpan={9} className="text-center py-10 text-muted-foreground">
                           {visibleLeads.length === 0 ? (
                             "No leads yet"
                           ) : (
@@ -1462,6 +1788,42 @@ function Leads() {
           </div>
         </div>
 
+        {selectedIds.size > 0 && (
+          <div className="fixed inset-x-0 bottom-4 z-20 mx-auto flex w-fit max-w-[calc(100%-2rem)] flex-wrap items-center gap-2 rounded-xl border border-border bg-charcoal px-4 py-3 text-charcoal-foreground shadow-elevated">
+            <span className="text-sm font-semibold">{selectedIds.size} selected</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={BUTTON}>Assign</button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuRadioGroup value="" onValueChange={(v) => handleBulkAssign(v || null)}>
+                  <DropdownMenuRadioItem value="">Unassigned</DropdownMenuRadioItem>
+                  {staffList.map((s) => (
+                    <DropdownMenuRadioItem key={s.id} value={s.id}>
+                      {s.name}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <button onClick={() => setBulkLostOpen(true)} className={BUTTON}>
+              Mark Lost
+            </button>
+            <button onClick={handleBulkArchive} className={BUTTON}>
+              Archive
+            </button>
+            <button onClick={handleBulkMarkTest} className={BUTTON}>
+              Mark as Test
+            </button>
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="text-xs font-medium text-charcoal-foreground/70 hover:text-charcoal-foreground"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
         <NewLeadDialog open={newLeadOpen} onOpenChange={setNewLeadOpen} />
         <LostDialog lead={lostLead} onOpenChange={(v) => !v && setLostLead(null)} />
         <DuplicateDialog
@@ -1481,6 +1843,11 @@ function Leads() {
             setInvoiceLinkLead(convertingLead);
             setConvertingLead(null);
           }}
+          onChooseJob={() => {
+            if (!convertingLead) return;
+            setJobConvertLead(convertingLead);
+            setConvertingLead(null);
+          }}
         />
         <LinkInvoiceDialog
           lead={invoiceLinkLead}
@@ -1490,6 +1857,22 @@ function Leads() {
           open={bookingConvert !== null}
           onOpenChange={(v) => !v && setBookingConvert(null)}
           convertLead={bookingConvert ?? undefined}
+        />
+        <JobSheet
+          open={jobConvertLead !== null}
+          onOpenChange={(v) => !v && setJobConvertLead(null)}
+          convertLead={jobConvertLead ? { lead: jobConvertLead } : undefined}
+        />
+        <QuoteDialog
+          lead={quotingLead}
+          onOpenChange={(v) => !v && setQuotingLead(null)}
+          onSubmit={handleQuote}
+        />
+        <BulkLostDialog
+          open={bulkLostOpen}
+          count={selectedLeads.length}
+          onOpenChange={setBulkLostOpen}
+          onSubmit={handleBulkLost}
         />
         <LeadDetailPanel
           lead={detailLead}
@@ -1501,6 +1884,10 @@ function Leads() {
             onConvert: (lead) => {
               setDetailLead(null);
               setConvertingLead(lead);
+            },
+            onQuote: (lead) => {
+              setDetailLead(null);
+              setQuotingLead(lead);
             },
             onLost: (lead) => {
               setDetailLead(null);

@@ -893,6 +893,7 @@ async function seedUiTestData() {
   for (let i = 1; i <= 30; i++) {
     const type = pick(LEAD_TYPES);
     const isBooking = type === "booking";
+    const status = LEAD_STATUSES[(i - 1) % LEAD_STATUSES.length];
     leads.push({
       id: `UI-LEAD-${i}`,
       type,
@@ -914,7 +915,14 @@ async function seedUiTestData() {
           }
         : {}),
       ...(rand() < 0.3 ? { notes: "Follow up next week" } : {}),
-      status: LEAD_STATUSES[(i - 1) % LEAD_STATUSES.length],
+      status,
+      // A real converted lead always has this set atomically by the actual
+      // convert functions in store.tsx -- a "converted" seed record with no
+      // convertedTo is a shape Firestore rules' isLegalLeadUpdate() (rightly)
+      // never allows a real write to produce, so seeding one anyway just
+      // means any later patch (assign, mark-test, ...) against it trips a
+      // permission-denied that a real lead could never hit.
+      ...(status === "converted" ? { convertedTo: { type: "walk-in", id: `INV-seed-${i}` } } : {}),
       source: LEAD_SOURCES[(i - 1) % LEAD_SOURCES.length],
       createdAt: isoDaysFromNow(-ri(0, 60)),
       ip: rand() < 0.5 ? `${ri(1, 255)}.${ri(0, 255)}.${ri(0, 255)}.${ri(0, 255)}` : null,

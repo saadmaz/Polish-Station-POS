@@ -41,9 +41,11 @@ service cloud.firestore {
         "contacted": ["quoted", "converted", "lost", "duplicate", "archived"],
         "quoted":    ["converted", "lost", "duplicate", "archived"],
         "converted": [],
-        "lost":      [],
+        // Reopen/Restore -- both land back at "new" for re-triage since
+        // there's no stored "status before lost/archived" to return to.
+        "lost":      ["new"],
         "duplicate": [],
-        "archived":  [],
+        "archived":  ["new"],
       };
     }
 
@@ -52,7 +54,8 @@ service cloud.firestore {
       let after = request.resource.data;
       return (before == after.status || after.status in legalLeadTransitions()[before])
         && (after.status != "lost" ||
-            (after.lostReason is string && after.lostReason.size() > 0))
+            (after.lostReason in
+             ["price", "timing", "distance", "no_response", "out_of_scope", "duplicate"]))
         && (after.status != "duplicate" ||
             (after.duplicateOf is string && after.duplicateOf.size() > 0))
         && (after.status != "converted" ||

@@ -22,12 +22,19 @@ import {
 import { Search, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import type { Job } from "@/lib/job";
+import type { Lead } from "@/lib/db";
+import { reconcileServiceIds } from "@/lib/lead";
 
 interface JobSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   // When set, the sheet edits this job instead of creating a new one.
   editing?: Job;
+  // When set, submitting creates the job via convertLeadToJob (Customer
+  // find/create + Job + lead status, atomically) instead of plain addJob --
+  // mirrors booking-sheet.tsx's convertLead. Mutually exclusive with
+  // `editing`: a lead conversion always creates a brand-new job.
+  convertLead?: { lead: Lead };
 }
 
 const BODY_TYPES = [
@@ -94,8 +101,8 @@ async function decodeVIN(vin: string): Promise<string | null> {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function JobSheet({ open, onOpenChange, editing }: JobSheetProps) {
-  const { services, customers, bays, addJob, updateJob } = useStore();
+export function JobSheet({ open, onOpenChange, editing, convertLead }: JobSheetProps) {
+  const { services, customers, bays, addJob, updateJob, convertLeadToJob } = useStore();
   const { staffList } = useStaffList();
   const [form, setForm] = useState(EMPTY);
   const [submitting, setSubmitting] = useState(false);
@@ -135,12 +142,30 @@ export function JobSheet({ open, onOpenChange, editing }: JobSheetProps) {
         technicianIds: editing.schedule?.technicianIds ?? [],
         notes: editing.notes,
       });
+    } else if (convertLead) {
+      const lead = convertLead.lead;
+      // Only prefill serviceId when the lead's service resolves to a real
+      // catalog id -- website-sourced leads carry the site's own label
+      // strings (e.g. "Paint Correction"), which never match a services doc
+      // id, so those are left for staff to pick manually instead of
+      // silently mis-selecting the wrong service.
+      const [firstServiceId] = reconcileServiceIds(lead);
+      const matchedService = services.find((s) => s.id === firstServiceId);
+      setForm({
+        ...EMPTY,
+        name: lead.name,
+        phone: lead.phone ?? "",
+        vehicleDescription: lead.vehicle ?? "",
+        serviceId: matchedService?.id ?? "",
+        price: matchedService?.price ?? 0,
+        notes: lead.notes ?? "",
+      });
     } else {
       setForm(EMPTY);
     }
     setLookupState("idle");
     setLookupSuggestion(null);
-  }, [open, editing]);
+  }, [open, editing, convertLead, services]);
 
   function set<K extends keyof typeof EMPTY>(field: K, value: (typeof EMPTY)[K]) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -295,6 +320,24 @@ export function JobSheet({ open, onOpenChange, editing }: JobSheetProps) {
           estimate: editing.estimate ?? { isProvisional: true, quoteVersion: 1 },
         });
         toast.success("Job updated");
+      } else if (convertLead) {
+        try {
+          await convertLeadToJob(convertLead.lead, {
+            ...jobData,
+            estimate: { isProvisional: true, quoteVersion: 1 },
+          });
+          toast.success("Job created", {
+            description: `${form.name}: ${svc.name} on ${form.date} at ${form.time}`,
+          });
+        } catch (err) {
+          const name = err instanceof Error ? err.name : "";
+          toast.error(
+            name === "LeadAlreadyConvertedError"
+              ? "This lead was already converted"
+              : "Couldn't create the job, please try again",
+          );
+          return;
+        }
       } else {
         await addJob({ ...jobData, estimate: { isProvisional: true, quoteVersion: 1 } });
         toast.success("Job created", {
@@ -316,9 +359,15 @@ export function JobSheet({ open, onOpenChange, editing }: JobSheetProps) {
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-md flex flex-col overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>{editing ? `Edit Job · ${editing.id}` : "New Job"}</SheetTitle>
+          <SheetTitle>
+            {editing ? `Edit Job · ${editing.id}` : convertLead ? "Create Job" : "New Job"}
+          </SheetTitle>
           <SheetDescription>
-            {editing ? "Update the job intake details." : "Log a vehicle in for work."}
+            {editing
+              ? "Update the job intake details."
+              : convertLead
+                ? `Converting lead: ${convertLead.lead.name}`
+                : "Log a vehicle in for work."}
           </SheetDescription>
         </SheetHeader>
 

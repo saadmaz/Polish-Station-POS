@@ -9,7 +9,11 @@ import {
 import type { LeadStatus } from "./db";
 
 const NON_TERMINAL: LeadStatus[] = ["new", "contacted", "quoted"];
-const TERMINAL: LeadStatus[] = ["converted", "lost", "duplicate", "archived"];
+// lost/archived are reachable from every non-terminal status (see below) but
+// are no longer fully terminal themselves -- Reopen/Restore send them back
+// to "new". converted/duplicate remain the only true dead ends.
+const TERMINAL: LeadStatus[] = ["converted", "duplicate"];
+const REOPENABLE: LeadStatus[] = ["lost", "archived"];
 
 describe("the happy-path chain is entirely legal", () => {
   it("new -> contacted -> quoted -> converted, each step legal", () => {
@@ -41,8 +45,25 @@ describe("lost, duplicate and archived", () => {
 describe("terminal statuses", () => {
   it("have no legal transitions out", () => {
     for (const from of TERMINAL) {
-      for (const to of [...NON_TERMINAL, ...TERMINAL]) {
+      for (const to of [...NON_TERMINAL, ...TERMINAL, ...REOPENABLE]) {
         if (from === to) continue;
+        expect(isLegalLeadTransition(from, to)).toBe(false);
+      }
+    }
+  });
+});
+
+describe("lost and archived can be reopened, but only back to new", () => {
+  it("lost -> new is legal (Reopen)", () => {
+    expect(isLegalLeadTransition("lost", "new")).toBe(true);
+  });
+  it("archived -> new is legal (Restore)", () => {
+    expect(isLegalLeadTransition("archived", "new")).toBe(true);
+  });
+  it("neither has any other way out", () => {
+    for (const from of REOPENABLE) {
+      for (const to of [...NON_TERMINAL, ...TERMINAL, ...REOPENABLE]) {
+        if (to === "new" || from === to) continue;
         expect(isLegalLeadTransition(from, to)).toBe(false);
       }
     }
@@ -57,7 +78,9 @@ describe("assertLegalLeadTransition", () => {
     expect(() => assertLegalLeadTransition("converted", "new")).toThrow(IllegalLeadTransitionError);
   });
   it("throws for re-entering a terminal status from itself", () => {
-    expect(() => assertLegalLeadTransition("lost", "lost")).toThrow(IllegalLeadTransitionError);
+    expect(() => assertLegalLeadTransition("converted", "converted")).toThrow(
+      IllegalLeadTransitionError,
+    );
   });
 });
 

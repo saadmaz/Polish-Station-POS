@@ -129,6 +129,19 @@ export type PreferredWindow = (typeof PREFERRED_WINDOWS)[number];
 
 export type VehicleBodyType = "sedan" | "hatchback" | "suv" | "double_cab" | "van" | "coupe";
 
+// Required whenever a lead is marked lost -- see LOST_REASON_LABELS in
+// lead.ts for the picker's display copy, and firestore.rules'
+// isLegalLeadUpdate for the matching server-side enum check.
+export const LOST_REASONS = [
+  "price",
+  "timing",
+  "distance",
+  "no_response",
+  "out_of_scope",
+  "duplicate",
+] as const;
+export type LostReason = (typeof LOST_REASONS)[number];
+
 export interface Lead {
   id: string;
   type: LeadType;
@@ -192,12 +205,14 @@ export interface Lead {
   // Staff uid this lead is assigned to. Null/absent means unassigned.
   assignedTo?: string | null;
   // Set iff status === "lost". Required by both the UI and firestore.rules.
-  // Free text today -- Phase 3 turns the Mark Lost UI into an enum picker,
-  // at which point this narrows to a LostReason union; left as string in
-  // this data-model pass so the existing free-text LostDialog keeps working.
-  lostReason?: string;
+  lostReason?: LostReason;
   // Set iff status === "duplicate" — id of the lead this one was merged into.
   duplicateOf?: string;
+  // Set by the "Mark Quoted" dialog. Both optional even once quoted: a quote
+  // given verbally over the phone before the LKR figure was finalized is
+  // still a legitimate "quoted" lead.
+  quotedAmount?: number;
+  quoteValidUntil?: string; // YYYY-MM-DD
   // Set iff status === "converted". Written once, atomically with the
   // status flip, and never overwritten afterward (immutable in rules).
   convertedTo?: { type: "inspection" | "service" | "walk-in" | "job"; id: string };

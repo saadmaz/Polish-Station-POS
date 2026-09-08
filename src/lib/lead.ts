@@ -10,21 +10,25 @@
 //   {new, contacted, quoted} -> lost           (requires a reason, see db.ts)
 //   {new, contacted, quoted} -> duplicate      (requires duplicateOf, see db.ts)
 //   {new, contacted, quoted} -> archived       (existing one-way Archive button)
-//   {converted, lost, duplicate, archived}     (terminal — no way out)
+//   lost -> new                                (Reopen — re-triage from scratch;
+//                                               there is no stored "status
+//                                               before lost" to return to)
+//   archived -> new                            (Restore — same reasoning)
+//   {converted, duplicate}                     (still fully terminal)
 //
 // "contacted" is also a skippable waypoint, not a mandatory gate: a walk-in
 // lead standing at the counter can convert in the same visit it was
 // created, without a "mark contacted" formality first.
-import type { Lead, LeadStatus, PreferredWindow, WebsiteBookingService } from "./db";
+import type { Lead, LeadStatus, LostReason, PreferredWindow, WebsiteBookingService } from "./db";
 
 const LEGAL_LEAD_TRANSITIONS: Record<LeadStatus, readonly LeadStatus[]> = {
   new: ["contacted", "quoted", "converted", "lost", "duplicate", "archived"],
   contacted: ["quoted", "converted", "lost", "duplicate", "archived"],
   quoted: ["converted", "lost", "duplicate", "archived"],
   converted: [],
-  lost: [],
+  lost: ["new"],
   duplicate: [],
-  archived: [],
+  archived: ["new"],
 };
 
 export class IllegalLeadTransitionError extends Error {
@@ -106,6 +110,16 @@ export function parsePreferredWindowFromNotes(
   if (!window) return null;
   return { window, notes: notes.slice(0, match.index).trimEnd() };
 }
+
+// ─── Lost reasons ────────────────────────────────────────────────────────────
+export const LOST_REASON_LABELS: Record<LostReason, string> = {
+  price: "Price",
+  timing: "Timing didn't work",
+  distance: "Too far / distance",
+  no_response: "Customer stopped responding",
+  out_of_scope: "Out of scope for us",
+  duplicate: "Duplicate of another lead",
+};
 
 // ─── Service reconciliation ─────────────────────────────────────────────────
 // A booking lead carries its requested service one of two ways depending on
