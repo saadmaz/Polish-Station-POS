@@ -15,7 +15,7 @@
 // "contacted" is also a skippable waypoint, not a mandatory gate: a walk-in
 // lead standing at the counter can convert in the same visit it was
 // created, without a "mark contacted" formality first.
-import type { LeadStatus, PreferredWindow, WebsiteBookingService } from "./db";
+import type { Lead, LeadStatus, PreferredWindow, WebsiteBookingService } from "./db";
 
 const LEGAL_LEAD_TRANSITIONS: Record<LeadStatus, readonly LeadStatus[]> = {
   new: ["contacted", "quoted", "converted", "lost", "duplicate", "archived"],
@@ -74,6 +74,15 @@ export const PREFERRED_WINDOW_LABELS: Record<PreferredWindow, string> = {
   "17_19": "5:00 PM - 7:00 PM",
 };
 
+// Compact form for table cells (the Leads worklist's "Requested" column) --
+// same four windows, "8–11 AM" instead of the full "8:00 AM - 11:00 AM".
+export const PREFERRED_WINDOW_SHORT_LABELS: Record<PreferredWindow, string> = {
+  "08_11": "8–11 AM",
+  "11_14": "11 AM–2 PM",
+  "14_17": "2–5 PM",
+  "17_19": "5–7 PM",
+};
+
 const NOTES_PREFERRED_TIME_RE = /\n*Preferred time:\s*([^\n]+?)\s*$/i;
 
 /**
@@ -113,4 +122,27 @@ export function reconcileServiceIds(lead: {
     return lead.services.map((s) => (s === "Other" && lead.otherService ? lead.otherService : s));
   }
   return lead.serviceId ? [lead.serviceId] : [];
+}
+
+// ─── First response ─────────────────────────────────────────────────────────
+// The Leads worklist's "Waiting" column switches from "time since createdAt"
+// to "time to first response" once a lead has been acted on at all -- not
+// just moved to "contacted", since going straight new -> converted or
+// new -> lost is still a response, and the median-first-response metric
+// (Phase 4) needs every resolution counted, not only the successful ones.
+// Stamped once, on whichever mutation is the first to move a lead out of
+// "new" -- never overwritten afterward, same immutability precedent as
+// convertedTo.
+export function stampFirstResponse(
+  lead: Lead,
+  now: Date = new Date(),
+): Pick<Lead, "firstResponseAt" | "responseMinutes"> {
+  if (lead.firstResponseAt) {
+    return { firstResponseAt: lead.firstResponseAt, responseMinutes: lead.responseMinutes };
+  }
+  const minutes = Math.max(
+    0,
+    Math.round((now.getTime() - new Date(lead.createdAt).getTime()) / 60000),
+  );
+  return { firstResponseAt: now.toISOString(), responseMinutes: minutes };
 }

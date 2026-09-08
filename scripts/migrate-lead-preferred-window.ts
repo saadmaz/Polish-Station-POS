@@ -79,7 +79,9 @@ async function main() {
   }
 
   if (needsReview.length > 0) {
-    console.log(`\n⚠️  Needs manual review (mentions a time but doesn't match cleanly): ${needsReview.length}`);
+    console.log(
+      `\n⚠️  Needs manual review (mentions a time but doesn't match cleanly): ${needsReview.length}`,
+    );
     for (const r of needsReview) {
       console.log(`   ${r.id} · notes: "${r.notes}"`);
     }
@@ -91,7 +93,9 @@ async function main() {
   }
 
   if (!CONFIRM) {
-    console.log("\nDry run complete. Nothing was written. Re-run with --confirm to patch these leads.");
+    console.log(
+      "\nDry run complete. Nothing was written. Re-run with --confirm to patch these leads.",
+    );
     process.exit(0);
   }
 

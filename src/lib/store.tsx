@@ -46,7 +46,12 @@ import {
 import { synthesizeWalkInJob } from "./job-linking";
 import { buildTransitionEvent, nextQuoteVersion } from "./job";
 import type { Job, JobEvent, JobStatus } from "./job";
-import { assertLegalLeadTransition, LeadAlreadyConvertedError, reconcileServiceIds } from "./lead";
+import {
+  assertLegalLeadTransition,
+  LeadAlreadyConvertedError,
+  reconcileServiceIds,
+  stampFirstResponse,
+} from "./lead";
 import { normalizePhone, toE164 } from "./phone";
 import type {
   AuditLog,
@@ -184,6 +189,7 @@ interface Store {
   transitionLeadStatus: (lead: Lead, status: "contacted" | "quoted" | "archived") => void;
   markLeadLost: (lead: Lead, reason: string) => void;
   markLeadDuplicate: (lead: Lead, duplicateOfId: string) => void;
+  assignLead: (lead: Lead, staffId: string | null) => void;
   // Atomic: creates/links a Customer, creates the Booking, and flips the
   // lead to converted — or fails entirely with no partial writes. Throws
   // LeadAlreadyConvertedError if the lead was converted by someone else
@@ -879,7 +885,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const transitionLeadStatus = useCallback(
     (lead: Lead, status: "contacted" | "quoted" | "archived") => {
       assertLegalLeadTransition(lead.status, status);
-      const after: Lead = { ...lead, status };
+      const after: Lead = { ...lead, status, ...stampFirstResponse(lead) };
       write("leads", after);
       logAudit(actorRef.current, {
         action: "UPDATE_LEAD_STATUS",
@@ -894,7 +900,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const markLeadLost = useCallback((lead: Lead, reason: string) => {
     assertLegalLeadTransition(lead.status, "lost");
-    const after: Lead = { ...lead, status: "lost", lostReason: reason };
+    const after: Lead = {
+      ...lead,
+      status: "lost",
+      lostReason: reason,
+      ...stampFirstResponse(lead),
+    };
     write("leads", after);
     logAudit(actorRef.current, {
       action: "LOSE_LEAD",
@@ -907,10 +918,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const markLeadDuplicate = useCallback((lead: Lead, duplicateOfId: string) => {
     assertLegalLeadTransition(lead.status, "duplicate");
-    const after: Lead = { ...lead, status: "duplicate", duplicateOf: duplicateOfId };
+    const after: Lead = {
+      ...lead,
+      status: "duplicate",
+      duplicateOf: duplicateOfId,
+      ...stampFirstResponse(lead),
+    };
     write("leads", after);
     logAudit(actorRef.current, {
       action: "MARK_LEAD_DUPLICATE",
+      entity: "Lead",
+      entityId: lead.id,
+      before: lead,
+      after,
+    });
+  }, []);
+
+  const assignLead = useCallback((lead: Lead, staffId: string | null) => {
+    const after: Lead = { ...lead, assignedTo: staffId };
+    write("leads", after);
+    logAudit(actorRef.current, {
+      action: "ASSIGN_LEAD",
       entity: "Lead",
       entityId: lead.id,
       before: lead,
@@ -988,6 +1016,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ...currentLead,
           status: "converted",
           convertedTo: { type: bookingType, id: bookingId },
+          ...stampFirstResponse(currentLead),
         };
         tx.set(fd("leads", lead.id), updatedLead);
 
@@ -1078,6 +1107,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ...currentLead,
         status: "converted",
         convertedTo: { type: "walk-in", id: invoiceId },
+        ...stampFirstResponse(currentLead),
       };
       tx.set(fd("leads", lead.id), updatedLead);
       return updatedLead;
@@ -1859,6 +1889,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     transitionLeadStatus,
     markLeadLost,
     markLeadDuplicate,
+    assignLead,
     convertLeadToBooking,
     convertLeadToInvoiceLink,
     createFollowUpBooking,

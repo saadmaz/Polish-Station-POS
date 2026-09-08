@@ -127,8 +127,7 @@ export type WebsiteBookingService = (typeof WEBSITE_BOOKING_SERVICES)[number];
 export const PREFERRED_WINDOWS = ["08_11", "11_14", "14_17", "17_19"] as const;
 export type PreferredWindow = (typeof PREFERRED_WINDOWS)[number];
 
-export type VehicleBodyType =
-  "sedan" | "hatchback" | "suv" | "double_cab" | "van" | "coupe";
+export type VehicleBodyType = "sedan" | "hatchback" | "suv" | "double_cab" | "van" | "coupe";
 
 export interface Lead {
   id: string;

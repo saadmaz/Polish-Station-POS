@@ -54,9 +54,7 @@ describe("assertLegalLeadTransition", () => {
     expect(() => assertLegalLeadTransition("new", "contacted")).not.toThrow();
   });
   it("throws IllegalLeadTransitionError for an illegal transition", () => {
-    expect(() => assertLegalLeadTransition("converted", "new")).toThrow(
-      IllegalLeadTransitionError,
-    );
+    expect(() => assertLegalLeadTransition("converted", "new")).toThrow(IllegalLeadTransitionError);
   });
   it("throws for re-entering a terminal status from itself", () => {
     expect(() => assertLegalLeadTransition("lost", "lost")).toThrow(IllegalLeadTransitionError);

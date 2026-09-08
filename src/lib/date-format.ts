@@ -77,6 +77,20 @@ export function formatDateTime(value: string | Date): string {
   );
 }
 
+/** "18m" / "2h" / "3d" -- coarse relative age for the Leads worklist's
+ *  "Waiting" column. Deliberately coarse (one unit, no "3h 12m") since it's
+ *  a queue-triage signal, not a precise duration; `now` is injectable for
+ *  tests, defaults to the real current time. */
+export function formatRelativeAge(value: string | Date, now: Date = new Date()): string {
+  const ms = now.getTime() - toDate(value).getTime();
+  const minutes = Math.max(0, Math.round(ms / 60000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.round(hours / 24);
+  return `${days}d`;
+}
+
 /** "24 Aug – 30 Aug 2026" -- an inclusive week range (a calendar week
  *  header). Audit finding B4: Bookings' Week view kept a single-day
  *  header/subtitle instead of adopting this. */

@@ -146,7 +146,12 @@ await env.withSecurityRulesDisabled(async (c) => {
   // invoices inv1..inv6 split above: each assertSucceeds test actually
   // mutates emulator state.
   const freshLead = (name, status, source) => ({
-    id: name, type: "contact", name, status, source, createdAt: "t",
+    id: name,
+    type: "contact",
+    name,
+    status,
+    source,
+    createdAt: "t",
   });
   await setDoc(doc(d, "leads/leadNew1"), freshLead("leadNew1", "new", "whatsapp"));
   await setDoc(doc(d, "leads/leadNew2"), freshLead("leadNew2", "new", "whatsapp"));
@@ -676,7 +681,9 @@ await check(
 );
 await check(
   "new -> converted is legal (contacted/quoted are skippable), but requires convertedTo",
-  assertFails(setDoc(doc(advisorLeads, "leads/leadNew2"), { status: "converted" }, { merge: true })),
+  assertFails(
+    setDoc(doc(advisorLeads, "leads/leadNew2"), { status: "converted" }, { merge: true }),
+  ),
 );
 await check(
   "new -> converted with a valid convertedTo succeeds",
