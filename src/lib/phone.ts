@@ -18,3 +18,14 @@ export function normalizePhone(raw: string): string {
   if (digits.length === 11 && digits.startsWith("94")) return digits;
   return digits;
 }
+
+/**
+ * E.164 form (+94...) for storage on Lead.phone, used only when the number
+ * is recognizably Sri Lankan -- same scope limit as normalizePhone() above.
+ * Returns null rather than guessing for anything else; callers should fall
+ * back to storing the raw input in that case (see Lead.phoneRaw).
+ */
+export function toE164(raw: string): string | null {
+  const normalized = normalizePhone(raw);
+  return /^94\d{9}$/.test(normalized) ? `+${normalized}` : null;
+}

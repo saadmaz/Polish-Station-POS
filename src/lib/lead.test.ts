@@ -3,6 +3,8 @@ import {
   isLegalLeadTransition,
   assertLegalLeadTransition,
   IllegalLeadTransitionError,
+  parsePreferredWindowFromNotes,
+  reconcileServiceIds,
 } from "./lead";
 import type { LeadStatus } from "./db";
 
@@ -58,5 +60,50 @@ describe("assertLegalLeadTransition", () => {
   });
   it("throws for re-entering a terminal status from itself", () => {
     expect(() => assertLegalLeadTransition("lost", "lost")).toThrow(IllegalLeadTransitionError);
+  });
+});
+
+describe("parsePreferredWindowFromNotes", () => {
+  it("extracts a known window and strips it from notes, matching the real prod pattern", () => {
+    expect(parsePreferredWindowFromNotes("hii\n\nPreferred time: 8:00 AM - 11:00 AM")).toEqual({
+      window: "08_11",
+      notes: "hii",
+    });
+  });
+
+  it("handles each of the four known windows", () => {
+    expect(parsePreferredWindowFromNotes("Preferred time: 11:00 AM - 2:00 PM")?.window).toBe(
+      "11_14",
+    );
+    expect(parsePreferredWindowFromNotes("Preferred time: 2:00 PM - 5:00 PM")?.window).toBe(
+      "14_17",
+    );
+    expect(parsePreferredWindowFromNotes("Preferred time: 5:00 PM - 7:00 PM")?.window).toBe(
+      "17_19",
+    );
+  });
+
+  it("returns null when there's no embedded preferred-time text", () => {
+    expect(parsePreferredWindowFromNotes("just a normal note")).toBeNull();
+  });
+
+  it("returns null (never guesses) when the embedded text doesn't match a known label exactly", () => {
+    expect(parsePreferredWindowFromNotes("Preferred time: sometime this week")).toBeNull();
+  });
+});
+
+describe("reconcileServiceIds", () => {
+  it("uses the website's services[] when present, substituting otherService for 'Other'", () => {
+    expect(
+      reconcileServiceIds({ services: ["Paint Correction", "Other"], otherService: "Vinyl wrap" }),
+    ).toEqual(["Paint Correction", "Vinyl wrap"]);
+  });
+
+  it("falls back to the staff dialog's single serviceId when services[] is absent", () => {
+    expect(reconcileServiceIds({ serviceId: "svc-1" })).toEqual(["svc-1"]);
+  });
+
+  it("returns an empty array when neither is set", () => {
+    expect(reconcileServiceIds({})).toEqual([]);
   });
 });

@@ -46,8 +46,8 @@ import {
 import { synthesizeWalkInJob } from "./job-linking";
 import { buildTransitionEvent, nextQuoteVersion } from "./job";
 import type { Job, JobEvent, JobStatus } from "./job";
-import { assertLegalLeadTransition, LeadAlreadyConvertedError } from "./lead";
-import { normalizePhone } from "./phone";
+import { assertLegalLeadTransition, LeadAlreadyConvertedError, reconcileServiceIds } from "./lead";
+import { normalizePhone, toE164 } from "./phone";
 import type {
   AuditLog,
   Booking,
@@ -849,11 +849,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         "id" | "createdAt" | "status" | "lostReason" | "duplicateOf" | "convertedTo"
       >,
     ): Lead => {
+      const e164 = data.phone ? toE164(data.phone) : null;
+      const serviceIds = reconcileServiceIds(data);
       const l: Lead = {
         ...data,
         id: newId(),
         status: "new",
         createdAt: new Date().toISOString(),
+        // Conditional spread, not `phone: e164 ?? data.phone` -- an
+        // undefined field written via setDoc() fails outright, see the
+        // Firestore undefined-field convention this codebase follows
+        // everywhere else a field is only sometimes present.
+        ...(data.phone ? { phone: e164 ?? data.phone, phoneRaw: data.phone } : {}),
+        ...(serviceIds.length > 0 ? { serviceIds } : {}),
       };
       write("leads", l);
       logAudit(actorRef.current, {

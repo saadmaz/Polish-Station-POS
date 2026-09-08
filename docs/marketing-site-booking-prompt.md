@@ -1,5 +1,14 @@
 Fix the booking-request form on the Bookings page so it matches what the POS backend actually accepts. Submissions currently fail validation outright if they don't match the shape below exactly.
 
+## Update: stop appending "Preferred time" to `notes`
+
+The form's "Preferred time" picker is currently being appended as text onto
+the end of `notes` client-side (e.g. `"hii\n\nPreferred time: 8:00 AM - 11:00 AM"`)
+because there was no dedicated field for it. There is now — see
+`preferredWindow` below. Send the picker's value as its own field and stop
+touching `notes` for this; `notes` should only ever contain what the customer
+actually typed in the notes box.
+
 ## Endpoint
 ```
 POST https://pos.polishstation.lk/api/public/booking
@@ -18,7 +27,12 @@ CORS is already open for `polishstation.lk`/`www.polishstation.lk` — no change
   services: string[],     // required, at least one -- see the EXACT allowed values below
   otherService: string,   // required ONLY if "Other" is among `services` -- otherwise send "" or omit it
   preferredDate: string,  // required, "YYYY-MM-DD" -- see note below, this is NOT the mm/dd/yyyy shown on screen
-  notes: string,          // optional -- send "" if left blank
+  preferredWindow: string, // optional -- one of the 4 exact values below; omit the field entirely if the picker has no selection
+  notes: string,          // optional -- send "" if left blank; customer free text ONLY, see note above
+  utmSource: string,      // optional -- omit if not applicable
+  utmMedium: string,      // optional -- omit if not applicable
+  utmCampaign: string,    // optional -- omit if not applicable
+  landingPage: string,    // optional -- the page the visitor landed on, omit if not tracked
   company: string,        // ALWAYS send "", this is the honeypot -- see below
 }
 ```
@@ -40,6 +54,17 @@ Any value outside this list gets the whole submission rejected — if the checkb
 ### `preferredDate` — important
 If the date field is a native `<input type="date">`, its `value` is **always** `YYYY-MM-DD` regardless of the `mm/dd/yyyy` format the browser displays to the visitor — send `input.value` directly, don't reformat it. If it's a custom date picker instead, format the value as `YYYY-MM-DD` before sending (not `mm/dd/yyyy`, not a `Date.toString()`).
 
+### `preferredWindow` — allowed values (exact strings, case-sensitive)
+```
+"08_11"   // 8:00 AM - 11:00 AM
+"11_14"   // 11:00 AM - 2:00 PM
+"14_17"   // 2:00 PM - 5:00 PM
+"17_19"   // 5:00 PM - 7:00 PM
+```
+Map the picker's displayed label to the matching code above. If the form has
+no such picker yet, omit the field entirely rather than sending an empty
+string or guessing.
+
 ### Honeypot: `company`
 Always send this field, always `""` from a real visitor. Add a form field named `company` that's:
 - Visually hidden with CSS positioning (e.g. `position: absolute; left: -9999px`), **not** `display: none` — some bots specifically skip fields hidden that way.
@@ -55,9 +80,11 @@ If it arrives non-empty, the server pretends the request succeeded (so a bot nev
 Show `error` to the visitor on failure — the current copy on the site ("we'll confirm your slot by phone shortly") is correct messaging for success, keep it. Don't fail silently.
 
 ## What NOT to do
-- Don't send a `timeWindow` or `serviceId` field — those belonged to an old version of this contract and no longer exist. Sending them is harmless (extra fields aren't rejected) but pointless.
+- Don't send a `timeWindow` or `serviceId` field — those are old field *names* from a previous version of this contract and no longer exist. `preferredWindow` above is the current, different field for the same concept (time slot); sending the old names is harmless (extra fields aren't rejected) but pointless.
 - Don't try to book directly against the real appointment calendar — this endpoint deliberately creates a **request**, not a confirmed slot. Staff review and convert it into a real booking by hand from the POS.
 - Don't rate-limit or dedupe on your end — the server already rate-limits by phone number (max 3 submissions per 10 minutes) and will return a friendly error if that's hit.
 
 ## Verifying it worked
-Submit a real test booking and confirm it shows up on the POS's Leads screen within a few seconds, with the correct services listed, the vehicle text, and the preferred date rendering as a real date (not raw `YYYY-MM-DD` text or "Invalid Date"). If it doesn't show up, check the browser network tab for the actual JSON response from `/api/public/booking` first — it will say exactly which field failed validation.
+Submit a real test booking and confirm it shows up on the POS's Leads screen within a few seconds, with the correct services listed, the vehicle text, the preferred date rendering as a real date (not raw `YYYY-MM-DD` text or "Invalid Date"), the preferred time window showing correctly, and `notes` containing only what you actually typed in the notes box (no "Preferred time: ..." text appended). If it doesn't show up, check the browser network tab for the actual JSON response from `/api/public/booking` first — it will say exactly which field failed validation.
+
+Please use a phone number and name that's obviously not a real customer (e.g. "Test — please delete") when testing against the live site, and let the POS side know once you've verified it so the test submission can be cleaned out of the production leads collection.

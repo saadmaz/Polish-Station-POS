@@ -120,14 +120,39 @@ export const WEBSITE_BOOKING_SERVICES = [
 ] as const;
 export type WebsiteBookingService = (typeof WEBSITE_BOOKING_SERVICES)[number];
 
+// The site's fixed preferred-time menu (replaces the free-text `timeWindow`
+// field below, which nothing live writes anymore). Bucket boundaries chosen
+// to match the site's actual dropdown copy -- see PREFERRED_WINDOW_LABELS in
+// lead.ts for the exact display string each one maps to.
+export const PREFERRED_WINDOWS = ["08_11", "11_14", "14_17", "17_19"] as const;
+export type PreferredWindow = (typeof PREFERRED_WINDOWS)[number];
+
+export type VehicleBodyType =
+  "sedan" | "hatchback" | "suv" | "double_cab" | "van" | "coupe";
+
 export interface Lead {
   id: string;
   type: LeadType;
   name: string;
   email?: string;
   phone?: string;
+  // What the customer/staff actually typed, before normalizePhone/toE164 --
+  // kept because normalization is lossy for anything that isn't a
+  // recognizable Sri Lankan mobile number. `phone` above holds the E.164
+  // form (+94...) when normalization succeeded, else falls back to this.
+  phoneRaw?: string;
   message?: string;
+  // Free-text vehicle description as typed/submitted -- kept for reference
+  // even once vehicleMake/Model/Year below are split out, since the split
+  // is a best-effort parse (by staff or a future auto-parser) that can be
+  // wrong or incomplete.
   vehicle?: string;
+  vehicleMake?: string;
+  vehicleModel?: string;
+  vehicleYear?: number;
+  // Staff-set or derived from make/model; drives price banding. Optional
+  // because most leads arrive before anyone has looked at the vehicle.
+  vehicleBodyType?: VehicleBodyType;
   // Set by the staff "New Lead" dialog (WhatsApp/phone/walk-in), matching a
   // real Service catalog id. Website-sourced booking leads use `services`/
   // `otherService` below instead -- the two are never both set on one lead.
@@ -135,22 +160,61 @@ export interface Lead {
   // Set by the polishstation.lk booking-request page: the checkboxes picked
   // from WEBSITE_BOOKING_SERVICES, e.g. ["Paint Correction", "Other"].
   services?: WebsiteBookingService[];
+  // Canonical, origin-agnostic list the UI/reports read from -- reconciles
+  // serviceId (staff dialog) and services[] (website) into one shape,
+  // populated wherever a Lead is written rather than derived at render
+  // time. See reconcileServiceIds() in lead.ts, the single place that does
+  // this reconciliation.
+  serviceIds?: string[];
   // Required by api.public.booking.ts whenever "Other" is among `services`.
   otherService?: string;
   preferredDate?: string;
+  // First-class replacement for the free-text `timeWindow` below -- see
+  // PreferredWindow above. The website form should send this instead of
+  // appending "Preferred time: ..." to `notes` (its old workaround for not
+  // having a dedicated field).
+  preferredWindow?: PreferredWindow;
+  // Superseded by preferredWindow above. Still read (never written) so old
+  // records and the staff "New Lead" dialog's free-text field don't break;
+  // remove once nothing writes it and the dialog is migrated (Phase 2).
   timeWindow?: string;
   notes?: string;
   status: LeadStatus;
   source: string;
   createdAt: string;
   ip?: string | null;
+  // When this lead was first moved out of "new" (contacted, or straight to
+  // quoted/converted) -- set once, never overwritten. Null until then.
+  firstResponseAt?: string | null;
+  // Derived: (firstResponseAt - createdAt) in minutes, stamped alongside
+  // firstResponseAt so reports don't need to recompute it from two
+  // timestamps every time. Null until firstResponseAt is set.
+  responseMinutes?: number | null;
+  // Staff uid this lead is assigned to. Null/absent means unassigned.
+  assignedTo?: string | null;
   // Set iff status === "lost". Required by both the UI and firestore.rules.
+  // Free text today -- Phase 3 turns the Mark Lost UI into an enum picker,
+  // at which point this narrows to a LostReason union; left as string in
+  // this data-model pass so the existing free-text LostDialog keeps working.
   lostReason?: string;
   // Set iff status === "duplicate" — id of the lead this one was merged into.
   duplicateOf?: string;
   // Set iff status === "converted". Written once, atomically with the
   // status flip, and never overwritten afterward (immutable in rules).
-  convertedTo?: { type: "inspection" | "service" | "walk-in"; id: string };
+  convertedTo?: { type: "inspection" | "service" | "walk-in" | "job"; id: string };
+  // True for leads created while testing the form/UI rather than by a real
+  // customer -- excluded from every count/metric/default view (see the
+  // "Show test leads" filter toggle). Defaults to false; never set by the
+  // public booking endpoint (a real site visitor is never a test lead).
+  isTest?: boolean;
+  // Marketing attribution, captured client-side by the site at submission
+  // time. All optional -- most sources (WhatsApp, phone, walk-in) have none
+  // of these; even website leads may arrive without them (direct traffic,
+  // ad blockers stripping the params, etc).
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  landingPage?: string;
 }
 
 // ── Inquiries (contact-form submissions from the public polishstation.lk

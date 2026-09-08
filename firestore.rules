@@ -57,7 +57,7 @@ service cloud.firestore {
             (after.duplicateOf is string && after.duplicateOf.size() > 0))
         && (after.status != "converted" ||
             (after.convertedTo is map
-             && after.convertedTo.type in ["inspection", "service", "walk-in"]
+             && after.convertedTo.type in ["inspection", "service", "walk-in", "job"]
              && after.convertedTo.id is string && after.convertedTo.id.size() > 0))
         && (before != "converted" || after.convertedTo == resource.data.convertedTo);
     }

@@ -151,6 +151,7 @@ await env.withSecurityRulesDisabled(async (c) => {
   await setDoc(doc(d, "leads/leadNew1"), freshLead("leadNew1", "new", "whatsapp"));
   await setDoc(doc(d, "leads/leadNew2"), freshLead("leadNew2", "new", "whatsapp"));
   await setDoc(doc(d, "leads/leadNew3"), freshLead("leadNew3", "new", "whatsapp"));
+  await setDoc(doc(d, "leads/leadNew4"), freshLead("leadNew4", "new", "whatsapp"));
   await setDoc(doc(d, "leads/leadQuoted"), freshLead("leadQuoted", "quoted", "phone"));
   await setDoc(doc(d, "leads/leadConverted"), {
     ...freshLead("leadConverted", "converted", "walk-in"),
@@ -690,6 +691,26 @@ await check(
 await check(
   "converted is terminal -- cannot move back to any other status",
   assertFails(setDoc(doc(advisorLeads, "leads/leadNew2"), { status: "new" }, { merge: true })),
+);
+await check(
+  "new -> converted with convertedTo.type 'job' succeeds (Convert to Job)",
+  assertSucceeds(
+    setDoc(
+      doc(advisorLeads, "leads/leadNew4"),
+      { status: "converted", convertedTo: { type: "job", id: "J-1" } },
+      { merge: true },
+    ),
+  ),
+);
+await check(
+  "converted with an unrecognized convertedTo.type is rejected",
+  assertFails(
+    setDoc(
+      doc(advisorLeads, "leads/leadNew3"),
+      { status: "converted", convertedTo: { type: "bogus", id: "X-1" } },
+      { merge: true },
+    ),
+  ),
 );
 await check(
   "convertedTo is immutable once status is already converted",

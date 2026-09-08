@@ -1,7 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type {} from "@tanstack/react-start";
 import { z } from "zod";
-import { WEBSITE_BOOKING_SERVICES } from "@/lib/db";
+import { WEBSITE_BOOKING_SERVICES, PREFERRED_WINDOWS } from "@/lib/db";
+import { reconcileServiceIds } from "@/lib/lead";
+import { toE164 } from "@/lib/phone";
 import {
   preflight,
   json,
@@ -46,7 +48,20 @@ const BookingSchema = z
       .string()
       .trim()
       .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date"),
+    // Optional, not required: the site doesn't send this yet (its
+    // "Preferred time" picker still gets appended to `notes` client-side
+    // instead -- see docs/marketing-site-booking-prompt.md). Making this
+    // required before the site actually sends it would fail every real
+    // submission outright, the exact bug b4d95c6 just fixed for
+    // services/preferredDate.
+    preferredWindow: z.enum(PREFERRED_WINDOWS).optional(),
     notes: z.string().trim().max(1000).optional().default(""),
+    // Marketing attribution, all optional -- captured client-side by the
+    // site from query params/referrer, not guaranteed to be present.
+    utmSource: z.string().trim().max(200).optional(),
+    utmMedium: z.string().trim().max(200).optional(),
+    utmCampaign: z.string().trim().max(200).optional(),
+    landingPage: z.string().trim().max(500).optional(),
     // Honeypot: always sent by the site, normally empty. Any non-empty value
     // means a bot bypassed the client-side check and posted directly.
     company: z.string().trim().max(200).optional().default(""),
@@ -87,6 +102,7 @@ export const Route = createFileRoute("/api/public/booking")({
         try {
           const { adminDb } = await import("@/server/firebase-admin");
           const id = leadId();
+          const e164 = toE164(data.phone);
           await adminDb
             .collection("leads")
             .doc(id)
@@ -94,17 +110,24 @@ export const Route = createFileRoute("/api/public/booking")({
               id,
               type: "booking",
               name: data.name,
-              phone: data.phone,
+              phone: e164 ?? data.phone,
+              phoneRaw: data.phone,
               email: data.email || null,
               vehicle: data.vehicle,
               services: data.services,
+              serviceIds: reconcileServiceIds(data),
               // Omit rather than write "" when "Other" wasn't picked -- see
               // the Firestore undefined-field convention this codebase
               // follows elsewhere; an empty string is a real (wrong) value
               // here, not the same as "field not applicable".
               ...(data.otherService ? { otherService: data.otherService } : {}),
               preferredDate: data.preferredDate,
+              ...(data.preferredWindow ? { preferredWindow: data.preferredWindow } : {}),
               notes: data.notes,
+              ...(data.utmSource ? { utmSource: data.utmSource } : {}),
+              ...(data.utmMedium ? { utmMedium: data.utmMedium } : {}),
+              ...(data.utmCampaign ? { utmCampaign: data.utmCampaign } : {}),
+              ...(data.landingPage ? { landingPage: data.landingPage } : {}),
               status: "new",
               source: "polishstation.lk",
               createdAt: new Date().toISOString(),
