@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useStore } from "@/lib/store";
@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/sheet";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -35,6 +36,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BookingSheet } from "@/components/booking-sheet";
@@ -78,8 +80,62 @@ import { normalizePhone } from "@/lib/phone";
 import { toWAPhone } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 
+const LEAD_STATUSES: LeadStatus[] = [
+  "new",
+  "contacted",
+  "quoted",
+  "converted",
+  "lost",
+  "duplicate",
+  "archived",
+];
+
+// Sentinel for "no owner" in the Assigned-to filter's URL value -- distinct
+// from any real staffId, same precedent as the Owner/overflow assign
+// dropdowns using "" for the same concept in their own local state.
+const UNASSIGNED = "__unassigned__";
+
+// All filter state lives in the URL (shareable, survives refresh) rather
+// than component state -- the one thing every filter setter does is
+// navigate({ search }), never setState. Arrays are TanStack Router's default
+// JSON-in-query-string encoding; nothing custom needed.
+interface LeadsSearch {
+  status?: LeadStatus[];
+  service?: string[];
+  assignedTo?: string[];
+  source?: string;
+  type?: LeadType;
+  search?: string;
+  receivedFrom?: string;
+  receivedTo?: string;
+  requestedFrom?: string;
+  requestedTo?: string;
+  showTest?: boolean;
+}
+
+function asStringArray(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const strs = v.filter((x): x is string => typeof x === "string");
+  return strs.length > 0 ? strs : undefined;
+}
+
 export const Route = createFileRoute("/_app/leads")({
   head: () => ({ meta: [{ title: "Leads · Polish Station OS" }] }),
+  validateSearch: (search: Record<string, unknown>): LeadsSearch => ({
+    status: asStringArray(search.status)?.filter((s): s is LeadStatus =>
+      LEAD_STATUSES.includes(s as LeadStatus),
+    ),
+    service: asStringArray(search.service),
+    assignedTo: asStringArray(search.assignedTo),
+    source: typeof search.source === "string" ? search.source : undefined,
+    type: search.type === "contact" || search.type === "booking" ? search.type : undefined,
+    search: typeof search.search === "string" ? search.search : undefined,
+    receivedFrom: typeof search.receivedFrom === "string" ? search.receivedFrom : undefined,
+    receivedTo: typeof search.receivedTo === "string" ? search.receivedTo : undefined,
+    requestedFrom: typeof search.requestedFrom === "string" ? search.requestedFrom : undefined,
+    requestedTo: typeof search.requestedTo === "string" ? search.requestedTo : undefined,
+    showTest: search.showTest === true ? true : undefined,
+  }),
   component: Leads,
 });
 
@@ -149,6 +205,16 @@ function requestedLabel(lead: Lead): string {
   const date = displayPreferredDate(lead.preferredDate);
   const window = lead.preferredWindow ? PREFERRED_WINDOW_SHORT_LABELS[lead.preferredWindow] : null;
   return window ? `${date} · ${window}` : date;
+}
+
+// "42m" under an hour, "1h 30m" beyond it -- used for the median-first-
+// response header tile, where a bare minute count over ~60 stops being
+// readable at a glance.
+function formatMinutes(mins: number): string {
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
 function initials(name: string): string {
@@ -1443,9 +1509,62 @@ function Leads() {
   } = useStore();
   const { staffList } = useStaffList();
   const { confirm, ConfirmDialog } = useConfirm();
-  const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<"All" | LeadType>("All");
-  const [statusFilter, setStatusFilter] = useState<"All" | LeadStatus>("All");
+  const searchParams = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
+
+  // Default view (no URL params at all): status = new, per the spec -- once
+  // any filter has ever been touched the URL always carries an explicit
+  // (possibly empty) status array, so this default only applies on first
+  // load / a bare link to the page.
+  const statusFilter = searchParams.status ?? ["new"];
+  const serviceFilter = searchParams.service ?? [];
+  const assignedFilter = searchParams.assignedTo ?? [];
+  const sourceFilter = searchParams.source ?? "All";
+  const typeFilter = searchParams.type ?? "All";
+  const receivedFrom = searchParams.receivedFrom ?? "";
+  const receivedTo = searchParams.receivedTo ?? "";
+  const requestedFrom = searchParams.requestedFrom ?? "";
+  const requestedTo = searchParams.requestedTo ?? "";
+  const showTest = searchParams.showTest ?? false;
+
+  // Search alone is debounced locally before it hits the URL -- every other
+  // filter is a discrete click, but re-navigating on every keystroke would
+  // otherwise thrash history/re-render on each character.
+  const [searchInput, setSearchInput] = useState(searchParams.search ?? "");
+  useEffect(() => {
+    setSearchInput(searchParams.search ?? "");
+  }, [searchParams.search]);
+  useEffect(() => {
+    const id = setTimeout(() => {
+      if (searchInput !== (searchParams.search ?? "")) {
+        setSearchParam("search", searchInput || undefined);
+      }
+    }, 300);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput]);
+
+  function setSearchParam<K extends keyof LeadsSearch>(key: K, value: LeadsSearch[K]) {
+    navigate({ search: (prev) => ({ ...prev, [key]: value }), replace: true });
+  }
+
+  function toggleArrayParam(key: "status" | "service" | "assignedTo", value: string) {
+    navigate({
+      search: (prev) => {
+        // Toggling must act on the EFFECTIVE current value, not the raw URL
+        // one -- status's implicit default (["new"]) only lives in the
+        // component, so without this a first click while on that default
+        // would silently drop "new" instead of adding to it.
+        const current = (prev[key] as string[] | undefined) ?? (key === "status" ? ["new"] : []);
+        const next = current.includes(value)
+          ? current.filter((v) => v !== value)
+          : [...current, value];
+        return { ...prev, [key]: next.length > 0 ? next : undefined };
+      },
+      replace: true,
+    });
+  }
+
   const [newLeadOpen, setNewLeadOpen] = useState(false);
   const [lostLead, setLostLead] = useState<Lead | null>(null);
   const [duplicateLead, setDuplicateLead] = useState<Lead | null>(null);
@@ -1469,27 +1588,75 @@ function Leads() {
     return () => clearInterval(id);
   }, []);
 
+  // isTest-excluded: the base for every count/metric/default view, per
+  // Phase 1.4 -- "Show test leads" only ever affects which rows the TABLE
+  // itself can show, never what the header tiles or subtitle count.
   const visibleLeads = leads.filter((l) => !l.isTest);
+  const filterableLeads = showTest ? leads : visibleLeads;
 
-  const filtered = visibleLeads.filter((l) => {
-    const q = search.toLowerCase();
+  // Options for the Service filter: distinct labels actually present on
+  // current leads (not the full catalog) -- an option nothing matches isn't
+  // useful in a filter.
+  const serviceOptions = Array.from(
+    new Set(visibleLeads.flatMap((l) => serviceChipLabels(l, services))),
+  ).sort();
+  const sourceOptions = Array.from(new Set(visibleLeads.map((l) => l.source))).sort();
+
+  const filtered = filterableLeads.filter((l) => {
+    const q = searchParams.search?.toLowerCase() ?? "";
     const matchesSearch =
       !q ||
       l.name.toLowerCase().includes(q) ||
       (l.email ?? "").toLowerCase().includes(q) ||
       (l.phone ?? "").includes(q) ||
-      (l.vehicle ?? "").toLowerCase().includes(q);
+      (l.vehicle ?? "").toLowerCase().includes(q) ||
+      (l.notes ?? "").toLowerCase().includes(q);
     const matchesType = typeFilter === "All" || l.type === typeFilter;
-    const matchesStatus = statusFilter === "All" || l.status === statusFilter;
-    return matchesSearch && matchesType && matchesStatus;
+    const matchesStatus = statusFilter.includes(l.status);
+    const matchesService =
+      serviceFilter.length === 0 ||
+      serviceChipLabels(l, services).some((s) => serviceFilter.includes(s));
+    const matchesAssigned =
+      assignedFilter.length === 0 ||
+      (l.assignedTo ? assignedFilter.includes(l.assignedTo) : assignedFilter.includes(UNASSIGNED));
+    const matchesSource = sourceFilter === "All" || l.source === sourceFilter;
+    const receivedDate = l.createdAt.slice(0, 10);
+    const matchesReceived =
+      (!receivedFrom || receivedDate >= receivedFrom) &&
+      (!receivedTo || receivedDate <= receivedTo);
+    const requestedDate =
+      l.preferredDate && ISO_DATE_ONLY.test(l.preferredDate) ? l.preferredDate : null;
+    const matchesRequested =
+      (!requestedFrom && !requestedTo) ||
+      (requestedDate !== null &&
+        (!requestedFrom || requestedDate >= requestedFrom) &&
+        (!requestedTo || requestedDate <= requestedTo));
+    return (
+      matchesSearch &&
+      matchesType &&
+      matchesStatus &&
+      matchesService &&
+      matchesAssigned &&
+      matchesSource &&
+      matchesReceived &&
+      matchesRequested
+    );
   });
 
   const selectedLeads = filtered.filter((l) => selectedIds.has(l.id));
 
+  const hasActiveFilters =
+    Boolean(searchParams.search) ||
+    typeFilter !== "All" ||
+    JSON.stringify(statusFilter) !== JSON.stringify(["new"]) ||
+    serviceFilter.length > 0 ||
+    assignedFilter.length > 0 ||
+    sourceFilter !== "All" ||
+    Boolean(receivedFrom || receivedTo || requestedFrom || requestedTo);
+
   function clearFilters() {
-    setSearch("");
-    setTypeFilter("All");
-    setStatusFilter("All");
+    setSearchInput("");
+    navigate({ search: {}, replace: true });
   }
 
   function toggleSelect(id: string) {
@@ -1566,7 +1733,27 @@ function Leads() {
     setSelectedIds(new Set());
   }
 
-  const newCount = visibleLeads.filter((l) => l.status === "new").length;
+  const newLeads = visibleLeads.filter((l) => l.status === "new");
+  const newCount = newLeads.length;
+  const oldestNew = newLeads.reduce<Lead | null>(
+    (oldest, l) => (!oldest || l.createdAt < oldest.createdAt ? l : oldest),
+    null,
+  );
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const recentResponseMinutes = visibleLeads
+    .filter((l) => l.firstResponseAt && l.firstResponseAt >= sevenDaysAgo)
+    .map((l) => l.responseMinutes ?? 0)
+    .sort((a, b) => a - b);
+  const medianResponseMinutes =
+    recentResponseMinutes.length === 0
+      ? null
+      : recentResponseMinutes.length % 2 === 1
+        ? recentResponseMinutes[(recentResponseMinutes.length - 1) / 2]
+        : Math.round(
+            (recentResponseMinutes[recentResponseMinutes.length / 2 - 1] +
+              recentResponseMinutes[recentResponseMinutes.length / 2]) /
+              2,
+          );
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -1598,40 +1785,194 @@ function Leads() {
           </div>
         )}
 
-        <div className="rounded-xl border border-border bg-card shadow-card">
-          <div className="flex flex-col gap-3 p-4 border-b border-border sm:flex-row sm:items-center">
-            <div className="flex flex-1 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm">
-              <Search className="h-4 w-4 text-muted-foreground shrink-0" />
-              <input
-                className="flex-1 bg-transparent outline-none"
-                placeholder="Search by name, email, phone, vehicle…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <button
+            onClick={() => setSearchParam("status", ["new"])}
+            className="rounded-xl border border-border bg-card p-4 text-left shadow-card hover:border-primary/40"
+          >
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Unactioned
             </div>
-            <select
-              className="min-h-9 rounded-md border border-input bg-background px-3 py-1.5 text-sm"
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value as "All" | LeadType)}
-            >
-              <option value="All">All Types</option>
-              <option value="contact">Contact</option>
-              <option value="booking">Booking Request</option>
-            </select>
-            <select
-              className="min-h-9 rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+            <div className="mt-1 text-2xl font-bold">{newCount}</div>
+          </button>
+          <div className="rounded-xl border border-border bg-card p-4 shadow-card">
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Oldest waiting
+            </div>
+            <div className="mt-1 text-2xl font-bold">
+              {oldestNew ? formatRelativeAge(oldestNew.createdAt, now) : "—"}
+            </div>
+          </div>
+          <div className="rounded-xl border border-border bg-card p-4 shadow-card">
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Median first response · 7d
+            </div>
+            <div className="mt-1 text-2xl font-bold">
+              {medianResponseMinutes === null ? "—" : formatMinutes(medianResponseMinutes)}
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-card shadow-card">
+          <div className="flex flex-col gap-3 p-4 border-b border-border">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="flex flex-1 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm">
+                <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+                <input
+                  className="flex-1 bg-transparent outline-none"
+                  placeholder="Search by name, email, phone, vehicle, notes…"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                />
+              </div>
+              <select
+                className="min-h-9 rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+                value={typeFilter}
+                onChange={(e) =>
+                  setSearchParam(
+                    "type",
+                    e.target.value === "All" ? undefined : (e.target.value as LeadType),
+                  )
+                }
+              >
+                <option value="All">All Types</option>
+                <option value="contact">Contact</option>
+                <option value="booking">Booking Request</option>
+              </select>
+              <select
+                className="min-h-9 rounded-md border border-input bg-background px-3 py-1.5 text-sm"
+                value={sourceFilter}
+                onChange={(e) =>
+                  setSearchParam("source", e.target.value === "All" ? undefined : e.target.value)
+                }
+              >
+                <option value="All">All Sources</option>
+                {sourceOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {sourceLabel(s)}
+                  </option>
+                ))}
+              </select>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className={BUTTON}>
+                    Service{serviceFilter.length > 0 ? ` (${serviceFilter.length})` : ""}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuLabel>Service</DropdownMenuLabel>
+                  {serviceOptions.map((s) => (
+                    <DropdownMenuCheckboxItem
+                      key={s}
+                      checked={serviceFilter.includes(s)}
+                      onSelect={(e) => e.preventDefault()}
+                      onCheckedChange={() => toggleArrayParam("service", s)}
+                    >
+                      {s}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                  {serviceOptions.length === 0 && (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">No services yet</div>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className={BUTTON}>
+                    Assigned{assignedFilter.length > 0 ? ` (${assignedFilter.length})` : ""}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuLabel>Assigned to</DropdownMenuLabel>
+                  <DropdownMenuCheckboxItem
+                    checked={assignedFilter.includes(UNASSIGNED)}
+                    onSelect={(e) => e.preventDefault()}
+                    onCheckedChange={() => toggleArrayParam("assignedTo", UNASSIGNED)}
+                  >
+                    Unassigned
+                  </DropdownMenuCheckboxItem>
+                  {staffList.map((s) => (
+                    <DropdownMenuCheckboxItem
+                      key={s.id}
+                      checked={assignedFilter.includes(s.id)}
+                      onSelect={(e) => e.preventDefault()}
+                      onCheckedChange={() => toggleArrayParam("assignedTo", s.id)}
+                    >
+                      {s.name}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap">
+                <input
+                  type="checkbox"
+                  checked={showTest}
+                  onChange={(e) => setSearchParam("showTest", e.target.checked ? true : undefined)}
+                  className="h-4 w-4"
+                />
+                Show test leads
+              </label>
+              {hasActiveFilters && (
+                <button onClick={clearFilters} className={cn(BUTTON, "text-muted-foreground")}>
+                  Clear filters
+                </button>
+              )}
+            </div>
+
+            <ToggleGroup
+              type="multiple"
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as "All" | LeadStatus)}
+              onValueChange={(next: string[]) =>
+                setSearchParam("status", next.length > 0 ? (next as LeadStatus[]) : undefined)
+              }
+              className="flex-wrap justify-start"
             >
-              <option value="All">All Statuses</option>
-              <option value="new">New</option>
-              <option value="contacted">Contacted</option>
-              <option value="quoted">Quoted</option>
-              <option value="converted">Converted</option>
-              <option value="lost">Lost</option>
-              <option value="duplicate">Duplicate</option>
-              <option value="archived">Archived</option>
-            </select>
+              {LEAD_STATUSES.map((s) => (
+                <ToggleGroupItem
+                  key={s}
+                  value={s}
+                  aria-label={`Filter by ${s}`}
+                  className="rounded-full border border-input px-3 py-1 text-xs font-medium capitalize data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary"
+                >
+                  {s} · {visibleLeads.filter((l) => l.status === s).length}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+
+            <div className="flex flex-wrap items-center gap-3 text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className="text-muted-foreground">Received</span>
+                <input
+                  type="date"
+                  value={receivedFrom}
+                  onChange={(e) => setSearchParam("receivedFrom", e.target.value || undefined)}
+                  className="rounded-md border border-input bg-background px-2 py-1"
+                />
+                <span className="text-muted-foreground">–</span>
+                <input
+                  type="date"
+                  value={receivedTo}
+                  onChange={(e) => setSearchParam("receivedTo", e.target.value || undefined)}
+                  className="rounded-md border border-input bg-background px-2 py-1"
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-muted-foreground">Requested</span>
+                <input
+                  type="date"
+                  value={requestedFrom}
+                  onChange={(e) => setSearchParam("requestedFrom", e.target.value || undefined)}
+                  className="rounded-md border border-input bg-background px-2 py-1"
+                />
+                <span className="text-muted-foreground">–</span>
+                <input
+                  type="date"
+                  value={requestedTo}
+                  onChange={(e) => setSearchParam("requestedTo", e.target.value || undefined)}
+                  className="rounded-md border border-input bg-background px-2 py-1"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Mobile: stacked cards */}
@@ -1665,7 +2006,7 @@ function Leads() {
                 ))}
                 {filtered.length === 0 && (
                   <div className="py-10 text-center text-sm text-muted-foreground">
-                    {visibleLeads.length === 0 ? (
+                    {filterableLeads.length === 0 ? (
                       "No leads yet"
                     ) : (
                       <div className="space-y-2">
@@ -1768,7 +2109,7 @@ function Leads() {
                     {filtered.length === 0 && (
                       <tr>
                         <td colSpan={9} className="text-center py-10 text-muted-foreground">
-                          {visibleLeads.length === 0 ? (
+                          {filterableLeads.length === 0 ? (
                             "No leads yet"
                           ) : (
                             <div className="space-y-2">
