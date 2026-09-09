@@ -77,6 +77,25 @@ export function formatDateTime(value: string | Date): string {
   );
 }
 
+/** "27 Aug 2026, 02:35 PM" -- explicitly in Asia/Colombo, regardless of the
+ *  viewing device's local timezone. Only the inspection report PDF needs
+ *  this (its spec explicitly calls out the timezone for that one document);
+ *  every other screen here still renders in the browser's local time, which
+ *  in this app's real deployment is Colombo anyway. */
+export function formatDateTimeInColombo(value: string | Date): string {
+  return upperMeridiem(
+    toDate(value).toLocaleString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: "Asia/Colombo",
+    }),
+  );
+}
+
 /** "18m" / "2h" / "3d" -- coarse relative age for the Leads worklist's
  *  "Waiting" column. Deliberately coarse (one unit, no "3h 12m") since it's
  *  a queue-triage signal, not a precise duration; `now` is injectable for

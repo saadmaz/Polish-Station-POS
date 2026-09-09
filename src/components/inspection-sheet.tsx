@@ -18,6 +18,7 @@ import {
 } from "@/lib/inspection-photos";
 import { buildWALink } from "@/lib/notifications";
 import { formatDateTime } from "@/lib/date-format";
+import { generateInspectionReportPDF } from "@/lib/pdf";
 import { DamageDiagram } from "@/components/damage-diagram/damage-diagram";
 import {
   SignaturePad,
@@ -27,6 +28,7 @@ import {
 import {
   ALWAYS_REQUIRED_PHOTO_SLOTS,
   FUEL_LEVELS,
+  INSPECTION_DISCLAIMER_TEXT,
   PENDING_ACKNOWLEDGMENT_THRESHOLD_MS,
   WARNING_LIGHTS,
   damageMarkerRequiresPhoto,
@@ -46,13 +48,6 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { Camera, RotateCcw, Loader2, Plus, Check, ShieldAlert } from "lucide-react";
-
-// Placeholder — flagged, not final. Per the spec: draft detailing-specific
-// disclaimer text covering valuables/possessions, acknowledgment of
-// pre-existing defects recorded above, authorisation for the listed work,
-// and scope exclusions. Must be reviewed by someone qualified before this
-// ships as the real wording a customer's signature is binding them to.
-const DISCLAIMER_TEXT = `By signing below, I acknowledge that: the defects, condition notes, and damage markers recorded in this inspection reflect the vehicle's state at intake and are not caused by the work about to be performed; I have been advised to remove valuables and personal items from the vehicle, and Polish Station does not monitor or accept liability for items left inside it; I authorise the service(s) noted on this job for the vehicle described above; and any item listed under "scope exclusions" is explicitly not included in this work.`;
 
 type StepDef = { kind: "photo"; slot: PhotoSlotKey } | { kind: "damage" } | { kind: "review" };
 
@@ -135,7 +130,7 @@ function Disclaimer() {
         <ShieldAlert className="h-3 w-3" />
         Unreviewed placeholder — confirm wording with someone qualified before relying on it.
       </p>
-      <p className="text-[11px] text-muted-foreground">{DISCLAIMER_TEXT}</p>
+      <p className="text-[11px] text-muted-foreground">{INSPECTION_DISCLAIMER_TEXT}</p>
     </div>
   );
 }
@@ -271,6 +266,33 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
     persist({ ...draft, inspectedWithCustomer: value });
   }
 
+  // Builds the report PDF from `next` (an in-memory Inspection that hasn't
+  // been persisted yet) and folds the result onto it — NOT a second write
+  // after persisting `next` on its own: once a write sets status to
+  // "signed", Firestore rules allow only the signed -> superseded
+  // transition on any later write, so a follow-up "attach the report"
+  // write would be rejected outright. Generating first and persisting once,
+  // with documents.report already included, is the only ordering that
+  // works for the two sign actions. Failure here is swallowed (logged +
+  // toasted) rather than thrown — a PDF that fails to render must never
+  // block or revert the sign-off/acknowledgment-request itself.
+  async function withGeneratedReport(next: Inspection): Promise<Inspection> {
+    try {
+      const result = await generateInspectionReportPDF(next);
+      return {
+        ...next,
+        documents: {
+          ...next.documents,
+          report: { ...result, generatedAt: new Date().toISOString() },
+        },
+      };
+    } catch (err) {
+      console.error("[inspection] report PDF generation failed:", err);
+      toast.error("Sign-off saved, but the report PDF couldn't be generated");
+      return next;
+    }
+  }
+
   // Path B, step 1: hands off to the customer via WhatsApp. Firestore rules
   // require photoRequirementsMet before this transition is even accepted —
   // same gate as reaching "signed" directly.
@@ -282,7 +304,7 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
     setSendingAck(true);
     try {
       const sentAt = new Date().toISOString();
-      persist({
+      const next: Inspection = {
         ...draft,
         status: "pending_acknowledgment",
         remoteAck: {
@@ -292,8 +314,13 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
           replyReceivedAt: null,
           screenshotPath: null,
         },
-      });
-      const message = `Hi ${draft.customerSnapshot.name}, please review your vehicle inspection for job ${job.id} and reply to this message to confirm you've seen it.`;
+      };
+      const withReport = await withGeneratedReport(next);
+      persist(withReport);
+      const reportUrl = withReport.documents?.report?.url;
+      const message = reportUrl
+        ? `Hi ${draft.customerSnapshot.name}, please review your vehicle inspection for job ${job.id} here: ${reportUrl}\n\nReply to this message to confirm you've seen it.`
+        : `Hi ${draft.customerSnapshot.name}, please review your vehicle inspection for job ${job.id} and reply to this message to confirm you've seen it.`;
       window.open(buildWALink(draft.customerSnapshot.phone, message), "_blank");
     } finally {
       setSendingAck(false);
@@ -315,7 +342,7 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
         uploadSignaturePng(job.id, draft.id, "customer", customerBlob),
         uploadSignaturePng(job.id, draft.id, "inspector", inspectorBlob),
       ]);
-      persist({
+      const next: Inspection = {
         ...draft,
         inspectedWithCustomer: true,
         customerSignature: {
@@ -330,7 +357,9 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
           signedAt: now,
         },
         status: "signed",
-      });
+      };
+      const withReport = await withGeneratedReport(next);
+      persist(withReport);
       toast.success("Inspection signed");
     } catch {
       toast.error("Couldn't complete sign-off, please try again");
@@ -361,7 +390,7 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
           ? uploadRemoteAckScreenshot(job.id, draft.id, pendingAckScreenshotFile)
           : Promise.resolve(draft.remoteAck?.screenshotPath ?? null),
       ]);
-      persist({
+      const next: Inspection = {
         ...draft,
         remoteAck: draft.remoteAck
           ? {
@@ -378,7 +407,9 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
           signedAt: now,
         },
         status: "signed",
-      });
+      };
+      const withReport = await withGeneratedReport(next);
+      persist(withReport);
       toast.success("Inspection signed");
     } catch {
       toast.error("Couldn't complete sign-off, please try again");

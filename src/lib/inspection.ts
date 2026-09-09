@@ -462,6 +462,15 @@ export function assertCanSupersede(status: InspectionStatus): void {
   }
 }
 
+// Placeholder — flagged, not final. Per the spec: draft detailing-specific
+// disclaimer text covering valuables/possessions, acknowledgment of
+// pre-existing defects recorded above, authorisation for the listed work,
+// and scope exclusions. Must be reviewed by someone qualified before this
+// ships as the real wording a customer's signature is binding them to.
+// Shared verbatim between the sign-off UI (inspection-sheet.tsx) and the
+// PDF report (pdf.ts) — one wording, not two copies to keep in sync by hand.
+export const INSPECTION_DISCLAIMER_TEXT = `By signing below, I acknowledge that: the defects, condition notes, and damage markers recorded in this inspection reflect the vehicle's state at intake and are not caused by the work about to be performed; I have been advised to remove valuables and personal items from the vehicle, and Polish Station does not monitor or accept liability for items left inside it; I authorise the service(s) noted on this job for the vehicle described above; and any item listed under "scope exclusions" is explicitly not included in this work.`;
+
 // Default threshold from the spec's Phase 4: work must not start on the
 // parent job while its inspection sits in "pending_acknowledgment" beyond
 // this long. Not currently user-configurable — a constant here, same as
@@ -553,6 +562,16 @@ export interface Inspection {
   updatedAt: string;
   updatedById: string;
   updatedByName: string;
+
+  // Phase 5 — mirrors Job.documents.jobCard's shape/versioning exactly.
+  // Absent on a fresh draft; report.version bumps on every regeneration
+  // (Send for Acknowledgment produces an unsigned interim copy, signing
+  // produces the version with real signatures) — never overwritten in
+  // Storage, same "why" as the job card: a copy already sent to a customer
+  // must never silently change under them.
+  documents?: {
+    report?: { version: number; storagePath: string; url: string; generatedAt: string };
+  };
 }
 
 /** The one inspection that represents a job's current state — every count,

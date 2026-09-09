@@ -1,12 +1,30 @@
 import jsPDF from "jspdf";
-import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { ref as storageRef, uploadBytes, getDownloadURL, getBytes } from "firebase/storage";
 import type { Invoice, InvoiceLine, PurchaseOrder } from "./db";
 import { getPayments, getAmountRefunded, getBusinessInfo } from "./db";
 import { formatCurrency } from "./currency";
-import { formatDate } from "./date-format";
+import { formatDate, formatDateTimeInColombo } from "./date-format";
 import { LOGO_PNG_BASE64 } from "./logo-asset";
 import { storage } from "./firebase";
-import type { Job } from "./job";
+import type { Job, BodyType } from "./job";
+import {
+  INSPECTION_DISCLAIMER_TEXT,
+  type DamageMarker,
+  type DamageMarkerSeverity,
+  type DamageMarkerType,
+  type DamageMarkerView,
+  type Inspection,
+} from "./inspection";
+// Pure geometry data, no JSX — this is the one place outside the
+// components/ tree that imports from it, and deliberately so: the PDF's
+// damage diagram must redraw the *exact* same shapes the screen does (see
+// the acceptance criterion that marker positions match on-screen exactly),
+// which only holds if both renderers read the same numbers.
+import {
+  bodyOutlinePoints,
+  profileWheelCentres,
+  viewBoxSize,
+} from "@/components/damage-diagram/silhouette-data";
 
 // Letterhead details come from the settings/business Firestore doc (cached in
 // db.ts by the store), except the website and the two landline/mobile
@@ -1065,6 +1083,774 @@ export async function generateJobCardPDF(
   const url = await getDownloadURL(fileRef);
 
   doc.save(`${job.id}-v${version}.pdf`);
+
+  return { url, storagePath, version };
+}
+
+// ─── Inspection report (Phase 5) ────────────────────────────────────────────
+// Sections, in this order per the spec: header; customer+vehicle; intake
+// baseline; damage diagram grid; damage table; paint history & condition
+// flags; interior condition; systems check; inventory; customer priority &
+// scope; photo appendix; signatures/remote-ack; disclaimer. A4 portrait
+// only — every other PDF in this app is A4-only too, and this is a Sri
+// Lankan business with no real Letter-size use case.
+//
+// Not auto-downloaded via doc.save() the way the job card is: this report
+// is generated automatically (on sending for acknowledgment, and on
+// signing), not from a deliberate "download this now" click, so an
+// unsolicited file save on every sign-off would surprise staff. Callers
+// that want a local copy (the eventual "Regenerate Report" button) can
+// open the returned url themselves.
+
+const FOOTER_Y = 285;
+const PAGE_BOTTOM = 270;
+
+const MARKER_TYPE_LABELS_PDF: Record<DamageMarkerType, string> = {
+  scratch: "Scratch",
+  dent: "Dent",
+  chip: "Chip",
+  crack: "Crack",
+  rust: "Rust",
+  swirl: "Swirl",
+  paint_defect: "Paint defect",
+  scuff: "Scuff",
+  missing_part: "Missing part",
+  other: "Other",
+};
+const SEVERITY_LABELS_PDF: Record<DamageMarkerSeverity, string> = {
+  minor: "Minor",
+  moderate: "Moderate",
+  severe: "Severe",
+};
+const FUEL_LABELS_PDF: Record<string, string> = {
+  E: "Empty",
+  quarter: "1/4",
+  half: "1/2",
+  three_quarter: "3/4",
+  F: "Full",
+};
+
+/** Fetches a Storage file's bytes and returns it as a data: URL jsPDF's
+ *  addImage() can embed directly. Returns null on any failure (missing
+ *  file, network error) rather than throwing — one unreadable photo must
+ *  not fail the whole report; the caller draws an empty frame instead. */
+async function fetchDataUrl(path: string, mime: string): Promise<string | null> {
+  try {
+    const bytes = await getBytes(storageRef(storage, path));
+    const blob = new Blob([bytes], { type: mime });
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+function newPage(doc: jsPDF): number {
+  doc.addPage();
+  return 20;
+}
+
+/** Starts a new page if `needed` more mm wouldn't fit above the footer. */
+function ensureSpace(doc: jsPDF, y: number, needed: number): number {
+  return y + needed > PAGE_BOTTOM ? newPage(doc) : y;
+}
+
+function sectionTitle(doc: jsPDF, y: number, title: string): number {
+  y = ensureSpace(doc, y, 14);
+  doc.setFillColor(...CHARCOAL);
+  doc.rect(ML, y, CW, 7, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.setTextColor(...WHITE);
+  doc.text(title.toUpperCase(), ML + 3, y + 5);
+  return y + 12;
+}
+
+/** Strokes/fills a closed polygon from absolute points — jsPDF has no
+ *  polygon primitive, only relative-delta paths (lines()) and a 3-point
+ *  triangle(); this covers arbitrary point counts (the body outlines) and
+ *  the diamond marker shape uniformly. */
+function strokePolygon(doc: jsPDF, points: [number, number][], style: "S" | "F" | "FD") {
+  const [x0, y0] = points[0];
+  const deltas: [number, number][] = [];
+  for (let i = 1; i < points.length; i++) {
+    deltas.push([points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]]);
+  }
+  deltas.push([x0 - points[points.length - 1][0], y0 - points[points.length - 1][1]]);
+  doc.lines(deltas, x0, y0, [1, 1], style, true);
+}
+
+/** Redraws the exact same outline/wheel/marker geometry the on-screen
+ *  DamageDiagram renders (see silhouette-data.ts's header comment) inside
+ *  the rectangle (bx,by,bw,bh) — the one thing that guarantees the spec's
+ *  "marker positions in the PDF match their on-screen positions" criterion,
+ *  since both renderers scale the same normalized numbers. */
+function drawDiagramView(
+  doc: jsPDF,
+  bodyType: BodyType,
+  view: DamageMarkerView,
+  markers: readonly DamageMarker[],
+  bx: number,
+  by: number,
+  bw: number,
+  bh: number,
+) {
+  const [vbW, vbH] = viewBoxSize(view);
+  const sx = bw / vbW;
+  const sy = bh / vbH;
+  const toX = (x: number) => bx + x * sx;
+  const toY = (y: number) => by + y * sy;
+
+  doc.setDrawColor(...RULE);
+  doc.setLineWidth(0.2);
+  doc.rect(bx, by, bw, bh);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6.5);
+  doc.setTextColor(...MUTED);
+  doc.text(view.toUpperCase(), bx, by - 1.5);
+
+  const outline = bodyOutlinePoints(bodyType, view).map(
+    ([x, y]) => [toX(x), toY(y)] as [number, number],
+  );
+  doc.setDrawColor(...SLATE);
+  doc.setLineWidth(0.3);
+  strokePolygon(doc, outline, "S");
+
+  if (view === "left" || view === "right") {
+    const [fx, rx] = profileWheelCentres(bodyType, view);
+    const wr = 20 * Math.min(sx, sy);
+    doc.setFillColor(210, 210, 212);
+    doc.circle(toX(fx), toY(150), wr, "F");
+    doc.circle(toX(rx), toY(150), wr, "F");
+  }
+
+  for (const m of markers) {
+    if (m.view !== view) continue;
+    const cx = toX(m.x * vbW);
+    const cy = toY(m.y * vbH);
+    const r = 2.6;
+    doc.setFillColor(...RED);
+    doc.setDrawColor(...WHITE);
+    doc.setLineWidth(0.3);
+    // Shape-coded by severity, same as the screen — the report may be
+    // printed in greyscale, so colour alone can't carry this.
+    if (m.severity === "minor") {
+      doc.circle(cx, cy, r, "FD");
+    } else if (m.severity === "moderate") {
+      strokePolygon(
+        doc,
+        [
+          [cx, cy - r],
+          [cx + r * 0.95, cy + r * 0.7],
+          [cx - r * 0.95, cy + r * 0.7],
+        ],
+        "FD",
+      );
+    } else {
+      strokePolygon(
+        doc,
+        [
+          [cx, cy - r],
+          [cx + r, cy],
+          [cx, cy + r],
+          [cx - r, cy],
+        ],
+        "FD",
+      );
+    }
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(4.5);
+    doc.setTextColor(...WHITE);
+    doc.text(String(m.seq), cx, cy + 1, { align: "center" });
+  }
+}
+
+interface ReportTableColumn {
+  label: string;
+  width: number;
+}
+
+/** Small hand-rolled table — no jspdf-autotable dependency, same DIY
+ *  approach as every other layout primitive in this file. Repeats the
+ *  header row if the table spans a page break. */
+function drawTable(
+  doc: jsPDF,
+  y: number,
+  columns: ReportTableColumn[],
+  rows: { cells: string[]; highlight?: boolean }[],
+): number {
+  const rowH = 7;
+  function header(yy: number): number {
+    doc.setFillColor(...CHARCOAL);
+    doc.rect(ML, yy, CW, rowH, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(...WHITE);
+    let cx = ML + 2;
+    for (const col of columns) {
+      doc.text(col.label.toUpperCase(), cx, yy + rowH - 2.3);
+      cx += col.width;
+    }
+    return yy + rowH;
+  }
+  y = ensureSpace(doc, y, rowH * 2);
+  y = header(y);
+  rows.forEach((row, i) => {
+    if (y + rowH > PAGE_BOTTOM) {
+      y = newPage(doc);
+      y = header(y);
+    }
+    doc.setFillColor(
+      ...(row.highlight
+        ? ([254, 226, 226] as [number, number, number])
+        : i % 2 === 0
+          ? WHITE
+          : ROW_ALT),
+    );
+    doc.rect(ML, y, CW, rowH, "F");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(...CHARCOAL);
+    let cx = ML + 2;
+    row.cells.forEach((cell, ci) => {
+      const col = columns[ci];
+      const lines = doc.splitTextToSize(cell, col.width - 4);
+      doc.text(lines[0] ?? "", cx, y + rowH - 2.3);
+      cx += col.width;
+    });
+    y += rowH;
+  });
+  rule(doc, y + 1);
+  return y + 7;
+}
+
+export interface InspectionReportResult {
+  url: string;
+  storagePath: string;
+  version: number;
+}
+
+/**
+ * Builds the inspection report PDF and uploads it to
+ * `jobs/{jobId}/documents/inspection-{inspectionId}-v{version}.pdf` in
+ * Storage, never overwriting an earlier version (Path B produces an
+ * unsigned interim copy at "send for acknowledgment", signing produces the
+ * version with real signatures — see Inspection.documents.report's header
+ * comment in inspection.ts). Takes only the Inspection itself: unlike the
+ * job card, every field this needs (vehicle/customer snapshot, inspector
+ * attribution) already lives on the document, no Job/staff-list lookup
+ * required.
+ */
+export async function generateInspectionReportPDF(
+  inspection: Inspection,
+): Promise<InspectionReportResult> {
+  const version = (inspection.documents?.report?.version ?? 0) + 1;
+
+  const photoNumbers = new Map<string, number>(inspection.photos.map((p, i) => [p.id, i + 1]));
+
+  // Every image this report needs, fetched in parallel before laying out a
+  // single page — addImage() is synchronous, so all bytes must already be
+  // in hand once drawing starts.
+  const photoDataUrls = new Map<string, string | null>(
+    await Promise.all(
+      inspection.photos.map(
+        async (p) => [p.id, await fetchDataUrl(p.storagePath, "image/jpeg")] as const,
+      ),
+    ),
+  );
+  const customerSigDataUrl = inspection.customerSignature
+    ? await fetchDataUrl(inspection.customerSignature.storagePath, "image/png")
+    : null;
+  const inspectorSigDataUrl = inspection.inspectorSignature
+    ? await fetchDataUrl(inspection.inspectorSignature.storagePath, "image/png")
+    : null;
+  const remoteAckScreenshotDataUrl = inspection.remoteAck?.screenshotPath
+    ? await fetchDataUrl(inspection.remoteAck.screenshotPath, "image/jpeg")
+    : null;
+
+  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+  let y = 0;
+
+  // ── 1. Header ─────────────────────────────────────────────────────────────
+  doc.setFillColor(...CHARCOAL);
+  doc.rect(0, 0, PW, 42, "F");
+  const LOGO_BOX = 15;
+  drawLogo(doc, ML, 5, LOGO_BOX);
+  const TX = ML + LOGO_BOX + 4;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.setTextColor(...WHITE);
+  doc.text(getBusinessInfo().trading.toUpperCase(), TX, 16);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(255, 200, 200);
+  doc.text("Vehicle Inspection Report", TX, 22);
+  drawHeaderContact(doc, TX, 28);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(17);
+  doc.setTextColor(...WHITE);
+  doc.text("INSPECTION REPORT", MR, 16, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(255, 220, 220);
+  doc.text(`Job:  ${inspection.jobRef}`, MR, 23, { align: "right" });
+  doc.text(`Inspected:  ${formatDateTimeInColombo(inspection.inspectedAt)}`, MR, 28.5, {
+    align: "right",
+  });
+  doc.text(`Inspector:  ${inspection.inspectedByName}`, MR, 34, { align: "right" });
+  doc.text(`Version:  ${version}`, MR, 39, { align: "right" });
+
+  y = 52;
+
+  // ── 2. Customer + vehicle ───────────────────────────────────────────────
+  const v = inspection.vehicleSnapshot;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.setTextColor(...CHARCOAL);
+  doc.text(inspection.customerSnapshot.name, ML, y);
+  const statusBadge = inspection.status.toUpperCase().replace(/_/g, " ");
+  badge(doc, statusBadge, MR - doc.getTextWidth(statusBadge) - 8, y - 3.5, CHARCOAL);
+  y += 5.5;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(...SLATE);
+  doc.text(`Contact:  ${inspection.customerSnapshot.phone || "—"}`, ML, y);
+  y += 4.5;
+  const vehicleLine = [v.year, v.make, v.model].filter(Boolean).join(" ");
+  doc.text(`Vehicle:  ${vehicleLine}  ·  ${v.plate}  ·  ${v.colour}  ·  ${v.bodyType}`, ML, y);
+  y += 4.5;
+  if (inspection.vin) {
+    doc.text(`VIN:  ${inspection.vin}`, ML, y);
+    y += 4.5;
+  }
+  y += 3;
+  rule(doc, y);
+  y += 8;
+
+  // ── 3. Intake baseline ───────────────────────────────────────────────────
+  y = sectionTitle(doc, y, "Intake Baseline");
+  const clusterUrl = photoDataUrls.get(inspection.odometerPhotoId) ?? null;
+  const baselineTextX = clusterUrl ? ML + 45 : ML;
+  const baselineTextW = clusterUrl ? CW - 45 : CW;
+  if (clusterUrl) {
+    try {
+      doc.addImage(clusterUrl, "JPEG", ML, y, 40, 30);
+    } catch {
+      // corrupt/unsupported image data — omit rather than fail the whole report
+    }
+  }
+  const baselineRows: [string, string][] = [
+    ["Odometer", `${inspection.odometer} km`],
+    ["Fuel level", FUEL_LABELS_PDF[inspection.fuelLevel] ?? inspection.fuelLevel],
+    [
+      "Warning lights",
+      inspection.warningLights.length ? inspection.warningLights.join(", ") : "none",
+    ],
+    ["Starts normally", inspection.startsNormally ? "Yes" : "No"],
+    ["Keys handed over", String(inspection.keysHandedOver)],
+  ];
+  let by = y;
+  for (const [label, value] of baselineRows) {
+    jobField(doc, baselineTextX, by + 4, baselineTextW, label, value);
+    by += 9;
+  }
+  y = Math.max(y + 32, by) + 2;
+  if (inspection.knownIssues) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(...MUTED);
+    doc.text("CUSTOMER-DECLARED ISSUES", ML, y);
+    y += 4.5;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...SLATE);
+    const lines = doc.splitTextToSize(inspection.knownIssues, CW);
+    doc.text(lines, ML, y);
+    y += lines.length * 4.2 + 3;
+  }
+  y += 4;
+
+  // ── 4. Diagram grid ──────────────────────────────────────────────────────
+  y = sectionTitle(doc, y, "Damage Diagram");
+  y = ensureSpace(doc, y, 60);
+  const gridGap = 4;
+  const bigW = (CW - gridGap) / 2;
+  const bigH = bigW * (180 / 400);
+  drawDiagramView(doc, v.bodyType, "left", inspection.damageMarkers, ML, y, bigW, bigH);
+  drawDiagramView(
+    doc,
+    v.bodyType,
+    "right",
+    inspection.damageMarkers,
+    ML + bigW + gridGap,
+    y,
+    bigW,
+    bigH,
+  );
+  y += bigH + 10;
+  const smallW = (CW - gridGap * 2) / 3;
+  const smallHFrontRear = smallW * (180 / 260);
+  const smallHTop = smallW * (200 / 400);
+  drawDiagramView(
+    doc,
+    v.bodyType,
+    "front",
+    inspection.damageMarkers,
+    ML,
+    y,
+    smallW,
+    smallHFrontRear,
+  );
+  drawDiagramView(
+    doc,
+    v.bodyType,
+    "rear",
+    inspection.damageMarkers,
+    ML + smallW + gridGap,
+    y,
+    smallW,
+    smallHFrontRear,
+  );
+  drawDiagramView(
+    doc,
+    v.bodyType,
+    "top",
+    inspection.damageMarkers,
+    ML + (smallW + gridGap) * 2,
+    y,
+    smallW,
+    smallHTop,
+  );
+  y += Math.max(smallHFrontRear, smallHTop) + 10;
+
+  // ── 5. Damage table ──────────────────────────────────────────────────────
+  y = sectionTitle(doc, y, "Damage Detail");
+  if (inspection.damageMarkers.length > 0) {
+    const sorted = [...inspection.damageMarkers].sort((a, b) => a.seq - b.seq);
+    y = drawTable(
+      doc,
+      y,
+      [
+        { label: "#", width: 8 },
+        { label: "View", width: 16 },
+        { label: "Type", width: 26 },
+        { label: "Severity", width: 20 },
+        { label: "Note", width: CW - 8 - 16 - 26 - 20 - 24 },
+        { label: "Photo", width: 24 },
+      ],
+      sorted.map((m) => ({
+        cells: [
+          String(m.seq),
+          m.view,
+          MARKER_TYPE_LABELS_PDF[m.type],
+          SEVERITY_LABELS_PDF[m.severity],
+          m.note || "—",
+          m.photoIds[0] ? `#${photoNumbers.get(m.photoIds[0])}` : "—",
+        ],
+      })),
+    );
+  } else {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...MUTED);
+    doc.text("No damage markers recorded.", ML, y);
+    y += 8;
+  }
+
+  // ── 6. Paint history & condition flags ──────────────────────────────────
+  y = sectionTitle(doc, y, "Paint History & Condition");
+  const ph = inspection.paintHistory;
+  const halfW = CW / 2;
+  const paintRows: [string, string][] = [
+    ["Existing coating", ph.existingCoating],
+    ["Coating age", ph.coatingAgeMonths != null ? `${ph.coatingAgeMonths} months` : "—"],
+    ["Prior correction", String(ph.priorCorrection)],
+    ["Resprayed panels", ph.resprayedPanels.length ? ph.resprayedPanels.join(", ") : "None"],
+    ["Wrap / PPF", ph.wrapOrPpf ? "Yes" : "No"],
+  ];
+  by = y;
+  paintRows.forEach(([l, val], i) => {
+    jobField(doc, i % 2 === 0 ? ML : ML + halfW, by + 4, halfW - 4, l, val);
+    if (i % 2 === 1) by += 9;
+  });
+  if (paintRows.length % 2 === 1) by += 9;
+  y = by + 2;
+  if (inspection.conditionFlags.length > 0) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(...MUTED);
+    doc.text("CONDITION FLAGS", ML, y);
+    y += 4.5;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...SLATE);
+    doc.text(inspection.conditionFlags.join(", ").replace(/_/g, " "), ML, y);
+    y += 6;
+  }
+  y += 3;
+
+  // ── 7. Interior condition ────────────────────────────────────────────────
+  y = sectionTitle(doc, y, "Interior Condition");
+  const ic = inspection.interiorCondition;
+  const interiorFlags =
+    [
+      ic.stains && "Stains",
+      ic.tears && "Tears",
+      ic.burns && "Burns",
+      ic.trimDamage && "Trim damage",
+      ic.headlinerStains && "Headliner stains",
+    ]
+      .filter(Boolean)
+      .join(", ") || "None noted";
+  by = y;
+  jobField(doc, ML, by + 4, halfW - 4, "Material", ic.material);
+  jobField(
+    doc,
+    ML + halfW,
+    by + 4,
+    halfW - 4,
+    "Odours",
+    ic.odours.length ? ic.odours.join(", ") : "None",
+  );
+  by += 9;
+  jobField(doc, ML, by + 4, CW, "Condition", interiorFlags);
+  y = by + 13;
+
+  // ── 8. Systems check ─────────────────────────────────────────────────────
+  y = sectionTitle(doc, y, "Systems Check");
+  if (inspection.systemsCheck.length > 0) {
+    y = drawTable(
+      doc,
+      y,
+      [
+        { label: "System", width: 55 },
+        { label: "State", width: 30 },
+        { label: "Note", width: CW - 85 },
+      ],
+      inspection.systemsCheck.map((s) => ({
+        cells: [s.key.replace(/_/g, " "), s.state.replace(/_/g, " "), s.note || "—"],
+        highlight: s.state === "faulty",
+      })),
+    );
+  } else {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...MUTED);
+    doc.text("Not recorded.", ML, y);
+    y += 8;
+  }
+
+  // ── 9. Inventory ──────────────────────────────────────────────────────────
+  y = sectionTitle(doc, y, "Inventory");
+  if (inspection.inventoryItems.length > 0) {
+    y = drawTable(
+      doc,
+      y,
+      [
+        { label: "Item", width: 55 },
+        { label: "State", width: 30 },
+        { label: "Note", width: CW - 85 },
+      ],
+      inspection.inventoryItems.map((it) => ({
+        cells: [it.key.replace(/_/g, " "), it.state, it.note || "—"],
+      })),
+    );
+  } else {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...MUTED);
+    doc.text("Not recorded.", ML, y);
+    y += 8;
+  }
+
+  // ── 10. Customer priority & scope — printed prominently, not buried ─────
+  y = ensureSpace(doc, y, 30);
+  const priorityLines = doc.splitTextToSize(inspection.customerPriority || "—", CW - 8);
+  const scopeLines = inspection.scopeExclusions
+    ? doc.splitTextToSize(`Excluded: ${inspection.scopeExclusions}`, CW - 8)
+    : [];
+  const boxH =
+    10 + priorityLines.length * 4.2 + scopeLines.length * 4.2 + (scopeLines.length ? 3 : 0);
+  doc.setFillColor(254, 252, 232);
+  doc.setDrawColor(...AMBER);
+  doc.setLineWidth(0.4);
+  doc.roundedRect(ML, y, CW, boxH, 1.5, 1.5, "FD");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(...AMBER);
+  doc.text("CUSTOMER PRIORITY", ML + 4, y + 6);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...CHARCOAL);
+  doc.text(priorityLines, ML + 4, y + 11);
+  if (scopeLines.length) {
+    doc.setFontSize(8);
+    doc.setTextColor(...SLATE);
+    doc.text(scopeLines, ML + 4, y + 11 + priorityLines.length * 4.2 + 3);
+  }
+  y += boxH + 8;
+
+  // ── 11. Photo appendix — every photo referenced above appears here full
+  // size, captioned, with a generated (never manually entered) number. ────
+  y = sectionTitle(doc, y, "Photo Appendix");
+  const THUMB = 42;
+  const THUMB_GAP = 4;
+  const perRow = Math.max(1, Math.floor((CW + THUMB_GAP) / (THUMB + THUMB_GAP)));
+  let col = 0;
+  for (const photo of inspection.photos) {
+    if (col === 0) y = ensureSpace(doc, y, THUMB + 10);
+    const cellX = ML + col * (THUMB + THUMB_GAP);
+    const url = photoDataUrls.get(photo.id);
+    doc.setDrawColor(...RULE);
+    doc.rect(cellX, y, THUMB, THUMB);
+    if (url) {
+      try {
+        doc.addImage(url, "JPEG", cellX, y, THUMB, THUMB);
+      } catch {
+        // corrupt/unsupported image data — leave the empty frame
+      }
+    }
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6);
+    doc.setTextColor(...MUTED);
+    doc.text(
+      `#${photoNumbers.get(photo.id)} · ${formatDateTimeInColombo(photo.capturedAt)}`,
+      cellX,
+      y + THUMB + 3.5,
+      {
+        maxWidth: THUMB,
+      },
+    );
+    col++;
+    if (col >= perRow) {
+      col = 0;
+      y += THUMB + 10;
+    }
+  }
+  if (col !== 0) y += THUMB + 10;
+  y += 4;
+
+  // ── 12. Signatures / remote acknowledgment, with timestamps ─────────────
+  y = sectionTitle(doc, y, "Sign-off");
+  y = ensureSpace(doc, y, 42);
+  const sigW = (CW - 8) / 2;
+  if (inspection.inspectedWithCustomer && inspection.customerSignature) {
+    if (customerSigDataUrl) {
+      try {
+        doc.addImage(customerSigDataUrl, "PNG", ML, y, sigW, 25);
+      } catch {
+        // skip
+      }
+    }
+    doc.setDrawColor(...RULE);
+    doc.line(ML, y + 27, ML + sigW, y + 27);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(...SLATE);
+    doc.text(
+      `${inspection.customerSignature.signerName} (customer) · ${formatDateTimeInColombo(inspection.customerSignature.signedAt)}`,
+      ML,
+      y + 31,
+    );
+  } else if (inspection.remoteAck) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(...MUTED);
+    doc.text("REMOTE ACKNOWLEDGMENT", ML, y);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(...SLATE);
+    doc.text(
+      `Sent ${formatDateTimeInColombo(inspection.remoteAck.sentAt)} via ${inspection.remoteAck.channel}`,
+      ML,
+      y + 5,
+    );
+    if (inspection.remoteAck.replyReceivedAt) {
+      doc.text(
+        `Reply received ${formatDateTimeInColombo(inspection.remoteAck.replyReceivedAt)}`,
+        ML,
+        y + 9.5,
+      );
+      if (inspection.remoteAck.replyText) {
+        const rlines = doc.splitTextToSize(`"${inspection.remoteAck.replyText}"`, sigW);
+        doc.text(rlines, ML, y + 14);
+      }
+    } else {
+      doc.setTextColor(...AMBER);
+      doc.text("Awaiting reply", ML, y + 9.5);
+    }
+    if (remoteAckScreenshotDataUrl) {
+      try {
+        doc.addImage(remoteAckScreenshotDataUrl, "JPEG", ML + sigW, y, sigW, 25);
+      } catch {
+        // skip
+      }
+    }
+  }
+  if (inspectorSigDataUrl) {
+    try {
+      doc.addImage(inspectorSigDataUrl, "PNG", ML + sigW + 8, y, sigW, 25);
+    } catch {
+      // skip
+    }
+  }
+  doc.setDrawColor(...RULE);
+  doc.line(ML + sigW + 8, y + 27, MR, y + 27);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(...SLATE);
+  if (inspection.inspectorSignature) {
+    doc.text(
+      `${inspection.inspectorSignature.staffName} (inspector) · ${formatDateTimeInColombo(inspection.inspectorSignature.signedAt)}`,
+      ML + sigW + 8,
+      y + 31,
+    );
+  }
+  y += 38;
+
+  // ── 13. Disclaimer ───────────────────────────────────────────────────────
+  y = ensureSpace(doc, y, 25);
+  const discLines = doc.splitTextToSize(INSPECTION_DISCLAIMER_TEXT, CW - 8);
+  const discH = 8 + discLines.length * 3.6;
+  doc.setDrawColor(...AMBER);
+  doc.setFillColor(255, 251, 235);
+  doc.roundedRect(ML, y, CW, discH, 1.5, 1.5, "FD");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6.5);
+  doc.setTextColor(...AMBER);
+  doc.text("DISCLAIMER — UNREVIEWED PLACEHOLDER WORDING", ML + 4, y + 5);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.5);
+  doc.setTextColor(...SLATE);
+  doc.text(discLines, ML + 4, y + 9);
+
+  // ── Footer + page numbers, stamped on every page after layout is final ──
+  const totalPages = doc.getNumberOfPages();
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    rule(doc, FOOTER_Y - 5);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    doc.setTextColor(...RED);
+    doc.text("POLISH STATION", ML, FOOTER_Y);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7);
+    doc.setTextColor(...MUTED);
+    doc.text(`Page ${p} of ${totalPages}`, MR, FOOTER_Y, { align: "right" });
+  }
+
+  // ── Persist: upload, never overwriting an earlier version ──────────────────
+  const storagePath = `jobs/${inspection.jobId}/documents/inspection-${inspection.id}-v${version}.pdf`;
+  const blob = doc.output("blob");
+  const fileRef = storageRef(storage, storagePath);
+  await uploadBytes(fileRef, blob, { contentType: "application/pdf" });
+  const url = await getDownloadURL(fileRef);
 
   return { url, storagePath, version };
 }
