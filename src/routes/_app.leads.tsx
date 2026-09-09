@@ -72,6 +72,7 @@ import {
   History,
   MessageSquareText,
   Save,
+  Megaphone,
 } from "lucide-react";
 import type {
   Lead,
@@ -209,9 +210,17 @@ const MANUAL_SOURCES = [
   { value: "walk-in", label: "Walk-in" },
 ] as const;
 
+// Automated (non-manual) sources -- distinct from MANUAL_SOURCES above,
+// which also drives the staff "New Lead" dialog's dropdown and is checked
+// against by firestore.rules; these are only ever written by the Admin SDK
+// from api.public.*.ts routes, so they don't belong in that list.
+const AUTOMATED_SOURCE_LABELS: Record<string, string> = {
+  google_ads: "Google Ads",
+};
+
 function sourceLabel(source: string): string {
   const manual = MANUAL_SOURCES.find((s) => s.value === source);
-  return manual?.label ?? source;
+  return manual?.label ?? AUTOMATED_SOURCE_LABELS[source] ?? source;
 }
 
 const SOURCE_ICON: Record<string, typeof Globe> = {
@@ -219,6 +228,7 @@ const SOURCE_ICON: Record<string, typeof Globe> = {
   whatsapp: MessageCircle,
   phone: PhoneCall,
   "walk-in": Footprints,
+  google_ads: Megaphone,
 };
 
 // The website's date input always posts YYYY-MM-DD; the staff "New Lead"

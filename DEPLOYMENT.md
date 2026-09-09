@@ -72,6 +72,7 @@ All variables live in **one `.env` file** placed directly in the cPanel applicat
 | `SENTRY_DSN`                        | not currently read anywhere in `src/` | reserved/unused, safe to leave blank                               |
 | `RESEND_API_KEY`                    | `src/server/public-api.ts`            | runtime; optional — new-lead email alert is skipped if blank        |
 | `LEADS_NOTIFY_EMAIL`                | `src/server/public-api.ts`            | runtime; studio inbox that receives the alert above                 |
+| `GOOGLE_ADS_LEAD_WEBHOOK_KEY`       | `src/routes/api.public.google-leadform.ts` | runtime; shared secret configured in the Google Ads lead form asset |
 | `STAFF_PIN_s1`…`STAFF_PIN_s9`       | `scripts/seed-staff.ts` only          | **one-time seed script**, not read by the running app               |
 | `PORT`                              | `start.mjs`                           | runtime; Passenger sets this automatically, don't set it yourself  |
 

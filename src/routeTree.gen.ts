@@ -33,6 +33,7 @@ import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppCustomersRouteImport } from './routes/_app.customers'
 import { Route as AppBookingsRouteImport } from './routes/_app.bookings'
 import { Route as ApiPublicNewsletterRouteImport } from './routes/api.public.newsletter'
+import { Route as ApiPublicGoogleLeadformRouteImport } from './routes/api.public.google-leadform'
 import { Route as ApiPublicContactRouteImport } from './routes/api.public.contact'
 import { Route as ApiPublicBookingRouteImport } from './routes/api.public.booking'
 
@@ -155,6 +156,11 @@ const ApiPublicNewsletterRoute = ApiPublicNewsletterRouteImport.update({
   path: '/api/public/newsletter',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicGoogleLeadformRoute = ApiPublicGoogleLeadformRouteImport.update({
+  id: '/api/public/google-leadform',
+  path: '/api/public/google-leadform',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicContactRoute = ApiPublicContactRouteImport.update({
   id: '/api/public/contact',
   path: '/api/public/contact',
@@ -191,6 +197,7 @@ export interface FileRoutesByFullPath {
   '/subscribers': typeof AppSubscribersRoute
   '/api/public/booking': typeof ApiPublicBookingRoute
   '/api/public/contact': typeof ApiPublicContactRoute
+  '/api/public/google-leadform': typeof ApiPublicGoogleLeadformRoute
   '/api/public/newsletter': typeof ApiPublicNewsletterRoute
 }
 export interface FileRoutesByTo {
@@ -218,6 +225,7 @@ export interface FileRoutesByTo {
   '/subscribers': typeof AppSubscribersRoute
   '/api/public/booking': typeof ApiPublicBookingRoute
   '/api/public/contact': typeof ApiPublicContactRoute
+  '/api/public/google-leadform': typeof ApiPublicGoogleLeadformRoute
   '/api/public/newsletter': typeof ApiPublicNewsletterRoute
 }
 export interface FileRoutesById {
@@ -247,6 +255,7 @@ export interface FileRoutesById {
   '/_app/subscribers': typeof AppSubscribersRoute
   '/api/public/booking': typeof ApiPublicBookingRoute
   '/api/public/contact': typeof ApiPublicContactRoute
+  '/api/public/google-leadform': typeof ApiPublicGoogleLeadformRoute
   '/api/public/newsletter': typeof ApiPublicNewsletterRoute
 }
 export interface FileRouteTypes {
@@ -276,6 +285,7 @@ export interface FileRouteTypes {
     | '/subscribers'
     | '/api/public/booking'
     | '/api/public/contact'
+    | '/api/public/google-leadform'
     | '/api/public/newsletter'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -303,6 +313,7 @@ export interface FileRouteTypes {
     | '/subscribers'
     | '/api/public/booking'
     | '/api/public/contact'
+    | '/api/public/google-leadform'
     | '/api/public/newsletter'
   id:
     | '__root__'
@@ -331,6 +342,7 @@ export interface FileRouteTypes {
     | '/_app/subscribers'
     | '/api/public/booking'
     | '/api/public/contact'
+    | '/api/public/google-leadform'
     | '/api/public/newsletter'
   fileRoutesById: FileRoutesById
 }
@@ -344,6 +356,7 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiPublicBookingRoute: typeof ApiPublicBookingRoute
   ApiPublicContactRoute: typeof ApiPublicContactRoute
+  ApiPublicGoogleLeadformRoute: typeof ApiPublicGoogleLeadformRoute
   ApiPublicNewsletterRoute: typeof ApiPublicNewsletterRoute
 }
 
@@ -517,6 +530,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicNewsletterRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/google-leadform': {
+      id: '/api/public/google-leadform'
+      path: '/api/public/google-leadform'
+      fullPath: '/api/public/google-leadform'
+      preLoaderRoute: typeof ApiPublicGoogleLeadformRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/contact': {
       id: '/api/public/contact'
       path: '/api/public/contact'
@@ -584,6 +604,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiPublicBookingRoute: ApiPublicBookingRoute,
   ApiPublicContactRoute: ApiPublicContactRoute,
+  ApiPublicGoogleLeadformRoute: ApiPublicGoogleLeadformRoute,
   ApiPublicNewsletterRoute: ApiPublicNewsletterRoute,
 }
 export const routeTree = rootRouteImport

@@ -189,6 +189,59 @@ All filter state lives in the URL (shareable/bookmarkable):
 
 ---
 
+## 9. Channel expansion (2026-09-09)
+
+### Google Ads Lead Form — shipped
+
+New leads submitted through a Google Ads "Lead form" asset now flow straight
+into the `leads` collection, same as website/manual leads.
+
+```mermaid
+flowchart LR
+    U["Customer fills out\nGoogle Ads lead form\n(Search/YouTube/Display)"] --> G["Google's servers"]
+    G -->|"POST + google_key"| W["src/routes/api.public.google-leadform.ts"]
+    W -->|"verify google_key"| CHK{"key matches\nGOOGLE_ADS_LEAD_WEBHOOK_KEY?"}
+    CHK -->|no| REJ["401 rejected"]
+    CHK -->|yes| DEDUPE{"lead_id already\nstored? (doc id\nglf_&lt;lead_id&gt;)"}
+    DEDUPE -->|yes, retry| OK1["200 {} no-op"]
+    DEDUPE -->|no| WRITE[("leads collection\ntype: contact\nsource: google_ads")]
+    WRITE --> ALERT["Email alert to staff\n(sendLeadAlert, skipped if is_test)"]
+    WRITE --> OK2["200 {}"]
+```
+
+- Implementation: [`src/routes/api.public.google-leadform.ts`](../src/routes/api.public.google-leadform.ts).
+- Standard fields (`FULL_NAME`, `PHONE_NUMBER`, `EMAIL`) map to `name`/`phoneRaw`/`email`; any custom form questions get folded into `message`.
+- Dedup: Google redelivers on any non-2xx response or timeout, so the lead is stored at a deterministic doc id (`glf_<lead_id>`) — a repeat delivery of a lead already stored is a silent no-op, never an overwrite of staff edits.
+- Test leads sent via Google's "send test lead" button are stored with `isTest: true` and skip the email alert, same as the existing test-lead convention.
+- Lands as `type: "contact"`, `source: "google_ads"` — shows up in the Leads list with a Google Ads label/icon and can be filtered like any other source.
+
+**What you still need to do on Google's side** (I can't do this part — it needs your Google Ads account access):
+1. Pick (or generate) a long random secret string and set it as `GOOGLE_ADS_LEAD_WEBHOOK_KEY` in the server's `.env`, then redeploy.
+2. In Google Ads: **Assets → Lead form asset → Edit → Delivery options → Webhook integration**.
+3. Webhook URL: `https://<your-production-domain>/api/public/google-leadform`
+4. Webhook key: the same secret from step 1.
+5. Click **Send test lead** — confirm it shows up in the Leads list (with `isTest` true, so it won't skew metrics) and delete it afterward.
+
+### Google Business Profile messages — not currently possible
+
+Google shut down the **Business Messages API** on 2024-07-31, and there's no
+native replacement — as of 2026, Google Business Profile has no public API or
+webhook for receiving the "message the business" chats customers send from
+Search/Maps. There is nothing to integrate with; this isn't a POS limitation.
+
+**Practical workaround**: point your Business Profile's messaging at a
+channel this system (or a phone) actually receives into — e.g. add your
+WhatsApp number as the profile's contact/chat link, so those conversations
+land in the same manual WhatsApp lead flow (§4 above) staff already use.
+
+Sources: [Update on Google Business Messages](https://developers.google.com/business-communications/business-messages/resources/release-notes/update-on-gbm), [Google Shuts Down Business Messages](https://www.partoo.co/en/blog/the-end-of-google-business-messages/).
+
+### Still open from the original channel list
+
+Facebook/Instagram Lead Ads, WhatsApp inbound automation, and call tracking are documented in the earlier conversation but not yet built — say the word if you want one of those next.
+
+---
+
 ## Open questions for you
 
 1. Should **quoted** leads have a real accept/reject flow (e.g. customer clicks a link) instead of relying on staff manually converting or losing them?
