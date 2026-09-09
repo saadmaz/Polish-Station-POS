@@ -41,13 +41,26 @@ const SERVER_ENTRY = new URL("./dist/server/server.js", import.meta.url).href;
 // Only set by the e2e test harness / local emulator runs, never in a real
 // deploy, since production never has FIRESTORE_EMULATOR_HOST in its .env.
 // Without this, the CSP below (correctly) blocks the browser from ever
-// reaching a local Firestore/Auth emulator, which made every e2e login
-// silently fail with a CSP violation instead of a readable auth error.
+// reaching a local Firestore/Auth/Storage emulator, which made every e2e
+// login silently fail with a CSP violation instead of a readable auth error
+// (and, before FIREBASE_STORAGE_EMULATOR_HOST was added here, made every
+// inspection-photo upload fail the same silent way — nothing exercised the
+// Storage emulator until that feature existed, so the gap went unnoticed).
 const EMULATOR_CONNECT_SRC = process.env.FIRESTORE_EMULATOR_HOST
   ? ` http://${process.env.FIRESTORE_EMULATOR_HOST}` +
     (process.env.FIREBASE_AUTH_EMULATOR_HOST
       ? ` http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}`
+      : "") +
+    (process.env.FIREBASE_STORAGE_EMULATOR_HOST
+      ? ` http://${process.env.FIREBASE_STORAGE_EMULATOR_HOST}`
       : "")
+  : "";
+// img-src is a separate CSP directive from connect-src — the inspection
+// photo <img> previews load from a Storage download URL, which is an image
+// *load*, not a fetch/XHR, so it's governed by img-src, not connect-src.
+// Same emulator-only gap as above, same fix.
+const EMULATOR_IMG_SRC = process.env.FIREBASE_STORAGE_EMULATOR_HOST
+  ? ` http://${process.env.FIREBASE_STORAGE_EMULATOR_HOST}`
   : "";
 
 // Security headers applied to every response.
@@ -74,7 +87,8 @@ function applySecurityHeaders(req, res) {
         " https://*.firebase.google.com" +
         " https://*.appspot.com" +
         EMULATOR_CONNECT_SRC,
-      "img-src 'self' data: blob: https://storage.googleapis.com https://*.appspot.com",
+      "img-src 'self' data: blob: https://storage.googleapis.com https://*.appspot.com" +
+        EMULATOR_IMG_SRC,
       "font-src 'self' https://fonts.gstatic.com",
       "frame-src 'none'",
       "object-src 'none'",

@@ -109,7 +109,14 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
   useEffect(() => {
     if (open) {
       setDraft(inspection);
-      setStepIndex(0);
+      // Resume where the last session left off, not step 1 every time —
+      // the first slot still missing a photo, or the Review step if every
+      // required slot is already covered.
+      const uploadedSlots = new Set(
+        inspection.photos.filter((p) => p.uploadedAt != null && p.slotKey).map((p) => p.slotKey),
+      );
+      const firstIncomplete = ALWAYS_REQUIRED_PHOTO_SLOTS.findIndex((slot) => !uploadedSlots.has(slot));
+      setStepIndex(firstIncomplete === -1 ? ALWAYS_REQUIRED_PHOTO_SLOTS.length : firstIncomplete);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, inspection.id]);
@@ -168,7 +175,8 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
       }
       persist(next);
       toast.success(slotKey ? "Photo captured" : "Extra photo added");
-    } catch {
+    } catch (err) {
+      console.error("[inspection] photo capture/upload failed:", err);
       toast.error("Couldn't upload that photo, please try again");
     } finally {
       setUploading(false);
