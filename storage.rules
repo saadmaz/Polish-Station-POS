@@ -28,6 +28,24 @@ service firebase.storage {
       allow write: if hasModule("jobs") && (isManagerOrAbove() || role() == "Advisor");
     }
 
+    // Inspection photos and signature PNGs (see src/lib/inspection.ts's
+    // Photo/CustomerSignature/InspectorSignature and the storage-path
+    // comments on them). Read matches every other staff-facing document in
+    // this app — any signed-in staff member. Write is gated the same way the
+    // `inspections` Firestore collection's own create/update rules are
+    // (firestore.rules), PLUS a cross-service check against that same
+    // document: once the inspection has reached "signed" or "superseded" no
+    // more evidence can be added or replaced, mirroring the Firestore-side
+    // immutability rule instead of relying on the UI alone to keep photos
+    // and signatures in sync with a frozen document.
+    match /jobs/{jobId}/inspections/{inspectionId}/{fileName=**} {
+      allow read:  if isAuth();
+      allow write: if hasModule("inspection") && (isManagerOrAbove() || role() in ["Advisor", "Technician"])
+                   && (!firestore.exists(/databases/(default)/documents/inspections/$(inspectionId))
+                       || firestore.get(/databases/(default)/documents/inspections/$(inspectionId)).data.status
+                          in ["draft", "pending_acknowledgment"]);
+    }
+
     // Everything else: no app feature uses Cloud Storage outside the above.
     match /{allPaths=**} {
       allow read, write: if false;

@@ -65,6 +65,55 @@ service cloud.firestore {
         && (before != "converted" || after.convertedTo == resource.data.convertedTo);
     }
 
+    // ── Inspection status transitions ────────────────────────────────────
+    // Mirrors src/lib/inspection.ts's LEGAL_INSPECTION_TRANSITIONS exactly —
+    // same hand-synced-copy precedent as legalLeadTransitions() above and
+    // job.ts's LEGAL_TRANSITIONS vs. the jobEvents rule. "signed" -> "superseded"
+    // is the one transition out of an otherwise-immutable document, and is
+    // only ever driven by createSupersedingInspection()'s write.
+    function legalInspectionTransitions() {
+      return {
+        "draft":                  ["pending_acknowledgment", "signed"],
+        "pending_acknowledgment": ["signed"],
+        "signed":                 ["superseded"],
+        "superseded":             [],
+      };
+    }
+
+    // Firestore rules have no forEach/filter over list data, so this can't
+    // verify per-marker or per-slot photo coverage directly (see
+    // src/lib/inspection.ts's comment on Inspection.photoRequirementsMet for
+    // why that's a client-computed field instead) — but everything else the
+    // acceptance criteria require IS checked here: the two-path sign-off
+    // (inspector signature always required to reach "signed"; customer
+    // signature required on Path A, a received remote acknowledgment on Path
+    // B), immutability of identification/attribution fields, and full
+    // immutability of a "signed" document except the one sanctioned move to
+    // "superseded".
+    function isLegalInspectionUpdate() {
+      let before = resource.data.status;
+      let after = request.resource.data;
+      return (before == after.status || after.status in legalInspectionTransitions()[before])
+        && (after.status != "pending_acknowledgment" || after.photoRequirementsMet == true)
+        && (after.status != "signed" || after.photoRequirementsMet == true)
+        && (after.status != "signed" || after.inspectorSignature != null)
+        && (after.status != "signed" || !after.inspectedWithCustomer || after.customerSignature != null)
+        && (after.status != "signed" || after.inspectedWithCustomer
+            || (after.remoteAck != null && after.remoteAck.replyReceivedAt != null))
+        && (before != "signed" ||
+            (after.status == "superseded"
+             && request.resource.data.diff(resource.data).affectedKeys()
+                  .hasOnly(["status", "supersededBy", "updatedAt", "updatedById", "updatedByName"])))
+        && after.jobId == resource.data.jobId
+        && after.jobRef == resource.data.jobRef
+        && after.vehicleSnapshot == resource.data.vehicleSnapshot
+        && after.customerSnapshot == resource.data.customerSnapshot
+        && after.inspectedById == resource.data.inspectedById
+        && after.inspectedByName == resource.data.inspectedByName
+        && after.createdAt == resource.data.createdAt
+        && after.updatedById == request.auth.uid;
+    }
+
     // ── Staff ─────────────────────────────────────────────────────────────
     // DRAFTED + TESTED, NOT YET DEPLOYED (see
     // [[project_firestore_rules_audit]] Finding 1 and
@@ -266,6 +315,50 @@ service cloud.firestore {
                     && request.resource.data.keys().hasAll(
                          ["jobId", "fromStatus", "toStatus", "actorId", "actorName", "at", "note"]);
       allow update, delete: if false;
+    }
+
+    // ── Inspections ───────────────────────────────────────────────────────
+    // See src/lib/inspection.ts for the full type and the two functions
+    // above for the transition/immutability logic. Top-level collection with
+    // a `jobId` FK, not a subcollection — same structural choice as
+    // jobEvents/leadEvents, the only precedent this codebase has for
+    // "belongs to X" records.
+    //
+    // create is always status == "draft" (Phase 6: the document must be
+    // fully creatable offline, well before any photo has uploaded or anyone
+    // has signed) with attribution self-enforced, same as jobEvents/
+    // leadEvents/audit. Every later state change — filling in condition
+    // data, uploading photos, moving to pending_acknowledgment/signed/
+    // superseded — is an update, checked by isLegalInspectionUpdate().
+    match /inspections/{inspectionId} {
+      allow read: if hasModule("inspection");
+
+      allow create: if hasModule("inspection") && (isManagerOrAbove() || role() in ["Advisor", "Technician"])
+                    && request.resource.data.status == "draft"
+                    && request.resource.data.photoRequirementsMet == false
+                    && request.resource.data.supersedes == null
+                    && request.resource.data.supersededBy == null
+                    && request.resource.data.inspectedById == request.auth.uid
+                    && request.resource.data.updatedById == request.auth.uid
+                    && request.resource.data.jobId is string && request.resource.data.jobId.size() > 0
+                    && request.resource.data.jobRef is string
+                    && request.resource.data.keys().hasAll([
+                         "jobId", "jobRef", "vehicleSnapshot", "customerSnapshot", "vin",
+                         "odometer", "odometerPhotoId", "fuelLevel", "warningLights", "startsNormally",
+                         "knownIssues", "keysHandedOver", "damageMarkers", "conditionFlags", "paintHistory",
+                         "interiorCondition", "systemsCheck", "inventoryItems", "customerPriority",
+                         "addOnsDiscussed", "scopeExclusions", "expectationNotes", "photos",
+                         "inspectedWithCustomer", "customerSignature", "remoteAck", "inspectorSignature",
+                         "inspectedById", "inspectedByName", "inspectedAt", "deviceInfo", "geo",
+                         "photoRequirementsMet", "status", "supersedes", "supersededBy",
+                         "createdAt", "updatedAt", "updatedById", "updatedByName"
+                       ]);
+
+      allow update: if hasModule("inspection") && (isManagerOrAbove() || role() in ["Advisor", "Technician"])
+                    && resource.data.status != "superseded"
+                    && isLegalInspectionUpdate();
+
+      allow delete: if isManagerOrAbove();
     }
 
     // ── Customers ─────────────────────────────────────────────────────────

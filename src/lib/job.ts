@@ -5,6 +5,7 @@
 // between states is always derived from JobEvents (see durationBetweenMs),
 // never stored as a mutable field on the Job itself.
 import type { ServiceCategory } from "./db";
+import type { ConditionFlag } from "./inspection";
 
 export type JobStatus =
   | "booked"
@@ -67,6 +68,11 @@ export interface Job {
   documents?: {
     jobCard?: { version: number; storagePath: string; url: string; generatedAt: string };
   };
+  // Mirrored from the latest signed Inspection's conditionFlags (see
+  // inspection.ts) in the same write batch, so pricing/scheduling can read
+  // these without loading the inspection itself. Absent on every job with no
+  // signed inspection yet.
+  conditionFlags?: ConditionFlag[];
 }
 
 export interface JobEvent {
