@@ -48,6 +48,12 @@ import { synthesizeWalkInJob } from "./job-linking";
 import { buildTransitionEvent, nextQuoteVersion } from "./job";
 import type { Job, JobEvent, JobStatus } from "./job";
 import {
+  buildInspectionSnapshots,
+  damageMarkerRequiresPhoto,
+  missingRequiredPhotoSlots,
+} from "./inspection";
+import type { Inspection } from "./inspection";
+import {
   assertLegalLeadTransition,
   LeadAlreadyConvertedError,
   reconcileServiceIds,
@@ -137,6 +143,7 @@ interface Store {
   coupons: Coupon[];
   bookings: Booking[];
   jobs: Job[];
+  inspections: Inspection[];
   invoices: Invoice[];
   inventory: InventoryItem[];
   expenses: Expense[];
@@ -266,6 +273,15 @@ interface Store {
   ) => Promise<Job>;
   updateJob: (job: Job) => void;
   transitionJobStatus: (id: string, toStatus: JobStatus) => Promise<void>;
+
+  // Inspections (Phase 2: guided photo capture — see src/lib/inspection.ts).
+  // startInspection creates the draft doc (status "draft", every field
+  // present with a placeholder value) so it's addressable and editable
+  // immediately, before any photo has been taken. updateInspection is a full
+  // overwrite, like updateJob — it recomputes photoRequirementsMet from the
+  // document being saved rather than trusting the caller to set it.
+  startInspection: (job: Job) => Promise<Inspection>;
+  updateInspection: (inspection: Inspection) => void;
 
   // Services
   upsertService: (s: Service) => void;
@@ -444,6 +460,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [inspections, setInspections] = useState<Inspection[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -473,6 +490,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     coupons,
     bookings,
     jobs,
+    inspections,
     invoices,
     expenses,
     inventory,
@@ -493,6 +511,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       coupons,
       bookings,
       jobs,
+      inspections,
       invoices,
       expenses,
       inventory,
@@ -512,6 +531,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     coupons,
     bookings,
     jobs,
+    inspections,
     invoices,
     expenses,
     inventory,
@@ -609,6 +629,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         fail("jobs"),
       ),
     );
+    // Gated on the "inspection" module, same reasoning as "leads" above —
+    // firestore.rules requires hasModule("inspection") to read this at all.
+    if (allowed("inspection"))
+      add(() =>
+        onSnapshot(
+          newestFirst("inspections", "createdAt", 1000),
+          (s) => {
+            setInspections(s.docs.map((d) => ({ id: d.id, ...d.data() }) as Inspection).reverse());
+            done();
+          },
+          fail("inspections"),
+        ),
+      );
     add(() =>
       onSnapshot(
         fs("inventory"),
@@ -1644,6 +1677,118 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // ── Inspection mutations (Phase 2: guided photo capture) ──────────────────
+  // See src/lib/inspection.ts for the type and the two functions imported
+  // above. Photo upload itself (Storage, compression) lives in
+  // inspection-photos.ts and is called directly from the capture UI, same
+  // division of labour as pdf.ts's generateJobCardPDF vs. this file's own
+  // Firestore-only mutations — the UI merges the returned Photo into its
+  // local draft and calls updateInspection to persist it.
+  const startInspection = useCallback(async (job: Job): Promise<Inspection> => {
+    const { vehicleSnapshot, customerSnapshot } = buildInspectionSnapshots(job);
+    const actor = actorRef.current ?? { id: "", name: "" };
+    const now = new Date().toISOString();
+    const inspection: Inspection = {
+      id: newId(),
+      jobId: job.id,
+      jobRef: job.id, // job.id is already the human-readable "J-1001" ref, same intentional-redundancy precedent as Job.customerName vs. customerSnapshot.name
+      vehicleSnapshot,
+      customerSnapshot,
+      vin: job.vehicle?.vin || null,
+      odometer: 0,
+      odometerPhotoId: "",
+      fuelLevel: "half",
+      warningLights: [],
+      startsNormally: true,
+      knownIssues: "",
+      keysHandedOver: 1,
+      damageMarkers: [],
+      conditionFlags: [],
+      paintHistory: {
+        existingCoating: "unknown",
+        coatingAgeMonths: null,
+        priorCorrection: "unknown",
+        resprayedPanels: [],
+        wrapOrPpf: false,
+      },
+      interiorCondition: {
+        material: "fabric",
+        odours: [],
+        stains: false,
+        tears: false,
+        burns: false,
+        trimDamage: false,
+        headlinerStains: false,
+      },
+      systemsCheck: [],
+      inventoryItems: [],
+      customerPriority: "",
+      addOnsDiscussed: [],
+      scopeExclusions: "",
+      expectationNotes: "",
+      photos: [],
+      inspectedWithCustomer: false,
+      customerSignature: null,
+      remoteAck: null,
+      inspectorSignature: null,
+      inspectedById: actor.id,
+      inspectedByName: actor.name,
+      inspectedAt: now,
+      deviceInfo: {
+        userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "",
+        screenSize:
+          typeof window !== "undefined" ? `${window.screen.width}x${window.screen.height}` : "",
+        appVersion: "",
+      },
+      geo: null,
+      photoRequirementsMet: false,
+      status: "draft",
+      supersedes: null,
+      supersededBy: null,
+      createdAt: now,
+      updatedAt: now,
+      updatedById: actor.id,
+      updatedByName: actor.name,
+    };
+    await writeAsync("inspections", inspection);
+    logAudit(actor, {
+      action: "START_INSPECTION",
+      entity: "Inspection",
+      entityId: inspection.id,
+      before: null,
+      after: inspection,
+    });
+    return inspection;
+  }, []);
+
+  const updateInspection = useCallback((inspection: Inspection) => {
+    const before = S.current.inspections.find((i) => i.id === inspection.id) ?? null;
+    const actor = actorRef.current ?? { id: "", name: "" };
+    // engine_bay isn't factored in yet — there's no engine-bay-service flag
+    // on the service catalog for missingRequiredPhotoSlots to check against
+    // (Phase 2 scope: photo capture only), so it's simply never required for
+    // now. Revisit once that catalog flag exists.
+    const noMissingSlots = missingRequiredPhotoSlots(inspection.photos, false).length === 0;
+    const everyMarkerPhotographed = inspection.damageMarkers.every(
+      (m) => !damageMarkerRequiresPhoto(m.severity) || m.photoIds.length > 0,
+    );
+    const after: Inspection = {
+      ...inspection,
+      photoRequirementsMet: noMissingSlots && everyMarkerPhotographed,
+      updatedAt: new Date().toISOString(),
+      updatedById: actor.id,
+      updatedByName: actor.name,
+    };
+    write("inspections", after);
+    logAudit(actor, {
+      action: "UPDATE_INSPECTION",
+      entity: "Inspection",
+      entityId: inspection.id,
+      before,
+      after,
+    });
+  }, []);
+
   // ── Service mutations ──────────────────────────────────────────────────────
   const upsertService = useCallback((s: Service) => {
     const before = S.current.services.find((x) => x.id === s.id) ?? null;
@@ -2199,6 +2344,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addJob,
     updateJob,
     transitionJobStatus,
+    inspections,
+    startInspection,
+    updateInspection,
     upsertService,
     deleteService,
     upsertInventoryItem,

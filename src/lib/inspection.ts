@@ -21,15 +21,7 @@ export type FuelLevel = "E" | "quarter" | "half" | "three_quarter" | "F";
 export const FUEL_LEVELS: FuelLevel[] = ["E", "quarter", "half", "three_quarter", "F"];
 
 export type WarningLight =
-  | "none"
-  | "check_engine"
-  | "abs"
-  | "airbag"
-  | "battery"
-  | "oil"
-  | "tpms"
-  | "brake"
-  | "other";
+  "none" | "check_engine" | "abs" | "airbag" | "battery" | "oil" | "tpms" | "brake" | "other";
 
 export const WARNING_LIGHTS: WarningLight[] = [
   "none",
@@ -205,7 +197,9 @@ export const INVENTORY_ITEM_KEYS: InventoryItemKey[] = [
   "personal_belongings",
 ];
 
-export interface InventoryItem {
+// Named InspectionInventoryItem, not InventoryItem — db.ts already exports an
+// InventoryItem for the stock/equipment module, and store.tsx imports both.
+export interface InspectionInventoryItem {
   key: InventoryItemKey;
   state: InventoryItemState;
   note: string; // required (non-empty) when key === "personal_belongings" && state === "present"
@@ -249,7 +243,10 @@ export const ALWAYS_REQUIRED_PHOTO_SLOTS: PhotoSlotKey[] = [
 
 export const ALL_PHOTO_SLOTS: PhotoSlotKey[] = [...ALWAYS_REQUIRED_PHOTO_SLOTS, "engine_bay"];
 
-export function isPhotoSlotRequired(slot: PhotoSlotKey, engineBayServiceSelected: boolean): boolean {
+export function isPhotoSlotRequired(
+  slot: PhotoSlotKey,
+  engineBayServiceSelected: boolean,
+): boolean {
   if (slot === "engine_bay") return engineBayServiceSelected;
   return ALWAYS_REQUIRED_PHOTO_SLOTS.includes(slot);
 }
@@ -259,7 +256,9 @@ export function missingRequiredPhotoSlots(
   photos: readonly Pick<Photo, "slotKey" | "uploadedAt">[],
   engineBayServiceSelected: boolean,
 ): PhotoSlotKey[] {
-  const uploadedSlots = new Set(photos.filter((p) => p.uploadedAt != null && p.slotKey).map((p) => p.slotKey));
+  const uploadedSlots = new Set(
+    photos.filter((p) => p.uploadedAt != null && p.slotKey).map((p) => p.slotKey),
+  );
   const required = engineBayServiceSelected ? ALL_PHOTO_SLOTS : ALWAYS_REQUIRED_PHOTO_SLOTS;
   return required.filter((slot) => !uploadedSlots.has(slot));
 }
@@ -332,7 +331,9 @@ export class DamageMarkerMissingPhotoError extends Error {
   }
 }
 
-export function assertValidDamageMarker(marker: Pick<DamageMarker, "seq" | "severity" | "photoIds">): void {
+export function assertValidDamageMarker(
+  marker: Pick<DamageMarker, "seq" | "severity" | "photoIds">,
+): void {
   if (damageMarkerRequiresPhoto(marker.severity) && marker.photoIds.length === 0) {
     throw new DamageMarkerMissingPhotoError(marker.seq);
   }
@@ -436,7 +437,10 @@ export class IllegalInspectionTransitionError extends Error {
   }
 }
 
-export function assertLegalInspectionTransition(from: InspectionStatus, to: InspectionStatus): void {
+export function assertLegalInspectionTransition(
+  from: InspectionStatus,
+  to: InspectionStatus,
+): void {
   if (!isLegalInspectionTransition(from, to)) {
     throw new IllegalInspectionTransitionError(from, to);
   }
@@ -484,7 +488,7 @@ export interface Inspection {
   paintHistory: PaintHistory;
   interiorCondition: InteriorCondition;
   systemsCheck: SystemCheckItem[];
-  inventoryItems: InventoryItem[];
+  inventoryItems: InspectionInventoryItem[];
 
   // Scope & expectations
   customerPriority: string; // required, min 10 chars — surfaced verbatim on delivery handover
@@ -535,13 +539,17 @@ export interface Inspection {
  * the job has no vehicle intake data yet — an inspection cannot start before
  * that exists.
  */
-export function buildInspectionSnapshots(
-  job: Pick<Job, "vehicle" | "customerSnapshot">,
-): { vehicleSnapshot: InspectionVehicleSnapshot; customerSnapshot: InspectionCustomerSnapshot } {
+export function buildInspectionSnapshots(job: Pick<Job, "vehicle" | "customerSnapshot">): {
+  vehicleSnapshot: InspectionVehicleSnapshot;
+  customerSnapshot: InspectionCustomerSnapshot;
+} {
   if (!job.vehicle) {
     throw new Error("Cannot start an inspection for a job with no vehicle intake data");
   }
   const { plate, make, model, year, colour, bodyType } = job.vehicle;
-  const customerSnapshot = { name: job.customerSnapshot?.name ?? "", phone: job.customerSnapshot?.phone ?? "" };
+  const customerSnapshot = {
+    name: job.customerSnapshot?.name ?? "",
+    phone: job.customerSnapshot?.phone ?? "",
+  };
   return { vehicleSnapshot: { plate, make, model, year, colour, bodyType }, customerSnapshot };
 }
