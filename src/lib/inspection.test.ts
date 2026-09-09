@@ -9,6 +9,8 @@ import {
   isPhotoSlotRequired,
   missingRequiredPhotoSlots,
   buildInspectionSnapshots,
+  isPendingAcknowledgmentOverdue,
+  PENDING_ACKNOWLEDGMENT_THRESHOLD_MS,
   IllegalInspectionTransitionError,
   InspectionNotSignedError,
   DamageMarkerMissingPhotoError,
@@ -89,7 +91,9 @@ describe("damage marker photo requirement", () => {
   });
 
   it("assertValidDamageMarker passes for a minor marker with no photo", () => {
-    expect(() => assertValidDamageMarker({ seq: 1, severity: "minor", photoIds: [] })).not.toThrow();
+    expect(() =>
+      assertValidDamageMarker({ seq: 1, severity: "minor", photoIds: [] }),
+    ).not.toThrow();
   });
 
   it("assertValidDamageMarker passes for a moderate marker with a linked photo", () => {
@@ -142,7 +146,12 @@ describe("buildInspectionSnapshots", () => {
         mileage: 42000,
         vin: "JT123",
       },
-      customerSnapshot: { name: "Nimal Perera", phone: "0771234567", email: "n@example.com", address: "Colombo" },
+      customerSnapshot: {
+        name: "Nimal Perera",
+        phone: "0771234567",
+        email: "n@example.com",
+        address: "Colombo",
+      },
     };
     const { vehicleSnapshot, customerSnapshot } = buildInspectionSnapshots(job);
     expect(vehicleSnapshot).toEqual({
@@ -157,6 +166,52 @@ describe("buildInspectionSnapshots", () => {
   });
 
   it("throws when the job has no vehicle intake data yet", () => {
-    expect(() => buildInspectionSnapshots({ vehicle: undefined, customerSnapshot: undefined })).toThrow();
+    expect(() =>
+      buildInspectionSnapshots({ vehicle: undefined, customerSnapshot: undefined }),
+    ).toThrow();
+  });
+});
+
+describe("isPendingAcknowledgmentOverdue", () => {
+  const NOW = new Date("2026-09-09T12:00:00Z").getTime();
+
+  it("is false for any status other than pending_acknowledgment", () => {
+    for (const status of ["draft", "signed", "superseded"] as InspectionStatus[]) {
+      expect(
+        isPendingAcknowledgmentOverdue(
+          { status, remoteAck: { sentAt: new Date(NOW - 100 * 3600000).toISOString() } as never },
+          NOW,
+        ),
+      ).toBe(false);
+    }
+  });
+
+  it("is false when pending_acknowledgment but remoteAck was never recorded", () => {
+    expect(
+      isPendingAcknowledgmentOverdue({ status: "pending_acknowledgment", remoteAck: null }, NOW),
+    ).toBe(false);
+  });
+
+  it("is false just under the threshold, true just over it", () => {
+    const justUnder = NOW - (PENDING_ACKNOWLEDGMENT_THRESHOLD_MS - 60000);
+    const justOver = NOW - (PENDING_ACKNOWLEDGMENT_THRESHOLD_MS + 60000);
+    expect(
+      isPendingAcknowledgmentOverdue(
+        {
+          status: "pending_acknowledgment",
+          remoteAck: { sentAt: new Date(justUnder).toISOString() } as never,
+        },
+        NOW,
+      ),
+    ).toBe(false);
+    expect(
+      isPendingAcknowledgmentOverdue(
+        {
+          status: "pending_acknowledgment",
+          remoteAck: { sentAt: new Date(justOver).toISOString() } as never,
+        },
+        NOW,
+      ),
+    ).toBe(true);
   });
 });

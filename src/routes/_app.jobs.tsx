@@ -17,6 +17,7 @@ import { formatDate } from "@/lib/date-format";
 import { legalNextStatuses, type Job, type JobStatus } from "@/lib/job";
 import { generateJobCardPDF } from "@/lib/pdf";
 import { buildWALink } from "@/lib/notifications";
+import { isPendingAcknowledgmentOverdue, latestNonSupersededInspection } from "@/lib/inspection";
 import {
   Search,
   Plus,
@@ -25,6 +26,7 @@ import {
   ChevronUp,
   FileDown,
   MessageCircle,
+  AlertTriangle,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_app/jobs")({
@@ -56,7 +58,7 @@ function statusLabel(status: JobStatus): string {
 // ─── Detail panel ───────────────────────────────────────────────────────────
 
 function JobDetailPanel({ job }: { job: Job }) {
-  const { transitionJobStatus, updateJob } = useStore();
+  const { transitionJobStatus, updateJob, inspections } = useStore();
   const { staffList } = useStaffList();
   const { confirm, ConfirmDialog } = useConfirm();
   const [generating, setGenerating] = useState(false);
@@ -70,7 +72,21 @@ function JobDetailPanel({ job }: { job: Job }) {
   const jobCard = job.documents?.jobCard;
   const upToDate = jobCard && jobCard.version === (job.estimate?.quoteVersion ?? 1);
 
+  // Inspection Phase 4: work must not start while this job's inspection sits
+  // unanswered in "pending_acknowledgment" past the threshold — a real
+  // block on the transition, not just a UI warning that's easy to click
+  // past. Only "in_progress" is gated; that's the transition that means
+  // "work has actually started" (see job.ts's LEGAL_TRANSITIONS comment).
+  const inspection = latestNonSupersededInspection(inspections, job.id);
+  const inspectionOverdue = inspection ? isPendingAcknowledgmentOverdue(inspection) : false;
+
   async function handleTransition(to: JobStatus) {
+    if (to === "in_progress" && inspectionOverdue) {
+      toast.error(
+        "Can't start work — this job's inspection has been awaiting customer acknowledgment for over 4 hours. Resolve it on the Inspection page first.",
+      );
+      return;
+    }
     const confirmMessage = TERMINAL_CONFIRM[to];
     if (confirmMessage && !(await confirm({ title: confirmMessage, requirePin: true }))) return;
     try {
@@ -170,19 +186,34 @@ function JobDetailPanel({ job }: { job: Job }) {
         </div>
       )}
 
+      {inspectionOverdue && (
+        <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          This job's inspection has been awaiting customer acknowledgment for over 4 hours. Work
+          can't start until that's resolved on the Inspection page.
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
-        {nextStatuses.map((s) => (
-          <button
-            key={s}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleTransition(s);
-            }}
-            className="rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-medium capitalize hover:bg-accent"
-          >
-            Mark {statusLabel(s)}
-          </button>
-        ))}
+        {nextStatuses.map((s) => {
+          const blocked = s === "in_progress" && inspectionOverdue;
+          return (
+            <button
+              key={s}
+              disabled={blocked}
+              title={
+                blocked ? "Blocked — inspection awaiting acknowledgment past 4 hours" : undefined
+              }
+              onClick={(e) => {
+                e.stopPropagation();
+                handleTransition(s);
+              }}
+              className="rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-medium capitalize hover:bg-accent disabled:opacity-40 disabled:hover:bg-background"
+            >
+              Mark {statusLabel(s)}
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">

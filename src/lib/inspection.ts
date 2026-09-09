@@ -462,6 +462,28 @@ export function assertCanSupersede(status: InspectionStatus): void {
   }
 }
 
+// Default threshold from the spec's Phase 4: work must not start on the
+// parent job while its inspection sits in "pending_acknowledgment" beyond
+// this long. Not currently user-configurable — a constant here, same as
+// every other business rule in this file, until there's an actual settings
+// UI need for it.
+export const PENDING_ACKNOWLEDGMENT_THRESHOLD_MS = 4 * 60 * 60 * 1000;
+
+/** True once a "pending_acknowledgment" inspection has sat unconfirmed
+ *  longer than the threshold — the signal that blocks the parent job from
+ *  moving to "in_progress" (see _app.jobs.tsx). Keyed off `remoteAck.sentAt`
+ *  (when the WhatsApp ack request went out), not `updatedAt`, since staff
+ *  editing an unrelated field must not reset this clock. */
+export function isPendingAcknowledgmentOverdue(
+  inspection: Pick<Inspection, "status" | "remoteAck">,
+  now: number = Date.now(),
+  thresholdMs: number = PENDING_ACKNOWLEDGMENT_THRESHOLD_MS,
+): boolean {
+  if (inspection.status !== "pending_acknowledgment") return false;
+  if (!inspection.remoteAck) return false;
+  return now - new Date(inspection.remoteAck.sentAt).getTime() > thresholdMs;
+}
+
 // ── The document ─────────────────────────────────────────────────────────
 
 export interface Inspection {
@@ -531,6 +553,21 @@ export interface Inspection {
   updatedAt: string;
   updatedById: string;
   updatedByName: string;
+}
+
+/** The one inspection that represents a job's current state — every count,
+ *  metric, and status check excludes "superseded" per the acceptance
+ *  criteria, and among what's left the most recently created one wins.
+ *  Shared by the inspection worklist and the Jobs page's own status-
+ *  transition guard (see isPendingAcknowledgmentOverdue above). */
+export function latestNonSupersededInspection(
+  inspections: readonly Inspection[],
+  jobId: string,
+): Inspection | null {
+  const candidates = inspections
+    .filter((i) => i.jobId === jobId && i.status !== "superseded")
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return candidates[0] ?? null;
 }
 
 /**

@@ -84,3 +84,35 @@ export async function captureInspectionPhoto(
     uploadedAt: new Date().toISOString(),
   };
 }
+
+/** Uploads a signature PNG (customer or inspector) — Phase 4 sign-off.
+ *  Returns the storage path to record on CustomerSignature/
+ *  InspectorSignature; not versioned like photos since a signature is
+ *  captured once per inspection and the document becomes immutable right
+ *  after (a correction supersedes the whole inspection, not just the
+ *  signature). */
+export async function uploadSignaturePng(
+  jobId: string,
+  inspectionId: string,
+  kind: "customer" | "inspector",
+  blob: Blob,
+): Promise<string> {
+  const storagePath = `jobs/${jobId}/inspections/${inspectionId}/${kind}-signature.png`;
+  await uploadBytes(storageRef(storage, storagePath), blob, { contentType: "image/png" });
+  return storagePath;
+}
+
+/** Uploads a screenshot backing a Path B remote acknowledgment (see
+ *  RemoteAck.screenshotPath). Compressed the same way capture photos are —
+ *  it's evidence, same as any other inspection photo, just not one of the
+ *  guided slots. */
+export async function uploadRemoteAckScreenshot(
+  jobId: string,
+  inspectionId: string,
+  file: File,
+): Promise<string> {
+  const blob = await resizeToJpeg(file, MAX_LONG_EDGE, JPEG_QUALITY);
+  const storagePath = `jobs/${jobId}/inspections/${inspectionId}/remote-ack-screenshot.jpg`;
+  await uploadBytes(storageRef(storage, storagePath), blob, { contentType: "image/jpeg" });
+  return storagePath;
+}

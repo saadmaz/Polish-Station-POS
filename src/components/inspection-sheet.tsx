@@ -9,12 +9,25 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ref as storageRef, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebase";
+import { useAuth } from "@/lib/auth";
 import { useStore } from "@/lib/store";
-import { captureInspectionPhoto } from "@/lib/inspection-photos";
+import {
+  captureInspectionPhoto,
+  uploadSignaturePng,
+  uploadRemoteAckScreenshot,
+} from "@/lib/inspection-photos";
+import { buildWALink } from "@/lib/notifications";
+import { formatDateTime } from "@/lib/date-format";
 import { DamageDiagram } from "@/components/damage-diagram/damage-diagram";
+import {
+  SignaturePad,
+  SignaturePadClearButton,
+  type SignaturePadHandle,
+} from "@/components/signature-pad";
 import {
   ALWAYS_REQUIRED_PHOTO_SLOTS,
   FUEL_LEVELS,
+  PENDING_ACKNOWLEDGMENT_THRESHOLD_MS,
   WARNING_LIGHTS,
   damageMarkerRequiresPhoto,
   missingRequiredPhotoSlots,
@@ -32,7 +45,14 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { Camera, RotateCcw, Loader2, Plus, Check } from "lucide-react";
+import { Camera, RotateCcw, Loader2, Plus, Check, ShieldAlert } from "lucide-react";
+
+// Placeholder — flagged, not final. Per the spec: draft detailing-specific
+// disclaimer text covering valuables/possessions, acknowledgment of
+// pre-existing defects recorded above, authorisation for the listed work,
+// and scope exclusions. Must be reviewed by someone qualified before this
+// ships as the real wording a customer's signature is binding them to.
+const DISCLAIMER_TEXT = `By signing below, I acknowledge that: the defects, condition notes, and damage markers recorded in this inspection reflect the vehicle's state at intake and are not caused by the work about to be performed; I have been advised to remove valuables and personal items from the vehicle, and Polish Station does not monitor or accept liability for items left inside it; I authorise the service(s) noted on this job for the vehicle described above; and any item listed under "scope exclusions" is explicitly not included in this work.`;
 
 type StepDef = { kind: "photo"; slot: PhotoSlotKey } | { kind: "damage" } | { kind: "review" };
 
@@ -108,7 +128,20 @@ function FrameGuide() {
   );
 }
 
+function Disclaimer() {
+  return (
+    <div className="space-y-1 rounded-md border border-warning/40 bg-warning/10 px-3 py-2">
+      <p className="flex items-center gap-1 text-[11px] font-semibold text-warning-foreground">
+        <ShieldAlert className="h-3 w-3" />
+        Unreviewed placeholder — confirm wording with someone qualified before relying on it.
+      </p>
+      <p className="text-[11px] text-muted-foreground">{DISCLAIMER_TEXT}</p>
+    </div>
+  );
+}
+
 export function InspectionSheet({ open, onOpenChange, job, inspection }: InspectionSheetProps) {
+  const { staff } = useAuth();
   const { updateInspection } = useStore();
   const [draft, setDraft] = useState(inspection);
   const [stepIndex, setStepIndex] = useState(0);
@@ -117,9 +150,20 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
   const fileInputRef = useRef<HTMLInputElement>(null);
   const extraFileInputRef = useRef<HTMLInputElement>(null);
 
+  // Sign-off (Phase 4)
+  const [signerName, setSignerName] = useState("");
+  const [replyText, setReplyText] = useState("");
+  const [pendingAckScreenshotFile, setPendingAckScreenshotFile] = useState<File | null>(null);
+  const [sendingAck, setSendingAck] = useState(false);
+  const [signing, setSigning] = useState(false);
+  const customerSigRef = useRef<SignaturePadHandle | null>(null);
+  const inspectorSigRef = useRef<SignaturePadHandle | null>(null);
+
   useEffect(() => {
     if (open) {
       setDraft(inspection);
+      setSignerName(inspection.customerSignature?.signerName ?? inspection.customerSnapshot.name);
+      setReplyText(inspection.remoteAck?.replyText ?? "");
       // Resume where the last session left off, not step 1 every time —
       // the first slot still missing a photo, or the Review step if every
       // required slot is already covered.
@@ -150,6 +194,7 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
   const markersNeedingPhotos = draft.damageMarkers.filter(
     (m) => damageMarkerRequiresPhoto(m.severity) && m.photoIds.length === 0,
   );
+  const readyToSign = missingSlots.length === 0 && markersNeedingPhotos.length === 0;
 
   useEffect(() => {
     const toResolve = draft.photos.filter((p) => !urls[p.id]);
@@ -220,6 +265,128 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
     persist({ ...draft, damageMarkers: markers });
   }
 
+  // ── Sign-off (Phase 4) ────────────────────────────────────────────────────
+
+  function setInspectedWithCustomer(value: boolean) {
+    persist({ ...draft, inspectedWithCustomer: value });
+  }
+
+  // Path B, step 1: hands off to the customer via WhatsApp. Firestore rules
+  // require photoRequirementsMet before this transition is even accepted —
+  // same gate as reaching "signed" directly.
+  async function handleSendForAcknowledgment() {
+    if (!draft.customerSnapshot.phone) {
+      toast.error("No phone number on file for this customer");
+      return;
+    }
+    setSendingAck(true);
+    try {
+      const sentAt = new Date().toISOString();
+      persist({
+        ...draft,
+        status: "pending_acknowledgment",
+        remoteAck: {
+          sentAt,
+          channel: "whatsapp",
+          replyText: null,
+          replyReceivedAt: null,
+          screenshotPath: null,
+        },
+      });
+      const message = `Hi ${draft.customerSnapshot.name}, please review your vehicle inspection for job ${job.id} and reply to this message to confirm you've seen it.`;
+      window.open(buildWALink(draft.customerSnapshot.phone, message), "_blank");
+    } finally {
+      setSendingAck(false);
+    }
+  }
+
+  // Path A: both signatures captured in one action, straight to "signed".
+  async function handleSignPathA() {
+    const customerBlob = await customerSigRef.current?.toBlob();
+    const inspectorBlob = await inspectorSigRef.current?.toBlob();
+    if (!customerBlob || !inspectorBlob || !signerName.trim() || !staff) {
+      toast.error("Both signatures and the customer's name are required");
+      return;
+    }
+    setSigning(true);
+    try {
+      const now = new Date().toISOString();
+      const [customerPath, inspectorPath] = await Promise.all([
+        uploadSignaturePng(job.id, draft.id, "customer", customerBlob),
+        uploadSignaturePng(job.id, draft.id, "inspector", inspectorBlob),
+      ]);
+      persist({
+        ...draft,
+        inspectedWithCustomer: true,
+        customerSignature: {
+          storagePath: customerPath,
+          signerName: signerName.trim(),
+          signedAt: now,
+        },
+        inspectorSignature: {
+          storagePath: inspectorPath,
+          staffId: staff.id,
+          staffName: staff.name,
+          signedAt: now,
+        },
+        status: "signed",
+      });
+      toast.success("Inspection signed");
+    } catch {
+      toast.error("Couldn't complete sign-off, please try again");
+    } finally {
+      setSigning(false);
+    }
+  }
+
+  // Path B, step 2: the customer's reply plus the inspector's own signature,
+  // bundled into one action — this is the only point in Path B where
+  // inspectorSignature gets set, since "signed" is never reached before it.
+  async function handleAcknowledgeAndSign() {
+    const inspectorBlob = await inspectorSigRef.current?.toBlob();
+    if (!inspectorBlob || !staff) {
+      toast.error("Inspector signature is required");
+      return;
+    }
+    if (!replyText.trim() && !pendingAckScreenshotFile) {
+      toast.error("Record the customer's reply text or a screenshot before signing");
+      return;
+    }
+    setSigning(true);
+    try {
+      const now = new Date().toISOString();
+      const [inspectorPath, screenshotPath] = await Promise.all([
+        uploadSignaturePng(job.id, draft.id, "inspector", inspectorBlob),
+        pendingAckScreenshotFile
+          ? uploadRemoteAckScreenshot(job.id, draft.id, pendingAckScreenshotFile)
+          : Promise.resolve(draft.remoteAck?.screenshotPath ?? null),
+      ]);
+      persist({
+        ...draft,
+        remoteAck: draft.remoteAck
+          ? {
+              ...draft.remoteAck,
+              replyText: replyText.trim() || null,
+              replyReceivedAt: now,
+              screenshotPath,
+            }
+          : draft.remoteAck,
+        inspectorSignature: {
+          storagePath: inspectorPath,
+          staffId: staff.id,
+          staffName: staff.name,
+          signedAt: now,
+        },
+        status: "signed",
+      });
+      toast.success("Inspection signed");
+    } catch {
+      toast.error("Couldn't complete sign-off, please try again");
+    } finally {
+      setSigning(false);
+    }
+  }
+
   function toggleWarningLight(light: WarningLight) {
     const current = draft.warningLights;
     let next: WarningLight[];
@@ -235,6 +402,50 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
   }
 
   const canGoNext = !currentSlot || !!currentPhoto;
+
+  // Once signed (or superseded), the document is immutable — Firestore
+  // rules already reject any further write, but the UI shouldn't offer
+  // editable controls that would just fail silently against those rules.
+  // A simple read-only summary replaces the whole stepper instead.
+  if (draft.status === "signed" || draft.status === "superseded") {
+    return (
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent className="w-full sm:max-w-lg flex flex-col overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>Inspection · {job.id}</SheetTitle>
+            <SheetDescription>
+              {draft.status === "signed" ? "Signed — locked" : "Superseded by a later inspection"}
+            </SheetDescription>
+          </SheetHeader>
+          <div className="space-y-3 py-4 text-sm">
+            <div className="flex items-center gap-2 rounded-md bg-success/10 border border-success/30 px-3 py-2 text-success">
+              <Check className="h-4 w-4" />
+              Signed by {draft.inspectorSignature?.staffName ?? "—"} on{" "}
+              {draft.inspectorSignature ? formatDateTime(draft.inspectorSignature.signedAt) : "—"}
+            </div>
+            {draft.customerSignature && (
+              <p className="text-muted-foreground">
+                Customer signature: {draft.customerSignature.signerName} ·{" "}
+                {formatDateTime(draft.customerSignature.signedAt)}
+              </p>
+            )}
+            {draft.remoteAck?.replyReceivedAt && (
+              <p className="text-muted-foreground">
+                Remote acknowledgment received {formatDateTime(draft.remoteAck.replyReceivedAt)}
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="mt-auto rounded-md border border-input bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+          >
+            Close
+          </button>
+        </SheetContent>
+      </Sheet>
+    );
+  }
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -405,6 +616,147 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
                   {markersNeedingPhotos.map((m) => m.seq).join(", #")}
                 </div>
               )}
+
+              <div className="space-y-3 rounded-xl border border-border bg-card p-4">
+                <h3 className="text-sm font-semibold">Sign-off</h3>
+                {!readyToSign && (
+                  <p className="text-xs text-muted-foreground">
+                    Finish the items above before signing.
+                  </p>
+                )}
+
+                {readyToSign && draft.status === "draft" && (
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">
+                      Was the customer present for this inspection?
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setInspectedWithCustomer(true)}
+                        className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-semibold ${
+                          draft.inspectedWithCustomer
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-input bg-background hover:bg-accent"
+                        }`}
+                      >
+                        Yes, present
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInspectedWithCustomer(false)}
+                        className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-semibold ${
+                          !draft.inspectedWithCustomer
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-input bg-background hover:bg-accent"
+                        }`}
+                      >
+                        No, remote
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {readyToSign && draft.status === "draft" && draft.inspectedWithCustomer && (
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">Customer name *</label>
+                      <input
+                        value={signerName}
+                        onChange={(e) => setSignerName(e.target.value)}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium">Customer signature</label>
+                        <SignaturePadClearButton onClick={() => customerSigRef.current?.clear()} />
+                      </div>
+                      <SignaturePad onHandleReady={(h) => (customerSigRef.current = h)} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium">Inspector signature</label>
+                        <SignaturePadClearButton onClick={() => inspectorSigRef.current?.clear()} />
+                      </div>
+                      <SignaturePad onHandleReady={(h) => (inspectorSigRef.current = h)} />
+                    </div>
+                    <Disclaimer />
+                    <button
+                      type="button"
+                      disabled={signing}
+                      onClick={() => void handleSignPathA()}
+                      className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90 disabled:opacity-60"
+                    >
+                      {signing ? "Signing…" : "Complete & Sign"}
+                    </button>
+                  </div>
+                )}
+
+                {readyToSign &&
+                  draft.status === "draft" &&
+                  draft.inspectedWithCustomer === false && (
+                    <div className="space-y-3">
+                      <p className="text-xs text-muted-foreground">
+                        Sends a WhatsApp message asking the customer to confirm they've reviewed the
+                        inspection. Work on this job can't start while this sits unanswered past{" "}
+                        {PENDING_ACKNOWLEDGMENT_THRESHOLD_MS / 3600000} hours.
+                      </p>
+                      <Disclaimer />
+                      <button
+                        type="button"
+                        disabled={sendingAck}
+                        onClick={() => void handleSendForAcknowledgment()}
+                        className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90 disabled:opacity-60"
+                      >
+                        {sendingAck ? "Sending…" : "Send for Acknowledgment"}
+                      </button>
+                    </div>
+                  )}
+
+                {draft.status === "pending_acknowledgment" && (
+                  <div className="space-y-3">
+                    <p className="text-xs text-muted-foreground">
+                      Awaiting customer reply since{" "}
+                      {draft.remoteAck ? formatDateTime(draft.remoteAck.sentAt) : "—"}.
+                    </p>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">Customer's reply</label>
+                      <textarea
+                        rows={2}
+                        value={replyText}
+                        onChange={(e) => setReplyText(e.target.value)}
+                        placeholder="Paste or describe their reply…"
+                        className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">Or a screenshot of the reply</label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => setPendingAckScreenshotFile(e.target.files?.[0] ?? null)}
+                        className="w-full text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium">Inspector signature</label>
+                        <SignaturePadClearButton onClick={() => inspectorSigRef.current?.clear()} />
+                      </div>
+                      <SignaturePad onHandleReady={(h) => (inspectorSigRef.current = h)} />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={signing}
+                      onClick={() => void handleAcknowledgeAndSign()}
+                      className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90 disabled:opacity-60"
+                    >
+                      {signing ? "Signing…" : "Mark Acknowledged & Sign"}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

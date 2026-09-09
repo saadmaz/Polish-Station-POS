@@ -1,8 +1,9 @@
 // Inspection module landing page — a worklist of jobs eligible for
 // inspection (vehicle physically at the shop) with a Start/Continue action,
-// modeled on _app.jobs.tsx's flat worklist. Phase 2 scope only: opens the
-// guided photo-capture stepper (InspectionSheet). Viewing a signed
-// inspection, the damage diagram, and sign-off are later phases.
+// modeled on _app.jobs.tsx's flat worklist. Opens the guided stepper
+// (InspectionSheet), which now covers photo capture, the damage diagram,
+// and sign-off (Phases 2-4). Viewing a signed inspection in place (rather
+// than just showing its status here) is a later phase.
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -11,7 +12,7 @@ import { PageHeader } from "@/components/page-header";
 import { InspectionSheet } from "@/components/inspection-sheet";
 import { formatDate } from "@/lib/date-format";
 import type { Job, JobStatus } from "@/lib/job";
-import type { Inspection } from "@/lib/inspection";
+import { latestNonSupersededInspection, type Inspection } from "@/lib/inspection";
 import { ClipboardCheck, Camera, CheckCircle2 } from "lucide-react";
 
 export const Route = createFileRoute("/_app/inspection")({
@@ -22,16 +23,6 @@ export const Route = createFileRoute("/_app/inspection")({
 // Vehicle is physically at the shop and work isn't finished/cancelled yet —
 // the window in which an inspection makes sense.
 const ELIGIBLE_STATUSES: JobStatus[] = ["arrived", "checked_in", "in_progress", "qc", "ready"];
-
-function latestNonSupersededInspection(
-  inspections: Inspection[],
-  jobId: string,
-): Inspection | null {
-  const candidates = inspections
-    .filter((i) => i.jobId === jobId && i.status !== "superseded")
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  return candidates[0] ?? null;
-}
 
 function InspectionPage() {
   const { jobs, inspections, startInspection } = useStore();
