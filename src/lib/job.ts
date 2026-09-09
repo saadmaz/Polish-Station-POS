@@ -7,6 +7,11 @@
 import type { ServiceCategory } from "./db";
 import type { ConditionFlag } from "./inspection";
 
+// Shared with inspection.ts's InspectionVehicleSnapshot and the damage
+// diagram (src/components/damage-diagram) — one definition, since all three
+// need to agree on exactly which body types have diagram artwork.
+export type BodyType = "sedan" | "hatchback" | "suv" | "double_cab" | "van" | "coupe";
+
 export type JobStatus =
   | "booked"
   | "arrived"
@@ -52,7 +57,7 @@ export interface Job {
     model: string;
     year: number | null;
     colour: string;
-    bodyType: "sedan" | "hatchback" | "suv" | "double_cab" | "van" | "coupe";
+    bodyType: BodyType;
     mileage: number | null;
     vin: string;
   };

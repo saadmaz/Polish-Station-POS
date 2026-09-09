@@ -12,7 +12,7 @@
 // fields — vehicleSnapshot/customerSnapshot are a read-only copy taken at
 // creation via buildInspectionSnapshots(). If they're wrong, they're fixed on
 // the Job, not here.
-import type { Job } from "./job";
+import type { Job, BodyType } from "./job";
 
 // ── Intake baseline ──────────────────────────────────────────────────────
 
@@ -392,7 +392,7 @@ export interface InspectionVehicleSnapshot {
   model: string;
   year: number | null;
   colour: string;
-  bodyType: "sedan" | "hatchback" | "suv" | "double_cab" | "van" | "coupe";
+  bodyType: BodyType;
 }
 
 export interface InspectionCustomerSnapshot {
