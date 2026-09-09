@@ -1,21 +1,24 @@
-// Guided photo-capture stepper (Phase 2 of the inspection module — see the
-// inspection spec). Scope is deliberately narrow: the 14-slot capture
-// sequence plus the cluster-photo transcription fields (odometer/fuel/
-// warning lights), nothing else from Inspection's schema yet. Modeled on
-// book.tsx's hand-rolled stepper (Step index + local state, no shared
-// stepper component exists in this codebase) and job-sheet.tsx's Sheet/form
-// conventions.
+// Guided photo-capture + damage-diagram stepper (Phases 2 and 3 of the
+// inspection module — see the inspection spec). Scope is deliberately
+// narrow: the 14-slot capture sequence, the cluster-photo transcription
+// fields (odometer/fuel/warning lights), and the damage diagram — nothing
+// else from Inspection's schema yet. Modeled on book.tsx's hand-rolled
+// stepper (Step index + local state, no shared stepper component exists in
+// this codebase) and job-sheet.tsx's Sheet/form conventions.
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ref as storageRef, getDownloadURL } from "firebase/storage";
 import { storage } from "@/lib/firebase";
 import { useStore } from "@/lib/store";
 import { captureInspectionPhoto } from "@/lib/inspection-photos";
+import { DamageDiagram } from "@/components/damage-diagram/damage-diagram";
 import {
   ALWAYS_REQUIRED_PHOTO_SLOTS,
   FUEL_LEVELS,
   WARNING_LIGHTS,
+  damageMarkerRequiresPhoto,
   missingRequiredPhotoSlots,
+  type DamageMarker,
   type FuelLevel,
   type Inspection,
   type PhotoSlotKey,
@@ -30,6 +33,14 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { Camera, RotateCcw, Loader2, Plus, Check } from "lucide-react";
+
+type StepDef = { kind: "photo"; slot: PhotoSlotKey } | { kind: "damage" } | { kind: "review" };
+
+const STEPS: StepDef[] = [
+  ...ALWAYS_REQUIRED_PHOTO_SLOTS.map((slot) => ({ kind: "photo" as const, slot })),
+  { kind: "damage" },
+  { kind: "review" },
+];
 
 interface InspectionSheetProps {
   open: boolean;
@@ -115,20 +126,30 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
       const uploadedSlots = new Set(
         inspection.photos.filter((p) => p.uploadedAt != null && p.slotKey).map((p) => p.slotKey),
       );
-      const firstIncomplete = ALWAYS_REQUIRED_PHOTO_SLOTS.findIndex((slot) => !uploadedSlots.has(slot));
+      const firstIncomplete = ALWAYS_REQUIRED_PHOTO_SLOTS.findIndex(
+        (slot) => !uploadedSlots.has(slot),
+      );
+      // firstIncomplete === -1 (every photo slot done) lands on the damage
+      // step next — its index in STEPS is exactly
+      // ALWAYS_REQUIRED_PHOTO_SLOTS.length, since damage immediately
+      // follows the photo slots.
       setStepIndex(firstIncomplete === -1 ? ALWAYS_REQUIRED_PHOTO_SLOTS.length : firstIncomplete);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, inspection.id]);
 
-  const steps = ALWAYS_REQUIRED_PHOTO_SLOTS;
-  const isReviewStep = stepIndex === steps.length;
-  const currentSlot = isReviewStep ? null : steps[stepIndex];
+  const currentStep = STEPS[stepIndex];
+  const isDamageStep = currentStep.kind === "damage";
+  const isReviewStep = currentStep.kind === "review";
+  const currentSlot = currentStep.kind === "photo" ? currentStep.slot : null;
   const currentPhoto = currentSlot
     ? draft.photos.find((p) => p.slotKey === currentSlot)
     : undefined;
   const extraPhotos = draft.photos.filter((p) => p.slotKey === null);
   const missingSlots = missingRequiredPhotoSlots(draft.photos, false);
+  const markersNeedingPhotos = draft.damageMarkers.filter(
+    (m) => damageMarkerRequiresPhoto(m.severity) && m.photoIds.length === 0,
+  );
 
   useEffect(() => {
     const toResolve = draft.photos.filter((p) => !urls[p.id]);
@@ -183,6 +204,22 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
     }
   }
 
+  // Damage diagram (Phase 3) — DamageDiagram doesn't know about Storage or
+  // Inspection.photos itself; these two callbacks are the only bridge. A
+  // damage-marker photo is a free-form (slotKey: null) capture merged into
+  // the same Inspection.photos array the guided steps use, so it shares
+  // their Storage path convention, offline-queue future, and the urls[]
+  // resolution effect above — no separate photo pipeline for damage photos.
+  async function uploadDamagePhoto(file: File): Promise<string> {
+    const photo = await captureInspectionPhoto(job.id, draft.id, null, file);
+    persist({ ...draft, photos: [...draft.photos, photo] });
+    return photo.id;
+  }
+
+  function handleDamageMarkersChange(markers: DamageMarker[]) {
+    persist({ ...draft, damageMarkers: markers });
+  }
+
   function toggleWarningLight(light: WarningLight) {
     const current = draft.warningLights;
     let next: WarningLight[];
@@ -207,18 +244,23 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
           <SheetDescription>
             {isReviewStep
               ? "Review"
-              : `Step ${stepIndex + 1} of ${steps.length} — ${SLOT_LABELS[currentSlot!]}`}
+              : isDamageStep
+                ? `Step ${stepIndex + 1} of ${STEPS.length - 1} — Damage diagram`
+                : `Step ${stepIndex + 1} of ${STEPS.length - 1} — ${SLOT_LABELS[currentSlot!]}`}
           </SheetDescription>
         </SheetHeader>
 
         <div className="flex flex-1 flex-col gap-4 py-4">
-          {/* progress dots — same idea as book.tsx's ProgressBar, simplified to dots since there are 13 steps, not 5 */}
+          {/* progress dots — same idea as book.tsx's ProgressBar, simplified to dots since there are 14 steps (13 photo slots + damage), not 5 */}
           <div className="flex flex-wrap gap-1">
-            {steps.map((slot, i) => {
-              const done = draft.photos.some((p) => p.slotKey === slot);
+            {STEPS.filter((s) => s.kind !== "review").map((step, i) => {
+              const done =
+                step.kind === "photo"
+                  ? draft.photos.some((p) => p.slotKey === step.slot)
+                  : draft.damageMarkers.length > 0; // soft indicator only — zero damage is a valid outcome
               return (
                 <div
-                  key={slot}
+                  key={step.kind === "photo" ? step.slot : "damage"}
                   className={`h-1.5 flex-1 rounded-full ${
                     i === stepIndex ? "bg-primary" : done ? "bg-success" : "bg-muted"
                   }`}
@@ -330,6 +372,16 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
             </>
           )}
 
+          {isDamageStep && (
+            <DamageDiagram
+              bodyType={draft.vehicleSnapshot.bodyType}
+              markers={draft.damageMarkers}
+              onMarkersChange={handleDamageMarkersChange}
+              uploadPhoto={uploadDamagePhoto}
+              getPhotoUrl={(id) => urls[id]}
+            />
+          )}
+
           {isReviewStep && (
             <div className="space-y-3">
               {missingSlots.length === 0 ? (
@@ -340,6 +392,17 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
               ) : (
                 <div className="rounded-md bg-muted border border-border px-3 py-2 text-xs text-muted-foreground">
                   Still missing: {missingSlots.map((s) => SLOT_LABELS[s]).join(", ")}
+                </div>
+              )}
+              {markersNeedingPhotos.length === 0 ? (
+                <div className="flex items-center gap-2 rounded-md bg-success/10 border border-success/30 px-3 py-2 text-sm text-success">
+                  <Check className="h-4 w-4" />
+                  Every moderate/severe damage marker has a linked photo.
+                </div>
+              ) : (
+                <div className="rounded-md bg-muted border border-border px-3 py-2 text-xs text-muted-foreground">
+                  Markers still needing a photo: #
+                  {markersNeedingPhotos.map((m) => m.seq).join(", #")}
                 </div>
               )}
             </div>
@@ -407,7 +470,7 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
             ) : (
               <button
                 type="button"
-                onClick={() => setStepIndex((i) => Math.min(steps.length, i + 1))}
+                onClick={() => setStepIndex((i) => Math.min(STEPS.length - 1, i + 1))}
                 disabled={!canGoNext}
                 className="flex-1 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90 disabled:opacity-40"
               >

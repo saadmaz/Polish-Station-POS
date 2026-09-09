@@ -1,6 +1,7 @@
-// Interactive damage diagram — Phase 3, Step A: standalone, no Firestore/
-// Storage, reviewed in isolation before wiring into the real inspection flow
-// (see diagram-preview route). Touch-first; designed and tested at 375px.
+// Interactive damage diagram — Phase 3. Step A (standalone, no Firestore/
+// Storage) was reviewed in isolation first; this is Step B, wired into the
+// real inspection flow via InspectionSheet. Touch-first; designed and
+// tested at 375px.
 //
 // Interaction model:
 //   - tap empty space  -> places a new marker there (default minor/scratch),
@@ -11,7 +12,14 @@
 // A pointer-down starts a long-press timer; movement past a small threshold
 // cancels it and switches to drag instead, so the same gesture start can't
 // be read as both.
+//
+// Photo storage is abstracted behind uploadPhoto/getPhotoUrl rather than
+// this component knowing about Storage/blob URLs itself — InspectionSheet
+// wires uploadPhoto to the real captureInspectionPhoto() flow (a free-form,
+// slotKey: null photo merged into Inspection.photos); nothing here assumes
+// how a photo id resolves to a displayable URL.
 import { useCallback, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useConfirm } from "@/hooks/use-confirm";
 import type { BodyType } from "@/lib/job";
 import {
@@ -34,28 +42,24 @@ const VIEWS: DamageMarkerView[] = ["front", "rear", "left", "right", "top"];
 const LONG_PRESS_MS = 550;
 const DRAG_THRESHOLD_PX = 6;
 
-/** A photo linked to a marker, in this standalone preview only — a local
- *  blob URL, never uploaded anywhere. Step B replaces this with the real
- *  Photo/Storage flow from inspection-photos.ts. */
-export interface LocalMarkerPhoto {
-  id: string;
-  url: string;
-}
-
 interface DamageDiagramProps {
   bodyType: BodyType;
   markers: DamageMarker[];
   onMarkersChange: (markers: DamageMarker[]) => void;
-  photos: Record<string, LocalMarkerPhoto>;
-  onPhotosChange: (photos: Record<string, LocalMarkerPhoto>) => void;
+  /** Stores `file` wherever the caller stores photos and resolves to an id
+   *  usable with getPhotoUrl. */
+  uploadPhoto: (file: File) => Promise<string>;
+  /** Resolves a previously-uploaded photo id to a displayable (thumbnail)
+   *  URL — undefined while still resolving/unavailable. */
+  getPhotoUrl: (photoId: string) => string | undefined;
 }
 
 export function DamageDiagram({
   bodyType,
   markers,
   onMarkersChange,
-  photos,
-  onPhotosChange,
+  uploadPhoto,
+  getPhotoUrl,
 }: DamageDiagramProps) {
   const [view, setView] = useState<DamageMarkerView>("front");
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null);
@@ -179,11 +183,15 @@ export function DamageDiagram({
     if (selectedSeq === seq) setSelectedSeq(null);
   }
 
-  function addPhotoToMarker(seq: number, file: File) {
-    const id = crypto.randomUUID();
-    const url = URL.createObjectURL(file);
-    onPhotosChange({ ...photos, [id]: { id, url } });
-    updateMarker(seq, { photoIds: [...(markers.find((m) => m.seq === seq)?.photoIds ?? []), id] });
+  async function addPhotoToMarker(seq: number, file: File) {
+    try {
+      const id = await uploadPhoto(file);
+      updateMarker(seq, {
+        photoIds: [...(markers.find((m) => m.seq === seq)?.photoIds ?? []), id],
+      });
+    } catch {
+      toast.error("Couldn't upload that photo, please try again");
+    }
   }
 
   function removePhotoFromMarker(seq: number, photoId: string) {
@@ -282,16 +290,16 @@ export function DamageDiagram({
       {selected && (
         <MarkerEditor
           marker={selected}
-          photos={photos}
+          getPhotoUrl={getPhotoUrl}
           onChange={(patch) => updateMarker(selected.seq, patch)}
-          onAddPhoto={(file) => addPhotoToMarker(selected.seq, file)}
+          onAddPhoto={(file) => void addPhotoToMarker(selected.seq, file)}
           onRemovePhoto={(id) => removePhotoFromMarker(selected.seq, id)}
           onClose={() => setSelectedSeq(null)}
           onDelete={() => void handleLongPress(selected.seq)}
         />
       )}
 
-      <DamageMarkerTable markers={markers} photos={photos} onSelect={setSelectedSeq} />
+      <DamageMarkerTable markers={markers} getPhotoUrl={getPhotoUrl} onSelect={setSelectedSeq} />
     </div>
   );
 }
@@ -300,7 +308,7 @@ export function DamageDiagram({
 
 interface MarkerEditorProps {
   marker: DamageMarker;
-  photos: Record<string, LocalMarkerPhoto>;
+  getPhotoUrl: (photoId: string) => string | undefined;
   onChange: (patch: Partial<DamageMarker>) => void;
   onAddPhoto: (file: File) => void;
   onRemovePhoto: (id: string) => void;
@@ -310,7 +318,7 @@ interface MarkerEditorProps {
 
 function MarkerEditor({
   marker,
-  photos,
+  getPhotoUrl,
   onChange,
   onAddPhoto,
   onRemovePhoto,
@@ -320,8 +328,8 @@ function MarkerEditor({
   const requiresPhoto = damageMarkerRequiresPhoto(marker.severity);
   const blocked = requiresPhoto && marker.photoIds.length === 0;
   const linkedPhotos = marker.photoIds
-    .map((id) => photos[id])
-    .filter((p): p is LocalMarkerPhoto => !!p);
+    .map((id) => ({ id, url: getPhotoUrl(id) }))
+    .filter((p): p is { id: string; url: string } => !!p.url);
 
   return (
     <div className="space-y-3 rounded-xl border border-border bg-card p-4">
@@ -453,11 +461,11 @@ function MarkerEditor({
 
 function DamageMarkerTable({
   markers,
-  photos,
+  getPhotoUrl,
   onSelect,
 }: {
   markers: DamageMarker[];
-  photos: Record<string, LocalMarkerPhoto>;
+  getPhotoUrl: (photoId: string) => string | undefined;
   onSelect: (seq: number) => void;
 }) {
   if (markers.length === 0) {
@@ -494,16 +502,17 @@ function DamageMarkerTable({
               <td className="px-3 py-2">
                 <div className="flex gap-1">
                   {m.photoIds.length === 0 && <span className="text-muted-foreground">—</span>}
-                  {m.photoIds.map((id) =>
-                    photos[id] ? (
+                  {m.photoIds.map((id) => {
+                    const url = getPhotoUrl(id);
+                    return url ? (
                       <img
                         key={id}
-                        src={photos[id].url}
+                        src={url}
                         alt=""
                         className="h-6 w-6 rounded border border-border object-cover"
                       />
-                    ) : null,
-                  )}
+                    ) : null;
+                  })}
                 </div>
               </td>
             </tr>

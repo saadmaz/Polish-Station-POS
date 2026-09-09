@@ -11,7 +11,6 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as HealthzRouteImport } from './routes/healthz'
-import { Route as DiagramPreviewRouteImport } from './routes/diagram-preview'
 import { Route as DiagRouteImport } from './routes/diag'
 import { Route as ChangePinRouteImport } from './routes/change-pin'
 import { Route as BookRouteImport } from './routes/book'
@@ -46,11 +45,6 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
 const HealthzRoute = HealthzRouteImport.update({
   id: '/healthz',
   path: '/healthz',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DiagramPreviewRoute = DiagramPreviewRouteImport.update({
-  id: '/diagram-preview',
-  path: '/diagram-preview',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DiagRoute = DiagRouteImport.update({
@@ -183,7 +177,6 @@ export interface FileRoutesByFullPath {
   '/book': typeof BookRoute
   '/change-pin': typeof ChangePinRoute
   '/diag': typeof DiagRoute
-  '/diagram-preview': typeof DiagramPreviewRoute
   '/healthz': typeof HealthzRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/bookings': typeof AppBookingsRoute
@@ -212,7 +205,6 @@ export interface FileRoutesByTo {
   '/book': typeof BookRoute
   '/change-pin': typeof ChangePinRoute
   '/diag': typeof DiagRoute
-  '/diagram-preview': typeof DiagramPreviewRoute
   '/healthz': typeof HealthzRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/bookings': typeof AppBookingsRoute
@@ -243,7 +235,6 @@ export interface FileRoutesById {
   '/book': typeof BookRoute
   '/change-pin': typeof ChangePinRoute
   '/diag': typeof DiagRoute
-  '/diagram-preview': typeof DiagramPreviewRoute
   '/healthz': typeof HealthzRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_app/bookings': typeof AppBookingsRoute
@@ -274,7 +265,6 @@ export interface FileRouteTypes {
     | '/book'
     | '/change-pin'
     | '/diag'
-    | '/diagram-preview'
     | '/healthz'
     | '/sitemap.xml'
     | '/bookings'
@@ -303,7 +293,6 @@ export interface FileRouteTypes {
     | '/book'
     | '/change-pin'
     | '/diag'
-    | '/diagram-preview'
     | '/healthz'
     | '/sitemap.xml'
     | '/bookings'
@@ -333,7 +322,6 @@ export interface FileRouteTypes {
     | '/book'
     | '/change-pin'
     | '/diag'
-    | '/diagram-preview'
     | '/healthz'
     | '/sitemap.xml'
     | '/_app/bookings'
@@ -364,7 +352,6 @@ export interface RootRouteChildren {
   BookRoute: typeof BookRoute
   ChangePinRoute: typeof ChangePinRoute
   DiagRoute: typeof DiagRoute
-  DiagramPreviewRoute: typeof DiagramPreviewRoute
   HealthzRoute: typeof HealthzRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ApiPublicBookingRoute: typeof ApiPublicBookingRoute
@@ -387,13 +374,6 @@ declare module '@tanstack/react-router' {
       path: '/healthz'
       fullPath: '/healthz'
       preLoaderRoute: typeof HealthzRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/diagram-preview': {
-      id: '/diagram-preview'
-      path: '/diagram-preview'
-      fullPath: '/diagram-preview'
-      preLoaderRoute: typeof DiagramPreviewRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/diag': {
@@ -620,7 +600,6 @@ const rootRouteChildren: RootRouteChildren = {
   BookRoute: BookRoute,
   ChangePinRoute: ChangePinRoute,
   DiagRoute: DiagRoute,
-  DiagramPreviewRoute: DiagramPreviewRoute,
   HealthzRoute: HealthzRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   ApiPublicBookingRoute: ApiPublicBookingRoute,
