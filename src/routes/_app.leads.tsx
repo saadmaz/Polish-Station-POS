@@ -1018,7 +1018,6 @@ function NewLeadDialog({
   const [vehicle, setVehicle] = useState("");
   const [serviceId, setServiceId] = useState("");
   const [preferredDate, setPreferredDate] = useState("");
-  const [timeWindow, setTimeWindow] = useState("");
   const [notes, setNotes] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -1032,7 +1031,6 @@ function NewLeadDialog({
     setVehicle("");
     setServiceId("");
     setPreferredDate("");
-    setTimeWindow("");
     setNotes("");
     setMessage("");
   }
@@ -1047,9 +1045,7 @@ function NewLeadDialog({
       ...(phone.trim() ? { phone: phone.trim() } : {}),
       ...(email.trim() ? { email: email.trim() } : {}),
       ...(type === "contact" ? { message: message.trim() } : {}),
-      ...(type === "booking"
-        ? { vehicle: vehicle.trim(), serviceId, preferredDate, timeWindow }
-        : {}),
+      ...(type === "booking" ? { vehicle: vehicle.trim(), serviceId, preferredDate } : {}),
       ...(notes.trim() ? { notes: notes.trim() } : {}),
       source,
     });
@@ -1178,25 +1174,14 @@ function NewLeadDialog({
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Preferred Date</label>
-                  <input
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    placeholder="e.g. this weekend"
-                    value={preferredDate}
-                    onChange={(e) => setPreferredDate(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Time Window</label>
-                  <input
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    placeholder="e.g. morning"
-                    value={timeWindow}
-                    onChange={(e) => setTimeWindow(e.target.value)}
-                  />
-                </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Preferred Date</label>
+                <input
+                  type="date"
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  value={preferredDate}
+                  onChange={(e) => setPreferredDate(e.target.value)}
+                />
               </div>
             </>
           )}
