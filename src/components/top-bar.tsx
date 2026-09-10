@@ -8,7 +8,7 @@ import { MobileNavSheet } from "@/components/app-sidebar";
 import { useStore } from "@/lib/store";
 import { formatTime, formatDateWithWeekday } from "@/lib/date-format";
 
-export function TopBar() {
+export function TopBar({ pendingPhotoCount = 0 }: { pendingPhotoCount?: number }) {
   const [now, setNow] = useState<Date | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [bookingOpen, setBookingOpen] = useState(false);
@@ -102,7 +102,11 @@ export function TopBar() {
       <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
       <BookingSheet open={bookingOpen} onOpenChange={setBookingOpen} />
       <ExpenseModal open={expenseOpen} onClose={() => setExpenseOpen(false)} />
-      <MobileNavSheet open={mobileNavOpen} onOpenChange={setMobileNavOpen} />
+      <MobileNavSheet
+        open={mobileNavOpen}
+        onOpenChange={setMobileNavOpen}
+        pendingPhotoCount={pendingPhotoCount}
+      />
     </>
   );
 }

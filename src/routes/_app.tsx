@@ -4,6 +4,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { TopBar } from "@/components/top-bar";
 import { useAuth } from "@/lib/auth";
 import { useStore } from "@/lib/store";
+import { usePhotoQueue } from "@/hooks/use-photo-queue";
 import { MODULES, moduleForPath } from "@/lib/permissions";
 
 export const Route = createFileRoute("/_app")({
@@ -22,6 +23,9 @@ function AppLayout() {
   const { staff, loading, mustChangePin, isOffline, can } = useAuth();
   const { storeLoading } = useStore();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // Mounted exactly once here, not per-component that happens to touch
+  // photos — see use-photo-queue.ts's header comment.
+  const { pendingCount: pendingPhotoCount } = usePhotoQueue();
 
   // Order matters: resolve auth first and bounce logged-out visitors to the
   // login page immediately, before considering data. storeLoading only
@@ -59,7 +63,7 @@ function AppLayout() {
   // it actually was.
   return (
     <div className="flex h-screen w-full bg-background text-foreground">
-      <AppSidebar />
+      <AppSidebar pendingPhotoCount={pendingPhotoCount} />
       <div className="flex flex-1 flex-col overflow-hidden">
         {isOffline && (
           <div className="flex items-center justify-center gap-2 bg-amber-500/15 px-4 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400">
@@ -68,7 +72,7 @@ function AppLayout() {
             viewing the dashboard.
           </div>
         )}
-        <TopBar />
+        <TopBar pendingPhotoCount={pendingPhotoCount} />
         <main className="flex-1 overflow-auto bg-muted/30">
           {storeLoading ? (
             <div className="flex h-full w-full items-center justify-center">

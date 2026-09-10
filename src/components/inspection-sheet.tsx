@@ -47,7 +47,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { Camera, RotateCcw, Loader2, Plus, Check, ShieldAlert } from "lucide-react";
+import { Camera, RotateCcw, Loader2, Plus, Check, ShieldAlert, UploadCloud } from "lucide-react";
 
 type StepDef = { kind: "photo"; slot: PhotoSlotKey } | { kind: "damage" } | { kind: "review" };
 
@@ -189,7 +189,15 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
   const markersNeedingPhotos = draft.damageMarkers.filter(
     (m) => damageMarkerRequiresPhoto(m.severity) && m.photoIds.length === 0,
   );
-  const readyToSign = missingSlots.length === 0 && markersNeedingPhotos.length === 0;
+  // Phase 6: distinct from missingSlots above — a slot can be "covered" by
+  // a photo that was captured offline and is still sitting in the local
+  // queue (see photo-queue.ts), not actually in Storage yet. Sign-off must
+  // wait for the real upload, not just the capture.
+  const photosStillUploading = draft.photos.filter((p) => p.uploadedAt == null);
+  const readyToSign =
+    missingSlots.length === 0 &&
+    markersNeedingPhotos.length === 0 &&
+    photosStillUploading.length === 0;
 
   useEffect(() => {
     const toResolve = draft.photos.filter((p) => !urls[p.id]);
@@ -645,6 +653,15 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
                 <div className="rounded-md bg-muted border border-border px-3 py-2 text-xs text-muted-foreground">
                   Markers still needing a photo: #
                   {markersNeedingPhotos.map((m) => m.seq).join(", #")}
+                </div>
+              )}
+              {photosStillUploading.length > 0 && (
+                <div className="flex items-center gap-2 rounded-md bg-warning/10 border border-warning/30 px-3 py-2 text-xs text-warning-foreground">
+                  <UploadCloud className="h-3.5 w-3.5 shrink-0" />
+                  {photosStillUploading.length} photo{photosStillUploading.length === 1 ? "" : "s"}{" "}
+                  still uploading — captured, but not yet in Storage. Sign-off will unlock once{" "}
+                  {photosStillUploading.length === 1 ? "it" : "they"} finish
+                  {photosStillUploading.length === 1 ? "es" : ""}.
                 </div>
               )}
 

@@ -20,6 +20,7 @@ import {
   MessageCircleQuestion,
   Rss,
   Wrench,
+  UploadCloud,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth";
@@ -125,49 +126,72 @@ function NavLinks({
 function UserRow({
   collapsed = false,
   onAfterLock,
+  pendingPhotoCount = 0,
 }: {
   collapsed?: boolean;
   onAfterLock?: () => void;
+  pendingPhotoCount?: number;
 }) {
   const { staff, isOffline, logout } = useAuth();
   const navigate = useNavigate();
   if (!staff) return null;
   return (
-    <div className={cn("flex items-center gap-2 rounded-md p-2", collapsed && "justify-center")}>
-      <div
-        className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-semibold text-primary-foreground"
-        style={{ background: staff.color }}
-        title={isOffline ? "Offline session" : undefined}
-      >
-        {isOffline ? (
-          <WifiOff className="h-3.5 w-3.5" />
-        ) : (
-          staff.name
-            .split(" ")
-            .map((p) => p[0])
-            .join("")
+    <div className={cn("flex flex-col gap-1.5", collapsed && "items-center")}>
+      <div className={cn("flex items-center gap-2 rounded-md p-2", collapsed && "justify-center")}>
+        <div
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-semibold text-primary-foreground"
+          style={{ background: staff.color }}
+          title={isOffline ? "Offline session" : undefined}
+        >
+          {isOffline ? (
+            <WifiOff className="h-3.5 w-3.5" />
+          ) : (
+            staff.name
+              .split(" ")
+              .map((p) => p[0])
+              .join("")
+          )}
+        </div>
+        {!collapsed && (
+          <div className="min-w-0 flex-1 leading-tight">
+            <div className="truncate text-sm font-semibold">{staff.name}</div>
+            <div className="text-[11px] uppercase tracking-wider text-sidebar-foreground/60">
+              {isOffline ? "Offline" : staff.role}
+            </div>
+          </div>
+        )}
+        {!collapsed && (
+          <button
+            aria-label="Lock"
+            onClick={() => {
+              logout();
+              navigate({ to: "/" });
+              onAfterLock?.();
+            }}
+            className="rounded-md p-2.5 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          >
+            <Lock className="h-4 w-4" />
+          </button>
         )}
       </div>
-      {!collapsed && (
-        <div className="min-w-0 flex-1 leading-tight">
-          <div className="truncate text-sm font-semibold">{staff.name}</div>
-          <div className="text-[11px] uppercase tracking-wider text-sidebar-foreground/60">
-            {isOffline ? "Offline" : staff.role}
-          </div>
-        </div>
-      )}
-      {!collapsed && (
-        <button
-          aria-label="Lock"
-          onClick={() => {
-            logout();
-            navigate({ to: "/" });
-            onAfterLock?.();
-          }}
-          className="rounded-md p-2.5 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+      {/* Persistent, not just shown inside the inspection screen — a queue
+          that only surfaces where it was created is a silent queue the
+          moment someone navigates away (see photo-queue.ts). */}
+      {pendingPhotoCount > 0 && (
+        <div
+          className={cn(
+            "flex items-center gap-1.5 rounded-md bg-warning/15 px-2 py-1 text-[11px] font-medium text-warning-foreground",
+            collapsed && "px-1.5",
+          )}
+          title={`${pendingPhotoCount} inspection photo${pendingPhotoCount === 1 ? "" : "s"} waiting to upload`}
         >
-          <Lock className="h-4 w-4" />
-        </button>
+          <UploadCloud className="h-3.5 w-3.5 shrink-0" />
+          {!collapsed && (
+            <span className="truncate">
+              {pendingPhotoCount} photo{pendingPhotoCount === 1 ? "" : "s"} pending upload
+            </span>
+          )}
+        </div>
       )}
     </div>
   );
@@ -176,7 +200,7 @@ function UserRow({
 /** Desktop sidebar. Hidden on phones: the TopBar hamburger opens
  *  MobileNavSheet instead, because a fixed 224px rail on a 375px screen
  *  leaves the actual app ~150px wide. */
-export function AppSidebar() {
+export function AppSidebar({ pendingPhotoCount = 0 }: { pendingPhotoCount?: number }) {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
@@ -219,7 +243,7 @@ export function AppSidebar() {
       <NavLinks collapsed={collapsed} />
 
       <div className="mt-auto border-t border-sidebar-border p-2">
-        <UserRow collapsed={collapsed} />
+        <UserRow collapsed={collapsed} pendingPhotoCount={pendingPhotoCount} />
       </div>
     </aside>
   );
@@ -230,9 +254,11 @@ export function AppSidebar() {
 export function MobileNavSheet({
   open,
   onOpenChange,
+  pendingPhotoCount = 0,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  pendingPhotoCount?: number;
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -254,7 +280,7 @@ export function MobileNavSheet({
           <NavLinks onNavigate={() => onOpenChange(false)} />
         </div>
         <div className="mt-auto border-t border-sidebar-border p-2">
-          <UserRow onAfterLock={() => onOpenChange(false)} />
+          <UserRow onAfterLock={() => onOpenChange(false)} pendingPhotoCount={pendingPhotoCount} />
         </div>
       </SheetContent>
     </Sheet>

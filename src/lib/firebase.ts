@@ -1,6 +1,12 @@
 import { initializeApp, getApps } from "firebase/app";
 import { connectAuthEmulator, getAuth } from "firebase/auth";
-import { connectFirestoreEmulator, getFirestore } from "firebase/firestore";
+import {
+  connectFirestoreEmulator,
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from "firebase/firestore";
 import { connectStorageEmulator, getStorage } from "firebase/storage";
 
 const firebaseConfig = {
@@ -15,7 +21,36 @@ const firebaseConfig = {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
 
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+
+// Offline persistence (inspection module Phase 6 — "do not defer"): an
+// IndexedDB-backed cache so a signed-in staff member can keep creating and
+// editing ANY document while genuinely offline, not only inspections —
+// this is an SDK-wide setting, there's no way to scope it to one
+// collection — with the SDK's own built-in write queue syncing
+// automatically on reconnect. That queue is exactly what an inspection
+// document needs to be "fully creatable and editable offline"; the photo
+// queue below handles Storage uploads separately, since Storage has no
+// equivalent built-in offline behaviour.
+//
+// Guarded to the browser only: persistentLocalCache touches `indexedDB`,
+// which doesn't exist during this app's SSR render pass, and
+// getFirestore()'s plain in-memory cache is exactly what SSR needs anyway
+// (a server render never persists between requests). The try/catch handles
+// Vite HMR re-running this module against an app that already has
+// Firestore initialized from a previous pass — initializeFirestore() throws
+// in that case; the persistent-cache settings from the first call already
+// stuck, so falling back to getFirestore() just returns that same instance.
+export const db = (() => {
+  if (typeof window === "undefined") return getFirestore(app);
+  try {
+    return initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    });
+  } catch {
+    return getFirestore(app);
+  }
+})();
+
 export const storage = getStorage(app);
 
 // Opt-in only (VITE_USE_FIREBASE_EMULATOR=true): every other build/run talks
