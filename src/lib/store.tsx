@@ -272,7 +272,11 @@ interface Store {
     data: Omit<Job, "id" | "createdAt" | "updatedAt" | "status" | "bookingId" | "vehicleId">,
   ) => Promise<Job>;
   updateJob: (job: Job) => void;
-  transitionJobStatus: (id: string, toStatus: JobStatus) => Promise<void>;
+  transitionJobStatus: (
+    id: string,
+    toStatus: JobStatus,
+    extraFields?: Partial<Job>,
+  ) => Promise<void>;
 
   // Inspections (Phase 2: guided photo capture — see src/lib/inspection.ts).
   // startInspection creates the draft doc (status "draft", every field
@@ -1646,9 +1650,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // Only ever advances via nextQuoteVersion — never set by hand — so a
       // job card PDF already handed to a customer is never silently
       // superseded by an edit that didn't actually change the price.
-      estimate: job.estimate
-        ? { ...job.estimate, quoteVersion: nextQuoteVersion(before ?? job, job.price) }
-        : job.estimate,
+      // Conditionally spread rather than `estimate: job.estimate ? ... :
+      // job.estimate` — that form writes an explicit `estimate: undefined`
+      // for walk-in jobs with no estimate at all, which setDoc() rejects.
+      ...(job.estimate
+        ? {
+            estimate: { ...job.estimate, quoteVersion: nextQuoteVersion(before ?? job, job.price) },
+          }
+        : {}),
     };
     write("jobs", after);
     logAudit(actorRef.current, {
@@ -1660,22 +1669,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const transitionJobStatus = useCallback(async (id: string, toStatus: JobStatus) => {
-    const job = S.current.jobs.find((j) => j.id === id);
-    if (!job) return;
-    const actor = actorRef.current ?? { id: "", name: "" };
-    const at = new Date().toISOString();
-    const batch = writeBatch(fsDb);
-    applyJobStatusTransition(batch, job, toStatus, actor, at);
-    await batch.commit();
-    logAudit(actor, {
-      action: "TRANSITION_JOB_STATUS",
-      entity: "Job",
-      entityId: id,
-      before: job,
-      after: { ...job, status: toStatus, updatedAt: at },
-    });
-  }, []);
+  // `extraFields` lets a caller land other field changes (e.g. HandoverSheet's
+  // `handover` record) in the SAME batch.set() as the status flip. Sequencing
+  // a separate updateJob() call first and awaiting this afterward doesn't
+  // work: this reads `job` from the local store cache, which won't yet
+  // reflect an updateJob() write still in flight, so this write's own
+  // batch.set(..., { ...job, ... }) would overwrite it right back out.
+  const transitionJobStatus = useCallback(
+    async (id: string, toStatus: JobStatus, extraFields?: Partial<Job>) => {
+      const job = S.current.jobs.find((j) => j.id === id);
+      if (!job) return;
+      const merged = { ...job, ...extraFields };
+      const actor = actorRef.current ?? { id: "", name: "" };
+      const at = new Date().toISOString();
+      const batch = writeBatch(fsDb);
+      applyJobStatusTransition(batch, merged, toStatus, actor, at);
+      await batch.commit();
+      logAudit(actor, {
+        action: "TRANSITION_JOB_STATUS",
+        entity: "Job",
+        entityId: id,
+        before: job,
+        after: { ...merged, status: toStatus, updatedAt: at },
+      });
+    },
+    [],
+  );
 
   // ── Inspection mutations (Phase 2: guided photo capture) ──────────────────
   // See src/lib/inspection.ts for the type and the two functions imported

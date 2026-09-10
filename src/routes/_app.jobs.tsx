@@ -12,6 +12,7 @@ import { useConfirm } from "@/hooks/use-confirm";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip, statusVariant } from "@/components/status-chip";
 import { JobSheet } from "@/components/job-sheet";
+import { HandoverSheet } from "@/components/handover-sheet";
 import { formatCurrency } from "@/lib/currency";
 import { formatDate } from "@/lib/date-format";
 import { legalNextStatuses, type Job, type JobStatus } from "@/lib/job";
@@ -62,6 +63,7 @@ function JobDetailPanel({ job }: { job: Job }) {
   const { staffList } = useStaffList();
   const { confirm, ConfirmDialog } = useConfirm();
   const [generating, setGenerating] = useState(false);
+  const [handoverOpen, setHandoverOpen] = useState(false);
 
   const supervisorName = staffList.find((s) => s.id === job.schedule?.supervisorId)?.name ?? "";
   const technicianNames = (job.schedule?.technicianIds ?? [])
@@ -85,6 +87,14 @@ function JobDetailPanel({ job }: { job: Job }) {
       toast.error(
         "Can't start work — this job's inspection has been awaiting customer acknowledgment for over 4 hours. Resolve it on the Inspection page first.",
       );
+      return;
+    }
+    // Phase 7: "ready" -> "delivered" isn't a plain status flip — it opens
+    // the handover screen, which does the actual transition itself once
+    // the after-photos and acceptance signature are captured. See
+    // HandoverSheet's handleConfirm().
+    if (to === "delivered") {
+      setHandoverOpen(true);
       return;
     }
     const confirmMessage = TERMINAL_CONFIRM[to];
@@ -123,6 +133,7 @@ function JobDetailPanel({ job }: { job: Job }) {
   return (
     <div className="space-y-4">
       {ConfirmDialog}
+      <HandoverSheet open={handoverOpen} onOpenChange={setHandoverOpen} job={job} />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <div>
           <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">

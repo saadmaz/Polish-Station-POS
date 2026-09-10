@@ -78,6 +78,26 @@ export interface Job {
   // these without loading the inspection itself. Absent on every job with no
   // signed inspection yet.
   conditionFlags?: ConditionFlag[];
+
+  // Phase 7 — delivery handover. Set once, in the same write as the
+  // "ready" -> "delivered" transition it gates (see HandoverSheet /
+  // store.tsx's transitionJobStatus wiring) — there is no draft state for
+  // this the way an Inspection has one; the screen either completes and
+  // the job delivers, or neither happens. Photos aren't versioned/never-
+  // overwrite the way documents.jobCard is above — a handover photo can be
+  // retaken freely right up until "Confirm Delivery" is clicked, same as
+  // an intake photo before its inspection is signed.
+  handover?: {
+    afterPhotos: {
+      slotKey: "front_left_34" | "front_right_34" | "rear_left_34" | "rear_right_34";
+      storagePath: string;
+      capturedAt: string;
+    }[];
+    customerAcceptance: { storagePath: string; signerName: string; signedAt: string };
+    completedById: string;
+    completedByName: string;
+    completedAt: string;
+  };
 }
 
 export interface JobEvent {

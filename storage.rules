@@ -46,6 +46,17 @@ service firebase.storage {
                           in ["draft", "pending_acknowledgment"]);
     }
 
+    // Delivery handover photos + customer acceptance signature (Phase 7 —
+    // see src/lib/job.ts's Job.handover). Not inspection-scoped (the
+    // inspection is already signed/immutable by delivery time), so this
+    // gets its own path rather than living under .../inspections/. Gated
+    // exactly like the job-card documents path above — same reasoning:
+    // only someone who could edit the underlying job can write here.
+    match /jobs/{jobId}/handover/{fileName} {
+      allow read:  if isAuth();
+      allow write: if hasModule("jobs") && (isManagerOrAbove() || role() == "Advisor");
+    }
+
     // Everything else: no app feature uses Cloud Storage outside the above.
     match /{allPaths=**} {
       allow read, write: if false;

@@ -8,8 +8,8 @@ import { storage } from "./firebase";
 import { enqueuePhoto, flushPhotoQueue } from "./photo-queue";
 import type { Photo, PhotoSlotKey } from "./inspection";
 
-const MAX_LONG_EDGE = 1600;
-const JPEG_QUALITY = 0.8;
+export const MAX_LONG_EDGE = 1600;
+export const JPEG_QUALITY = 0.8;
 const THUMBNAIL_LONG_EDGE = 320;
 
 // The Firebase Storage SDK's own retry/backoff on a genuinely severed
@@ -48,7 +48,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  * are already upright); the capture timestamp is tracked as Photo.capturedAt
  * instead of an EXIF tag, which is exactly what that field is for.
  */
-async function resizeToJpeg(
+export async function resizeToJpeg(
   file: File | Blob,
   maxLongEdge: number,
   quality: number,
@@ -111,7 +111,9 @@ export async function captureInspectionPhoto(
     await withTimeout(
       Promise.all([
         uploadBytes(storageRef(storage, storagePath), full, { contentType: "image/jpeg" }),
-        uploadBytes(storageRef(storage, thumbnailStoragePath), thumbnail, { contentType: "image/jpeg" }),
+        uploadBytes(storageRef(storage, thumbnailStoragePath), thumbnail, {
+          contentType: "image/jpeg",
+        }),
       ]),
       UPLOAD_TIMEOUT_MS,
     );
