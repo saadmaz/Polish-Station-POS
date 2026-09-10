@@ -41,6 +41,8 @@ import {
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { BookingSheet } from "@/components/booking-sheet";
 import {
   Search,
@@ -231,12 +233,24 @@ const SOURCE_ICON: Record<string, typeof Globe> = {
   google_ads: Megaphone,
 };
 
-// The website's date input always posts YYYY-MM-DD; the staff "New Lead"
-// dialog's preferredDate is free text (e.g. "this weekend") that formatDate()
-// can't parse. Only format the ones that are actually dates.
+// Both the website's date input and the staff "New Lead" dialog's date
+// picker always post YYYY-MM-DD -- older leads may still carry pre-migration
+// free text (e.g. "this weekend") that formatDate() can't parse, so only
+// format the ones that are actually dates.
 const ISO_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 function displayPreferredDate(value: string): string {
   return ISO_DATE_ONLY.test(value) ? formatDate(value) : value;
+}
+
+// Local Y-M-D, not d.toISOString().slice(0, 10): that converts to UTC first,
+// which silently rolls the date back by one for any positive-UTC-offset
+// timezone (including Sri Lanka, where this business operates) -- see
+// book.tsx's toLocalYMD, the same fix for the same pitfall.
+function toLocalYMD(d: Date): string {
+  const y = d.getFullYear();
+  const m = (d.getMonth() + 1).toString().padStart(2, "0");
+  const day = d.getDate().toString().padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 // A booking lead carries its requested service one of two ways depending on
@@ -1018,6 +1032,7 @@ function NewLeadDialog({
   const [vehicle, setVehicle] = useState("");
   const [serviceId, setServiceId] = useState("");
   const [preferredDate, setPreferredDate] = useState("");
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [notes, setNotes] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -1031,6 +1046,7 @@ function NewLeadDialog({
     setVehicle("");
     setServiceId("");
     setPreferredDate("");
+    setDatePickerOpen(false);
     setNotes("");
     setMessage("");
   }
@@ -1176,12 +1192,40 @@ function NewLeadDialog({
               </div>
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Preferred Date</label>
-                <input
-                  type="date"
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                  value={preferredDate}
-                  onChange={(e) => setPreferredDate(e.target.value)}
-                />
+                <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-left text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    >
+                      <Calendar className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      {preferredDate ? (
+                        formatDate(preferredDate)
+                      ) : (
+                        <span className="text-muted-foreground">Pick a date</span>
+                      )}
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    // z-[60], not the default z-50 shared with Dialog: this
+                    // picker always opens from inside the New Lead dialog,
+                    // and Radix ties equal z-index to DOM order -- here that
+                    // tie resolves in the Dialog's favor, so its own fields
+                    // paint over an equal-z-index popover instead of under it.
+                    className="z-[60] w-auto p-0"
+                    align="start"
+                  >
+                    <CalendarPicker
+                      mode="single"
+                      selected={preferredDate ? new Date(`${preferredDate}T00:00:00`) : undefined}
+                      onSelect={(d) => {
+                        setPreferredDate(d ? toLocalYMD(d) : "");
+                        setDatePickerOpen(false);
+                      }}
+                      autoFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
             </>
           )}
