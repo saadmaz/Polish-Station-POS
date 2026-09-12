@@ -75,12 +75,36 @@ function InspectionPage() {
     }
   }
 
-  // Leads not yet turned into a job — the pool "New Inspection" picks from.
-  // Once a lead is converted it gets a real vehicle intake (plate, make,
-  // model, mileage, etc. — see JobSheet's convertLead form) and shows up in
-  // the eligible-jobs table below instead, so there's no reason to keep
-  // listing it here too.
+  // Plate numbers only ever exist on a Job (they get typed in during vehicle
+  // intake — see JobSheet's convertLead form); Leads never carry one, only a
+  // free-text description. So "search by vehicle number" has to search Jobs,
+  // not Leads — this is every job with vehicle intake done, regardless of
+  // its current status, so a vehicle that's already in the system (whatever
+  // stage it's at) is always findable here, not just the ones currently
+  // sitting in the eligible-jobs table below.
   const q = query.trim().toLowerCase();
+  const pickableJobs = jobs
+    .filter((j): j is Job & { vehicle: NonNullable<Job["vehicle"]> } => !!j.vehicle)
+    .filter((j) => {
+      if (!q) return true;
+      const haystack = [
+        j.vehicle.plate,
+        j.vehicle.make,
+        j.vehicle.model,
+        j.customerSnapshot?.name ?? j.customerName,
+        j.customerSnapshot?.phone,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  // Leads not yet turned into a job — the second pool "New Inspection" picks
+  // from, for a vehicle that isn't in the system as a Job yet at all. Once a
+  // lead is converted it gets a real vehicle intake (plate, make, model,
+  // mileage, etc.) and moves into pickableJobs above instead.
   const pickableLeads = leads
     .filter((l) => l.status !== "lost" && l.status !== "duplicate" && l.convertedTo?.type !== "job")
     .filter((l) => {
@@ -92,6 +116,12 @@ function InspectionPage() {
       return haystack.includes(q);
     })
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  function handlePickJob(job: Job) {
+    setPickerOpen(false);
+    setQuery("");
+    void handleStartOrContinue(job);
+  }
 
   function handlePickLead(lead: Lead) {
     setPickerOpen(false);
@@ -132,10 +162,42 @@ function InspectionPage() {
         />
         <CommandList>
           <CommandEmpty>
-            {leads.length === 0
-              ? "No leads yet."
-              : "No matching vehicle — check Leads, or it may already be a job below."}
+            {jobs.length === 0 && leads.length === 0
+              ? "No vehicles in the system yet."
+              : "No matching vehicle."}
           </CommandEmpty>
+          {pickableJobs.length > 0 && (
+            <CommandGroup heading="Existing Vehicles">
+              {pickableJobs.slice(0, 30).map((job) => (
+                <CommandItem
+                  key={job.id}
+                  value={[
+                    job.id,
+                    job.vehicle.plate,
+                    job.vehicle.make,
+                    job.vehicle.model,
+                    job.customerSnapshot?.name ?? job.customerName,
+                    job.customerSnapshot?.phone,
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  onSelect={() => handlePickJob(job)}
+                >
+                  <Car className="mr-2 h-4 w-4 text-muted-foreground" />
+                  <span className="font-mono font-medium">{job.vehicle.plate || "—"}</span>
+                  <span className="ml-2 text-sm">
+                    {[job.vehicle.make, job.vehicle.model].filter(Boolean).join(" ")}
+                  </span>
+                  <span className="ml-2 text-sm text-muted-foreground">
+                    {job.customerSnapshot?.name ?? job.customerName}
+                  </span>
+                  <span className="ml-auto text-xs text-muted-foreground capitalize">
+                    {job.status.replace(/_/g, " ")}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
           {pickableLeads.length > 0 && (
             <CommandGroup heading="Vehicles from Leads">
               {pickableLeads.slice(0, 30).map((lead) => (
