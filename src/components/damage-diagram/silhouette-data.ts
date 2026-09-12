@@ -30,7 +30,12 @@ export type Point = readonly [number, number];
 // ── Profile (left/right) — right is the same body, mirrored via a transform
 // in VehicleSilhouette (screen) / a horizontal flip (PDF) rather than a
 // second point set. ────────────────────────────────────────────────────────
-export const PROFILE_BODY: Record<BodyType, readonly Point[]> = {
+
+// The hood/roof/trunk outline only — the flat "L" a bare Z-close would draw
+// across the bottom is replaced below with an explicit wheel-arch cutout, so
+// this is deliberately NOT the full outline. Kept private; PROFILE_BODY
+// (below) is what everything else imports.
+const PROFILE_TOP: Record<BodyType, readonly Point[]> = {
   sedan: [
     [30, 140],
     [30, 115],
@@ -111,6 +116,52 @@ export const PROFILE_WHEELS: Record<BodyType, readonly [number, number]> = {
   van: [90, 310],
   double_cab: [95, 315],
 };
+
+// Ground line every PROFILE_TOP entry above sits on (its first/last point is
+// always y=140) — the constant every wheel-arch/wheel-circle computation
+// below measures from.
+const PROFILE_GROUND_Y = 140;
+// Bigger than the r=20 wheel circle silhouettes.tsx/pdf.ts draw, so the
+// silhouette reads as a wheel *arch* the wheel sits inside, not a wheel
+// clipping straight through the bodywork — the gap between the two radii is
+// the visible "fender" lip.
+const WHEEL_ARCH_RADIUS = 27;
+
+/** A half-circle notch cut up into the body outline above (cx, groundY),
+ *  traced right-to-left (from (cx+radius, groundY) to (cx-radius, groundY))
+ *  as plain line segments — matching the direction PROFILE_BODY's overall
+ *  outline travels along its ground line (front-of-array's rear-bottom
+ *  corner back to its own front-bottom corner), and consistent with every
+ *  other shape in this file: drawable by both the SVG path builder and
+ *  jsPDF's straight-line polygon stroke, no arcs. */
+function wheelArchPoints(cx: number, groundY: number, radius: number): Point[] {
+  const segments = 8;
+  const pts: Point[] = [];
+  for (let i = 0; i <= segments; i++) {
+    const angle = (Math.PI * i) / segments; // sweeps 0 → π
+    pts.push([cx + radius * Math.cos(angle), groundY - radius * Math.sin(angle)]);
+  }
+  return pts;
+}
+
+/** The full profile outline: PROFILE_TOP's hood/roof/trunk trace, followed
+ *  by the ground line with a wheel-arch notch cut over each wheel — computed
+ *  once at module load from PROFILE_TOP + PROFILE_WHEELS rather than
+ *  hand-plotted per body type, so the arches always line up with wherever
+ *  PROFILE_WHEELS actually puts the wheels. */
+export const PROFILE_BODY: Record<BodyType, readonly Point[]> = Object.fromEntries(
+  (Object.keys(PROFILE_TOP) as BodyType[]).map((bodyType) => {
+    const [frontX, rearX] = PROFILE_WHEELS[bodyType];
+    return [
+      bodyType,
+      [
+        ...PROFILE_TOP[bodyType],
+        ...wheelArchPoints(rearX, PROFILE_GROUND_Y, WHEEL_ARCH_RADIUS),
+        ...wheelArchPoints(frontX, PROFILE_GROUND_Y, WHEEL_ARCH_RADIUS),
+      ],
+    ];
+  }),
+) as unknown as Record<BodyType, readonly Point[]>;
 
 // ── Front / rear ─────────────────────────────────────────────────────────
 export const FRONT_REAR_BODY: Record<BodyType, readonly Point[]> = {

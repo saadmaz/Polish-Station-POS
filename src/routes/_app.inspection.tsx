@@ -10,10 +10,20 @@ import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { PageHeader } from "@/components/page-header";
 import { InspectionSheet } from "@/components/inspection-sheet";
+import { JobSheet } from "@/components/job-sheet";
+import {
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { formatDate } from "@/lib/date-format";
 import type { Job, JobStatus } from "@/lib/job";
+import type { Lead } from "@/lib/db";
 import { latestNonSupersededInspection, type Inspection } from "@/lib/inspection";
-import { ClipboardCheck, Camera, CheckCircle2 } from "lucide-react";
+import { ClipboardCheck, Camera, CheckCircle2, Plus, Car } from "lucide-react";
 
 export const Route = createFileRoute("/_app/inspection")({
   head: () => ({ meta: [{ title: "Inspection · Polish Station OS" }] }),
@@ -24,10 +34,24 @@ export const Route = createFileRoute("/_app/inspection")({
 // the window in which an inspection makes sense.
 const ELIGIBLE_STATUSES: JobStatus[] = ["arrived", "checked_in", "in_progress", "qc", "ready"];
 
+// Same free-text-vs-parsed fallback _app.leads.tsx's own vehicleLabel() uses
+// — not imported from there since that one isn't exported, and this is the
+// only other place that needs it.
+function leadVehicleLabel(lead: Lead): string {
+  if (lead.vehicleMake || lead.vehicleModel) {
+    const makeModel = [lead.vehicleMake, lead.vehicleModel].filter(Boolean).join(" ");
+    return lead.vehicleYear ? `${makeModel} · ${lead.vehicleYear}` : makeModel;
+  }
+  return lead.vehicle || "No vehicle description yet";
+}
+
 function InspectionPage() {
-  const { jobs, inspections, startInspection } = useStore();
+  const { jobs, leads, inspections, startInspection } = useStore();
   const [sheetState, setSheetState] = useState<{ job: Job; inspection: Inspection } | null>(null);
   const [starting, setStarting] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [convertLead, setConvertLead] = useState<Lead | null>(null);
 
   const eligibleJobs = jobs
     .filter((j) => ELIGIBLE_STATUSES.includes(j.status))
@@ -51,9 +75,103 @@ function InspectionPage() {
     }
   }
 
+  // Leads not yet turned into a job — the pool "New Inspection" picks from.
+  // Once a lead is converted it gets a real vehicle intake (plate, make,
+  // model, mileage, etc. — see JobSheet's convertLead form) and shows up in
+  // the eligible-jobs table below instead, so there's no reason to keep
+  // listing it here too.
+  const q = query.trim().toLowerCase();
+  const pickableLeads = leads
+    .filter((l) => l.status !== "lost" && l.status !== "duplicate" && l.convertedTo?.type !== "job")
+    .filter((l) => {
+      if (!q) return true;
+      const haystack = [l.name, l.phone, l.phoneRaw, l.vehicle, l.vehicleMake, l.vehicleModel]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  function handlePickLead(lead: Lead) {
+    setPickerOpen(false);
+    setQuery("");
+    setConvertLead(lead);
+  }
+
+  // The vehicle-intake form (JobSheet in convertLead mode) already asks for
+  // everything the reference sheet wants up front — plate, customer name,
+  // make/model/colour/body type, mileage. Once that job exists, jump
+  // straight into the same inspection stepper the eligible-jobs table uses.
+  function handleJobCreatedFromLead(job: Job) {
+    setConvertLead(null);
+    void handleStartOrContinue(job);
+  }
+
   return (
     <div className="p-6">
-      <PageHeader title="Inspection" />
+      <PageHeader
+        title="Inspection"
+        actions={
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-red hover:bg-primary/90"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New Inspection
+          </button>
+        }
+      />
+
+      <CommandDialog open={pickerOpen} onOpenChange={setPickerOpen}>
+        <CommandInput
+          placeholder="Search by vehicle number, make/model, or customer name…"
+          value={query}
+          onValueChange={setQuery}
+        />
+        <CommandList>
+          <CommandEmpty>
+            {leads.length === 0
+              ? "No leads yet."
+              : "No matching vehicle — check Leads, or it may already be a job below."}
+          </CommandEmpty>
+          {pickableLeads.length > 0 && (
+            <CommandGroup heading="Vehicles from Leads">
+              {pickableLeads.slice(0, 30).map((lead) => (
+                <CommandItem
+                  key={lead.id}
+                  value={[
+                    lead.id,
+                    lead.name,
+                    lead.phone,
+                    lead.vehicle,
+                    lead.vehicleMake,
+                    lead.vehicleModel,
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  onSelect={() => handlePickLead(lead)}
+                >
+                  <Car className="mr-2 h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium">{leadVehicleLabel(lead)}</span>
+                  <span className="ml-2 text-sm">{lead.name}</span>
+                  <span className="ml-auto text-xs text-muted-foreground">{lead.phone ?? "—"}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
+        </CommandList>
+      </CommandDialog>
+
+      {convertLead && (
+        <JobSheet
+          open={!!convertLead}
+          onOpenChange={(open) => !open && setConvertLead(null)}
+          convertLead={{ lead: convertLead }}
+          onCreated={handleJobCreatedFromLead}
+        />
+      )}
 
       {eligibleJobs.length === 0 ? (
         <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-card py-16 text-center text-muted-foreground">

@@ -35,6 +35,12 @@ interface JobSheetProps {
   // mirrors booking-sheet.tsx's convertLead. Mutually exclusive with
   // `editing`: a lead conversion always creates a brand-new job.
   convertLead?: { lead: Lead };
+  // Fired once a brand-new job is created (either path — plain addJob or
+  // convertLead), after the sheet has already closed itself. Not called for
+  // `editing`. Lets a caller (e.g. the inspection picker) chain straight
+  // into the next step with the real, saved Job rather than guessing at it
+  // from form state.
+  onCreated?: (job: Job) => void;
 }
 
 const BODY_TYPES = [
@@ -101,7 +107,7 @@ async function decodeVIN(vin: string): Promise<string | null> {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function JobSheet({ open, onOpenChange, editing, convertLead }: JobSheetProps) {
+export function JobSheet({ open, onOpenChange, editing, convertLead, onCreated }: JobSheetProps) {
   const { services, customers, bays, addJob, updateJob, convertLeadToJob } = useStore();
   const { staffList } = useStaffList();
   const [form, setForm] = useState(EMPTY);
@@ -321,8 +327,9 @@ export function JobSheet({ open, onOpenChange, editing, convertLead }: JobSheetP
         });
         toast.success("Job updated");
       } else if (convertLead) {
+        let newJob: Job;
         try {
-          await convertLeadToJob(convertLead.lead, {
+          newJob = await convertLeadToJob(convertLead.lead, {
             ...jobData,
             estimate: { isProvisional: true, quoteVersion: 1 },
           });
@@ -338,11 +345,22 @@ export function JobSheet({ open, onOpenChange, editing, convertLead }: JobSheetP
           );
           return;
         }
+        setForm(EMPTY);
+        onOpenChange(false);
+        onCreated?.(newJob);
+        return;
       } else {
-        await addJob({ ...jobData, estimate: { isProvisional: true, quoteVersion: 1 } });
+        const newJob = await addJob({
+          ...jobData,
+          estimate: { isProvisional: true, quoteVersion: 1 },
+        });
         toast.success("Job created", {
           description: `${form.name}: ${svc.name} on ${form.date} at ${form.time}`,
         });
+        setForm(EMPTY);
+        onOpenChange(false);
+        onCreated?.(newJob);
+        return;
       }
       setForm(EMPTY);
       onOpenChange(false);
