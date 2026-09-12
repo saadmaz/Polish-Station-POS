@@ -268,6 +268,9 @@ interface Store {
     data: Omit<Job, "id" | "createdAt" | "updatedAt" | "status" | "bookingId" | "vehicleId">,
   ) => Promise<Job>;
   updateJob: (job: Job) => void;
+  // See updateJobAsync's own comment (near its implementation) for why this
+  // exists alongside updateJob rather than replacing it everywhere.
+  updateJobAsync: (job: Job) => Promise<void>;
   transitionJobStatus: (
     id: string,
     toStatus: JobStatus,
@@ -1637,7 +1640,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const updateJob = useCallback((job: Job) => {
+  // Shared by updateJob (fire-and-forget, every existing call site) and
+  // updateJobAsync (below) — one place computing the actual doc to write,
+  // two ways of sending it.
+  function buildJobUpdate(job: Job): { before: Job | null; after: Job } {
     const before = S.current.jobs.find((j) => j.id === job.id) ?? null;
     const now = new Date().toISOString();
     const after: Job = {
@@ -1655,7 +1661,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }
         : {}),
     };
+    return { before, after };
+  }
+
+  const updateJob = useCallback((job: Job) => {
+    const { before, after } = buildJobUpdate(job);
     write("jobs", after);
+    logAudit(actorRef.current, {
+      action: "UPDATE_JOB",
+      entity: "Job",
+      entityId: job.id,
+      before,
+      after,
+    });
+  }, []);
+
+  // Awaited sibling of updateJob, same reasoning as writeAsync vs. write
+  // above — JobSheet's "Save Changes" needs to know a write was actually
+  // rejected (permission-denied, offline with no queued retry, etc.) rather
+  // than showing "Job updated" and closing on pure optimism the moment this
+  // is called. Every other updateJob call site stays fire-and-forget on
+  // purpose; this isn't a replacement for those.
+  const updateJobAsync = useCallback(async (job: Job): Promise<void> => {
+    const { before, after } = buildJobUpdate(job);
+    await writeAsync("jobs", after);
     logAudit(actorRef.current, {
       action: "UPDATE_JOB",
       entity: "Job",
@@ -2364,6 +2393,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     markDepositPaid,
     addJob,
     updateJob,
+    updateJobAsync,
     transitionJobStatus,
     inspections,
     startInspection,

@@ -122,7 +122,7 @@ async function decodeVIN(vin: string): Promise<string | null> {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function JobSheet({ open, onOpenChange, editing, convertLead, onCreated }: JobSheetProps) {
-  const { services, customers, bays, addJob, updateJob, convertLeadToJob } = useStore();
+  const { services, customers, bays, addJob, updateJobAsync, convertLeadToJob } = useStore();
   const { staffList } = useStaffList();
   const [form, setForm] = useState(EMPTY);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
@@ -335,7 +335,11 @@ export function JobSheet({ open, onOpenChange, editing, convertLead, onCreated }
     setSubmitting(true);
     try {
       if (editing) {
-        updateJob({
+        // Awaited on purpose (updateJobAsync, not the fire-and-forget
+        // updateJob every other caller uses) — this is the one place a
+        // rejected write must actually surface as an error instead of
+        // showing "Job updated" and closing the sheet regardless.
+        await updateJobAsync({
           ...editing,
           ...jobData,
           estimate: editing.estimate ?? { isProvisional: true, quoteVersion: 1 },
