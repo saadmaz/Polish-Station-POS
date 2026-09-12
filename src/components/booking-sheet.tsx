@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { todayBusinessDate } from "@/lib/business-day";
+import { formatDate } from "@/lib/date-format";
 import {
   Sheet,
   SheetContent,
@@ -10,10 +11,23 @@ import {
   SheetDescription,
   SheetFooter,
 } from "@/components/ui/sheet";
-import { Search, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar";
+import { Search, Loader2, CheckCircle2, AlertCircle, Calendar } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 import type { Booking, BookingType, Lead } from "@/lib/db";
+
+// Local Y-M-D, not d.toISOString().slice(0, 10): that converts to UTC first,
+// which silently rolls the date back by one for any positive-UTC-offset
+// timezone (including Sri Lanka, where this business operates) — same fix,
+// same pitfall, as _app.leads.tsx's own copy for its date picker.
+function toLocalYMD(d: Date): string {
+  const y = d.getFullYear();
+  const m = (d.getMonth() + 1).toString().padStart(2, "0");
+  const day = d.getDate().toString().padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 interface BookingSheetProps {
   open: boolean;
@@ -85,6 +99,7 @@ export function BookingSheet({ open, onOpenChange, convertLead, followUpFrom }: 
   const { services, customers, addBooking, convertLeadToBooking, createFollowUpBooking, bays } =
     useStore();
   const [form, setForm] = useState(EMPTY);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Plate lookup state
@@ -477,14 +492,41 @@ export function BookingSheet({ open, onOpenChange, convertLead, followUpFrom }: 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Date *</label>
-              <input
-                required
-                type="date"
-                min={today}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                value={form.date}
-                onChange={(e) => set("date", e.target.value)}
-              />
+              <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-left text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  >
+                    <Calendar className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    {form.date ? (
+                      formatDate(form.date)
+                    ) : (
+                      <span className="text-muted-foreground">Pick a date</span>
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  // z-[60], not the default z-50 shared with Dialog — this
+                  // picker always opens from inside this Sheet, and Radix
+                  // ties equal z-index to DOM order, which resolves in the
+                  // Sheet's favor otherwise (same fix as leads.tsx's own
+                  // date popover).
+                  className="z-[60] w-auto p-0"
+                  align="start"
+                >
+                  <CalendarPicker
+                    mode="single"
+                    selected={form.date ? new Date(`${form.date}T00:00:00`) : undefined}
+                    disabled={{ before: new Date(`${today}T00:00:00`) }}
+                    onSelect={(d) => {
+                      if (d) set("date", toLocalYMD(d));
+                      setDatePickerOpen(false);
+                    }}
+                    autoFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium">Time *</label>
