@@ -14,7 +14,7 @@
 import { ref as storageRef, uploadBytes } from "firebase/storage";
 import { doc, runTransaction } from "firebase/firestore";
 import { storage, db } from "./firebase";
-import { computePhotoRequirementsMet, type Inspection } from "./inspection";
+import { computePhotoRequirementsMet, PHOTO_CAPTURE_ENABLED, type Inspection } from "./inspection";
 
 const DB_NAME = "polish-station-photo-queue";
 const DB_VERSION = 1;
@@ -157,8 +157,18 @@ let flushing = false;
  *  often (the online event, a periodic timer, app start) — re-entrancy is
  *  guarded, and each record is independent so one stuck upload can't block
  *  the rest. Failures are expected while still offline and are recorded on
- *  the record rather than logged as alarming. */
+ *  the record rather than logged as alarming.
+ *
+ *  No-ops entirely while PHOTO_CAPTURE_ENABLED is off: the capture UI can no
+ *  longer produce new queue entries, so anything sitting in IndexedDB here
+ *  is a leftover from before the flag flipped. Those blobs are inert (never
+ *  cleared — they'll flush normally again if the flag comes back), but
+ *  actually attempting them is worse than useless: Storage's write rule
+ *  permanently forbids writes once an inspection is signed/superseded, so
+ *  a leftover for one of those would 403 on literally every retry forever,
+ *  on a 30s timer, for as long as the app stays open. */
 export async function flushPhotoQueue(): Promise<void> {
+  if (!PHOTO_CAPTURE_ENABLED) return;
   if (flushing) return;
   flushing = true;
   try {

@@ -7,6 +7,7 @@
 // anything (flushPhotoQueue() re-entrancy-guards itself), but there's no
 // reason to.
 import { useEffect, useState } from "react";
+import { PHOTO_CAPTURE_ENABLED } from "@/lib/inspection";
 import { PHOTO_QUEUE_CHANGED_EVENT, flushPhotoQueue, pendingPhotoCount } from "@/lib/photo-queue";
 
 const POLL_INTERVAL_MS = 30_000;
@@ -15,6 +16,11 @@ export function usePhotoQueue(): { pendingCount: number } {
   const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
+    // flushPhotoQueue() already no-ops while the flag is off (see its own
+    // comment) — this skips even the count poll, so the app chrome doesn't
+    // show a "N photos pending upload" badge that can now never resolve to
+    // zero (nothing will ever flush them while capture is disabled).
+    if (!PHOTO_CAPTURE_ENABLED) return;
     let cancelled = false;
 
     async function refresh() {
