@@ -99,6 +99,22 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
   const [signing, setSigning] = useState(false);
   const customerSigRef = useRef<SignaturePadHandle | null>(null);
   const inspectorSigRef = useRef<SignaturePadHandle | null>(null);
+  // Guards handleSignPathA/handleAcknowledgeAndSign/handleSendForAcknowledgment
+  // against a second invocation racing the first. `signing`/`sendingAck`
+  // state alone doesn't do this: both handlers await at least one promise
+  // (toBlob(), a Storage upload) before their first setState call, so a
+  // second click landing in that window fires the handler again before
+  // React has re-rendered the button as disabled. Two concurrent sign-off
+  // attempts against the same draft then race each other's Storage upload
+  // and Firestore write — the loser gets rejected (storage.rules/
+  // firestore.rules both reject writes to the same doc once the other side
+  // has already moved it out of "draft"), surfacing as an inexplicable
+  // "couldn't complete sign-off" even though the visible signatures were
+  // fine and the first click actually went through. A plain ref (checked
+  // and set synchronously, before any await) closes that window; `signing`/
+  // `sendingAck` React state remains just for the button's own visual
+  // "…ing" label.
+  const actionInFlightRef = useRef(false);
 
   useEffect(() => {
     if (open) {
@@ -161,10 +177,12 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
   // require photoRequirementsMet before this transition is even accepted —
   // always true while PHOTO_CAPTURE_ENABLED is off (see inspection.ts).
   async function handleSendForAcknowledgment() {
+    if (actionInFlightRef.current) return;
     if (!draft.customerSnapshot.phone) {
       toast.error("No phone number on file for this customer");
       return;
     }
+    actionInFlightRef.current = true;
     setSendingAck(true);
     try {
       const sentAt = new Date().toISOString();
@@ -188,47 +206,54 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
       window.open(buildWALink(draft.customerSnapshot.phone, message), "_blank");
     } finally {
       setSendingAck(false);
+      actionInFlightRef.current = false;
     }
   }
 
   // Path A: both signatures captured in one action, straight to "signed".
   async function handleSignPathA() {
-    const customerBlob = await customerSigRef.current?.toBlob();
-    const inspectorBlob = await inspectorSigRef.current?.toBlob();
-    if (!customerBlob || !inspectorBlob || !signerName.trim() || !staff) {
-      toast.error("Both signatures and the customer's name are required");
-      return;
-    }
-    setSigning(true);
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
     try {
-      const now = new Date().toISOString();
-      const [customerPath, inspectorPath] = await Promise.all([
-        uploadSignaturePng(job.id, draft.id, "customer", customerBlob),
-        uploadSignaturePng(job.id, draft.id, "inspector", inspectorBlob),
-      ]);
-      const next: Inspection = {
-        ...draft,
-        inspectedWithCustomer: true,
-        customerSignature: {
-          storagePath: customerPath,
-          signerName: signerName.trim(),
-          signedAt: now,
-        },
-        inspectorSignature: {
-          storagePath: inspectorPath,
-          staffId: staff.id,
-          staffName: staff.name,
-          signedAt: now,
-        },
-        status: "signed",
-      };
-      const withReport = await withGeneratedReport(next);
-      persist(withReport);
-      toast.success("Inspection signed");
-    } catch {
-      toast.error("Couldn't complete sign-off, please try again");
+      const customerBlob = await customerSigRef.current?.toBlob();
+      const inspectorBlob = await inspectorSigRef.current?.toBlob();
+      if (!customerBlob || !inspectorBlob || !signerName.trim() || !staff) {
+        toast.error("Both signatures and the customer's name are required");
+        return;
+      }
+      setSigning(true);
+      try {
+        const now = new Date().toISOString();
+        const [customerPath, inspectorPath] = await Promise.all([
+          uploadSignaturePng(job.id, draft.id, "customer", customerBlob),
+          uploadSignaturePng(job.id, draft.id, "inspector", inspectorBlob),
+        ]);
+        const next: Inspection = {
+          ...draft,
+          inspectedWithCustomer: true,
+          customerSignature: {
+            storagePath: customerPath,
+            signerName: signerName.trim(),
+            signedAt: now,
+          },
+          inspectorSignature: {
+            storagePath: inspectorPath,
+            staffId: staff.id,
+            staffName: staff.name,
+            signedAt: now,
+          },
+          status: "signed",
+        };
+        const withReport = await withGeneratedReport(next);
+        persist(withReport);
+        toast.success("Inspection signed");
+      } catch {
+        toast.error("Couldn't complete sign-off, please try again");
+      } finally {
+        setSigning(false);
+      }
     } finally {
-      setSigning(false);
+      actionInFlightRef.current = false;
     }
   }
 
@@ -236,39 +261,45 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
   // bundled into one action — this is the only point in Path B where
   // inspectorSignature gets set, since "signed" is never reached before it.
   async function handleAcknowledgeAndSign() {
-    const inspectorBlob = await inspectorSigRef.current?.toBlob();
-    if (!inspectorBlob || !staff) {
-      toast.error("Inspector signature is required");
-      return;
-    }
-    if (!replyText.trim()) {
-      toast.error("Record the customer's reply text before signing");
-      return;
-    }
-    setSigning(true);
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
     try {
-      const now = new Date().toISOString();
-      const inspectorPath = await uploadSignaturePng(job.id, draft.id, "inspector", inspectorBlob);
-      const next: Inspection = {
-        ...draft,
-        remoteAck: draft.remoteAck
-          ? { ...draft.remoteAck, replyText: replyText.trim(), replyReceivedAt: now }
-          : draft.remoteAck,
-        inspectorSignature: {
-          storagePath: inspectorPath,
-          staffId: staff.id,
-          staffName: staff.name,
-          signedAt: now,
-        },
-        status: "signed",
-      };
-      const withReport = await withGeneratedReport(next);
-      persist(withReport);
-      toast.success("Inspection signed");
-    } catch {
-      toast.error("Couldn't complete sign-off, please try again");
+      const inspectorBlob = await inspectorSigRef.current?.toBlob();
+      if (!inspectorBlob || !staff) {
+        toast.error("Inspector signature is required");
+        return;
+      }
+      if (!replyText.trim()) {
+        toast.error("Record the customer's reply text before signing");
+        return;
+      }
+      setSigning(true);
+      try {
+        const now = new Date().toISOString();
+        const inspectorPath = await uploadSignaturePng(job.id, draft.id, "inspector", inspectorBlob);
+        const next: Inspection = {
+          ...draft,
+          remoteAck: draft.remoteAck
+            ? { ...draft.remoteAck, replyText: replyText.trim(), replyReceivedAt: now }
+            : draft.remoteAck,
+          inspectorSignature: {
+            storagePath: inspectorPath,
+            staffId: staff.id,
+            staffName: staff.name,
+            signedAt: now,
+          },
+          status: "signed",
+        };
+        const withReport = await withGeneratedReport(next);
+        persist(withReport);
+        toast.success("Inspection signed");
+      } catch {
+        toast.error("Couldn't complete sign-off, please try again");
+      } finally {
+        setSigning(false);
+      }
     } finally {
-      setSigning(false);
+      actionInFlightRef.current = false;
     }
   }
 
