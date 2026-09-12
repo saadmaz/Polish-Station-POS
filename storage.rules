@@ -39,19 +39,30 @@ service firebase.storage {
     // Inspection photos and signature PNGs (see src/lib/inspection.ts's
     // Photo/CustomerSignature/InspectorSignature and the storage-path
     // comments on them). Read matches every other staff-facing document in
-    // this app — any signed-in staff member. Write is gated the same way the
-    // `inspections` Firestore collection's own create/update rules are
-    // (firestore.rules), PLUS a cross-service check against that same
-    // document: once the inspection has reached "signed" or "superseded" no
-    // more evidence can be added or replaced, mirroring the Firestore-side
-    // immutability rule instead of relying on the UI alone to keep photos
-    // and signatures in sync with a frozen document.
+    // this app — any signed-in staff member. Write is gated the same
+    // role/module check the `inspections` Firestore collection's own
+    // create/update rules use.
+    //
+    // A cross-service check against that same Firestore document used to
+    // sit here too (blocking writes once status left "draft"/
+    // "pending_acknowledgment", mirroring Firestore's own immutability
+    // rule as defense in depth). Removed: in production this
+    // firestore.get()/firestore.exists() call was rejecting every write
+    // outright — confirmed by reading the actual document directly
+    // (status legitimately "pending_acknowledgment", role/module both
+    // satisfied, yet every signature upload against it still 403'd) — so
+    // whatever the cause (this project's cross-service rules wiring,
+    // evaluation error treated as fail-closed, or something else), it was
+    // blocking every legitimate sign-off, not just illegitimate ones.
+    // Firestore's own isLegalInspectionUpdate() already refuses to let a
+    // signed/superseded inspection's document change further, which is
+    // the authoritative enforcement point anyway — a stray photo/signature
+    // blob sitting in Storage under an old path that the frozen Firestore
+    // document no longer references is a far smaller risk than sign-off
+    // being unusable.
     match /jobs/{jobId}/inspections/{inspectionId}/{fileName=**} {
       allow read:  if isAuth();
-      allow write: if hasModule("inspection") && (isManagerOrAbove() || role() in ["Advisor", "Technician"])
-                   && (!firestore.exists(/databases/(default)/documents/inspections/$(inspectionId))
-                       || firestore.get(/databases/(default)/documents/inspections/$(inspectionId)).data.status
-                          in ["draft", "pending_acknowledgment"]);
+      allow write: if hasModule("inspection") && (isManagerOrAbove() || role() in ["Advisor", "Technician"]);
     }
 
     // Delivery handover photos + customer acceptance signature (Phase 7 —
