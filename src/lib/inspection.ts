@@ -339,6 +339,35 @@ export function assertValidDamageMarker(
   }
 }
 
+// Temporary, operator-requested (2026-09-12): every photo-capture surface —
+// the guided intake slots, damage-marker evidence photos, remote-ack
+// screenshots — is off store-wide "for now". The stepper no longer offers
+// any way to capture one, so gating sign-off on the requirements below would
+// make "signed" unreachable. Flip this back to true and restore the capture
+// UI (inspection-sheet.tsx, damage-diagram.tsx) to re-enable — nothing else
+// needs to change, computePhotoRequirementsMet below is the only thing that
+// reads this, and both of its callers (store.tsx, photo-queue.ts) already go
+// through it rather than duplicating the check.
+export const PHOTO_CAPTURE_ENABLED = false;
+
+/** The one photoRequirementsMet computation — shared by store.tsx's
+ *  updateInspection (the live-editing path) and photo-queue.ts's
+ *  markPhotoUploaded (the offline-queue-flush path, which patches a
+ *  Firestore doc directly and can't go through the store hook) so the two
+ *  never drift into disagreeing about whether an inspection is signable. */
+export function computePhotoRequirementsMet(
+  photos: readonly Pick<Photo, "slotKey" | "uploadedAt">[],
+  damageMarkers: readonly Pick<DamageMarker, "severity" | "photoIds">[],
+  engineBayServiceSelected: boolean,
+): boolean {
+  if (!PHOTO_CAPTURE_ENABLED) return true;
+  const noMissingSlots = missingRequiredPhotoSlots(photos, engineBayServiceSelected).length === 0;
+  const everyMarkerPhotographed = damageMarkers.every(
+    (m) => !damageMarkerRequiresPhoto(m.severity) || m.photoIds.length > 0,
+  );
+  return noMissingSlots && everyMarkerPhotographed;
+}
+
 // ── Scope & sign-off ──────────────────────────────────────────────────────
 
 export interface AddOnDiscussed {

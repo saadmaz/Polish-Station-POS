@@ -8,6 +8,8 @@ import {
   assertValidDamageMarker,
   isPhotoSlotRequired,
   missingRequiredPhotoSlots,
+  computePhotoRequirementsMet,
+  PHOTO_CAPTURE_ENABLED,
   buildInspectionSnapshots,
   isPendingAcknowledgmentOverdue,
   PENDING_ACKNOWLEDGMENT_THRESHOLD_MS,
@@ -130,6 +132,16 @@ describe("required photo slots", () => {
 
   it("missingRequiredPhotoSlots includes engine_bay when that service is selected", () => {
     expect(missingRequiredPhotoSlots([], true)).toContain("engine_bay");
+  });
+});
+
+describe("computePhotoRequirementsMet", () => {
+  it("is always true while PHOTO_CAPTURE_ENABLED is off, even with no photos or evidence", () => {
+    expect(PHOTO_CAPTURE_ENABLED).toBe(false);
+    expect(computePhotoRequirementsMet([], [], false)).toBe(true);
+    expect(computePhotoRequirementsMet([], [{ severity: "severe", photoIds: [] }], true)).toBe(
+      true,
+    );
   });
 });
 

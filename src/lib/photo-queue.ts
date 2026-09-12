@@ -14,11 +14,7 @@
 import { ref as storageRef, uploadBytes } from "firebase/storage";
 import { doc, runTransaction } from "firebase/firestore";
 import { storage, db } from "./firebase";
-import {
-  missingRequiredPhotoSlots,
-  damageMarkerRequiresPhoto,
-  type Inspection,
-} from "./inspection";
+import { computePhotoRequirementsMet, type Inspection } from "./inspection";
 
 const DB_NAME = "polish-station-photo-queue";
 const DB_VERSION = 1;
@@ -146,11 +142,11 @@ async function markPhotoUploaded(inspectionId: string, photoId: string): Promise
     const photos = inspection.photos.map((p) =>
       p.id === photoId ? { ...p, uploadedAt: p.uploadedAt ?? now } : p,
     );
-    const photoRequirementsMet =
-      missingRequiredPhotoSlots(photos, false).length === 0 &&
-      inspection.damageMarkers.every(
-        (m) => !damageMarkerRequiresPhoto(m.severity) || m.photoIds.length > 0,
-      );
+    const photoRequirementsMet = computePhotoRequirementsMet(
+      photos,
+      inspection.damageMarkers,
+      false,
+    );
     tx.update(ref, { photos, photoRequirementsMet, updatedAt: now });
   });
 }

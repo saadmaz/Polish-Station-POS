@@ -47,11 +47,7 @@ import {
 import { synthesizeWalkInJob } from "./job-linking";
 import { buildTransitionEvent, nextQuoteVersion } from "./job";
 import type { Job, JobEvent, JobStatus } from "./job";
-import {
-  buildInspectionSnapshots,
-  damageMarkerRequiresPhoto,
-  missingRequiredPhotoSlots,
-} from "./inspection";
+import { buildInspectionSnapshots, computePhotoRequirementsMet } from "./inspection";
 import type { Inspection } from "./inspection";
 import {
   assertLegalLeadTransition,
@@ -1760,7 +1756,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         appVersion: "",
       },
       geo: null,
-      photoRequirementsMet: false,
+      photoRequirementsMet: computePhotoRequirementsMet([], [], false),
       status: "draft",
       supersedes: null,
       supersededBy: null,
@@ -1787,13 +1783,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // on the service catalog for missingRequiredPhotoSlots to check against
     // (Phase 2 scope: photo capture only), so it's simply never required for
     // now. Revisit once that catalog flag exists.
-    const noMissingSlots = missingRequiredPhotoSlots(inspection.photos, false).length === 0;
-    const everyMarkerPhotographed = inspection.damageMarkers.every(
-      (m) => !damageMarkerRequiresPhoto(m.severity) || m.photoIds.length > 0,
-    );
     const after: Inspection = {
       ...inspection,
-      photoRequirementsMet: noMissingSlots && everyMarkerPhotographed,
+      photoRequirementsMet: computePhotoRequirementsMet(
+        inspection.photos,
+        inspection.damageMarkers,
+        false,
+      ),
       updatedAt: new Date().toISOString(),
       updatedById: actor.id,
       updatedByName: actor.name,

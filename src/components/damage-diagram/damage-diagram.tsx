@@ -13,17 +13,15 @@
 // cancels it and switches to drag instead, so the same gesture start can't
 // be read as both.
 //
-// Photo storage is abstracted behind uploadPhoto/getPhotoUrl rather than
-// this component knowing about Storage/blob URLs itself — InspectionSheet
-// wires uploadPhoto to the real captureInspectionPhoto() flow (a free-form,
-// slotKey: null photo merged into Inspection.photos); nothing here assumes
-// how a photo id resolves to a displayable URL.
+// Per-marker evidence photos (linking a marker to Inspection.photos) are
+// temporarily disabled — see PHOTO_CAPTURE_ENABLED in inspection.ts. This
+// component no longer takes an upload/URL-resolution callback at all; a
+// marker's `photoIds` field stays in the data model (empty) so the feature
+// can come back later without touching that shape.
 import { useCallback, useRef, useState } from "react";
-import { toast } from "sonner";
 import { useConfirm } from "@/hooks/use-confirm";
 import type { BodyType } from "@/lib/job";
 import {
-  damageMarkerRequiresPhoto,
   DAMAGE_MARKER_TYPES,
   DAMAGE_MARKER_SEVERITIES,
   type DamageMarker,
@@ -46,21 +44,9 @@ interface DamageDiagramProps {
   bodyType: BodyType;
   markers: DamageMarker[];
   onMarkersChange: (markers: DamageMarker[]) => void;
-  /** Stores `file` wherever the caller stores photos and resolves to an id
-   *  usable with getPhotoUrl. */
-  uploadPhoto: (file: File) => Promise<string>;
-  /** Resolves a previously-uploaded photo id to a displayable (thumbnail)
-   *  URL — undefined while still resolving/unavailable. */
-  getPhotoUrl: (photoId: string) => string | undefined;
 }
 
-export function DamageDiagram({
-  bodyType,
-  markers,
-  onMarkersChange,
-  uploadPhoto,
-  getPhotoUrl,
-}: DamageDiagramProps) {
+export function DamageDiagram({ bodyType, markers, onMarkersChange }: DamageDiagramProps) {
   const [view, setView] = useState<DamageMarkerView>("front");
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -183,23 +169,6 @@ export function DamageDiagram({
     if (selectedSeq === seq) setSelectedSeq(null);
   }
 
-  async function addPhotoToMarker(seq: number, file: File) {
-    try {
-      const id = await uploadPhoto(file);
-      updateMarker(seq, {
-        photoIds: [...(markers.find((m) => m.seq === seq)?.photoIds ?? []), id],
-      });
-    } catch {
-      toast.error("Couldn't upload that photo, please try again");
-    }
-  }
-
-  function removePhotoFromMarker(seq: number, photoId: string) {
-    const marker = markers.find((m) => m.seq === seq);
-    if (!marker) return;
-    updateMarker(seq, { photoIds: marker.photoIds.filter((id) => id !== photoId) });
-  }
-
   return (
     <div className="space-y-4">
       {ConfirmDialog}
@@ -290,16 +259,13 @@ export function DamageDiagram({
       {selected && (
         <MarkerEditor
           marker={selected}
-          getPhotoUrl={getPhotoUrl}
           onChange={(patch) => updateMarker(selected.seq, patch)}
-          onAddPhoto={(file) => void addPhotoToMarker(selected.seq, file)}
-          onRemovePhoto={(id) => removePhotoFromMarker(selected.seq, id)}
           onClose={() => setSelectedSeq(null)}
           onDelete={() => void handleLongPress(selected.seq)}
         />
       )}
 
-      <DamageMarkerTable markers={markers} getPhotoUrl={getPhotoUrl} onSelect={setSelectedSeq} />
+      <DamageMarkerTable markers={markers} onSelect={setSelectedSeq} />
     </div>
   );
 }
@@ -308,29 +274,12 @@ export function DamageDiagram({
 
 interface MarkerEditorProps {
   marker: DamageMarker;
-  getPhotoUrl: (photoId: string) => string | undefined;
   onChange: (patch: Partial<DamageMarker>) => void;
-  onAddPhoto: (file: File) => void;
-  onRemovePhoto: (id: string) => void;
   onClose: () => void;
   onDelete: () => void;
 }
 
-function MarkerEditor({
-  marker,
-  getPhotoUrl,
-  onChange,
-  onAddPhoto,
-  onRemovePhoto,
-  onClose,
-  onDelete,
-}: MarkerEditorProps) {
-  const requiresPhoto = damageMarkerRequiresPhoto(marker.severity);
-  const blocked = requiresPhoto && marker.photoIds.length === 0;
-  const linkedPhotos = marker.photoIds
-    .map((id) => ({ id, url: getPhotoUrl(id) }))
-    .filter((p): p is { id: string; url: string } => !!p.url);
-
+function MarkerEditor({ marker, onChange, onClose, onDelete }: MarkerEditorProps) {
   return (
     <div className="space-y-3 rounded-xl border border-border bg-card p-4">
       <div className="flex items-center justify-between">
@@ -399,53 +348,6 @@ function MarkerEditor({
         />
       </div>
 
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <label className="text-sm font-medium">
-            Linked photos {requiresPhoto && <span className="text-destructive">*</span>}
-          </label>
-          <label className="cursor-pointer rounded-md border border-input bg-background px-2.5 py-1 text-xs font-medium hover:bg-accent">
-            + Add
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                e.target.value = "";
-                if (file) onAddPhoto(file);
-              }}
-            />
-          </label>
-        </div>
-        {linkedPhotos.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {linkedPhotos.map((p) => (
-              <div
-                key={p.id}
-                className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-border"
-              >
-                <img src={p.url} alt="" className="h-full w-full object-cover" />
-                <button
-                  type="button"
-                  onClick={() => onRemovePhoto(p.id)}
-                  className="absolute right-0 top-0 rounded-bl bg-black/60 px-1 text-[10px] text-white"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        {blocked && (
-          <p className="text-[11px] text-destructive">
-            {SEVERITY_LABELS[marker.severity]} markers need at least one linked photo before this
-            inspection can be signed.
-          </p>
-        )}
-      </div>
-
       <button
         type="button"
         onClick={onDelete}
@@ -461,11 +363,9 @@ function MarkerEditor({
 
 function DamageMarkerTable({
   markers,
-  getPhotoUrl,
   onSelect,
 }: {
   markers: DamageMarker[];
-  getPhotoUrl: (photoId: string) => string | undefined;
   onSelect: (seq: number) => void;
 }) {
   if (markers.length === 0) {
@@ -482,7 +382,6 @@ function DamageMarkerTable({
             <th className="px-3 py-2">Type</th>
             <th className="px-3 py-2">Severity</th>
             <th className="px-3 py-2">Note</th>
-            <th className="px-3 py-2">Photos</th>
           </tr>
         </thead>
         <tbody>
@@ -498,22 +397,6 @@ function DamageMarkerTable({
               <td className="px-3 py-2">{SEVERITY_LABELS[m.severity]}</td>
               <td className="max-w-[220px] truncate px-3 py-2 text-muted-foreground">
                 {m.note || "—"}
-              </td>
-              <td className="px-3 py-2">
-                <div className="flex gap-1">
-                  {m.photoIds.length === 0 && <span className="text-muted-foreground">—</span>}
-                  {m.photoIds.map((id) => {
-                    const url = getPhotoUrl(id);
-                    return url ? (
-                      <img
-                        key={id}
-                        src={url}
-                        alt=""
-                        className="h-6 w-6 rounded border border-border object-cover"
-                      />
-                    ) : null;
-                  })}
-                </div>
               </td>
             </tr>
           ))}
