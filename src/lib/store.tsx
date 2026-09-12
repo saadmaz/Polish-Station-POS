@@ -1756,7 +1756,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         appVersion: "",
       },
       geo: null,
-      photoRequirementsMet: computePhotoRequirementsMet([], [], false),
+      // Firestore rules' `inspections` create rule hard-requires this to be
+      // literally `false` on a brand-new draft (independent of
+      // PHOTO_CAPTURE_ENABLED — it's a structural "a fresh draft hasn't met
+      // anything yet" invariant, not a photo-specific one). The very next
+      // updateInspection() call recomputes it for real via
+      // computePhotoRequirementsMet — that one's flag-aware, this one isn't.
+      photoRequirementsMet: false,
       status: "draft",
       supersedes: null,
       supersededBy: null,
