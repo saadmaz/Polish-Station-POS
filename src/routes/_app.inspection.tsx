@@ -23,7 +23,7 @@ import { formatDate } from "@/lib/date-format";
 import type { Job, JobStatus } from "@/lib/job";
 import type { Lead } from "@/lib/db";
 import { latestNonSupersededInspection, type Inspection } from "@/lib/inspection";
-import { ClipboardCheck, Camera, CheckCircle2, Plus, Car } from "lucide-react";
+import { ClipboardCheck, Camera, CheckCircle2, Plus, Car, FileText } from "lucide-react";
 
 export const Route = createFileRoute("/_app/inspection")({
   head: () => ({ meta: [{ title: "Inspection · Polish Station OS" }] }),
@@ -280,9 +280,22 @@ function InspectionPage() {
                         <span className="text-xs text-muted-foreground">Not started</span>
                       )}
                       {inspection && inspection.status === "signed" && (
-                        <span className="flex items-center gap-1 text-xs text-success">
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Signed
-                        </span>
+                        <div className="flex items-center gap-3">
+                          <span className="flex items-center gap-1 text-xs text-success">
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Signed
+                          </span>
+                          {inspection.documents?.report && (
+                            <a
+                              href={inspection.documents.report.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
+                            >
+                              <FileText className="h-3.5 w-3.5" /> Report
+                            </a>
+                          )}
+                        </div>
                       )}
                       {inspection && inspection.status === "draft" && (
                         <span className="text-xs text-muted-foreground">

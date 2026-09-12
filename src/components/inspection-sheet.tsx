@@ -41,7 +41,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { Check, ShieldAlert } from "lucide-react";
+import { Check, ShieldAlert, FileText } from "lucide-react";
 
 type StepDef = { kind: "intake" } | { kind: "damage" } | { kind: "review" };
 
@@ -346,6 +346,24 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
             {draft.remoteAck?.replyReceivedAt && (
               <p className="text-muted-foreground">
                 Remote acknowledgment received {formatDateTime(draft.remoteAck.replyReceivedAt)}
+              </p>
+            )}
+            {draft.documents?.report ? (
+              <a
+                href={draft.documents.report.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                View Inspection Report (PDF)
+              </a>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                No report PDF was generated for this inspection — it's usually built
+                automatically right when sign-off completes, so this means that step failed at
+                the time (a toast would have said so). Once signed, it can't be regenerated from
+                here; a Manager can check the Storage/permissions setup.
               </p>
             )}
           </div>
