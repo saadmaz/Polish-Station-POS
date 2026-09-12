@@ -118,13 +118,37 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
 
   useEffect(() => {
     if (open) {
-      setDraft(inspection);
       setSignerName(inspection.customerSignature?.signerName ?? inspection.customerSnapshot.name);
       setReplyText(inspection.remoteAck?.replyText ?? "");
       setStepIndex(0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, inspection.id]);
+
+  // Separate from the effect above on purpose: this one re-syncs `draft`
+  // to the live `inspection` prop on *every* change to it while the sheet
+  // stays open, not only when the sheet first opens or switches to a
+  // different inspection.id. The parent now derives that prop fresh from
+  // useStore()'s onSnapshot-backed array every render, so this is what
+  // actually keeps `draft` from going stale — the bug this fixes was a
+  // sheet still showing draft/pending_acknowledgment as editable, and
+  // inviting another sign-off attempt, well after the real document had
+  // already moved to signed/superseded some other way (a prior attempt
+  // that actually succeeded, a supersession, anything) — every further
+  // write then correctly got rejected by storage.rules/firestore.rules,
+  // over and over, with no visible way out short of a manual reload.
+  // Harmless when it's just this client's own write echoing back (same
+  // content either way); the one place this can't run is stepIndex/
+  // signerName/replyText, which are session-local UI state that a live
+  // update should never reset out from under whatever the user is doing.
+  useEffect(() => {
+    if (open) setDraft(inspection);
+    // Deliberately keyed on updatedAt, not the `inspection` object itself —
+    // the parent derives a brand-new object reference every render, so
+    // depending on the object would re-run (and re-setDraft) on every
+    // render regardless of whether the document actually changed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, inspection.id, inspection.updatedAt]);
 
   const currentStep = STEPS[stepIndex];
   const isIntakeStep = currentStep.kind === "intake";

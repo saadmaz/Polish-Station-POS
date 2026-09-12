@@ -22,7 +22,7 @@ import {
 import { formatDate } from "@/lib/date-format";
 import type { Job, JobStatus } from "@/lib/job";
 import type { Lead } from "@/lib/db";
-import { latestNonSupersededInspection, type Inspection } from "@/lib/inspection";
+import { latestNonSupersededInspection } from "@/lib/inspection";
 import { ClipboardCheck, Camera, CheckCircle2, Plus, Car, FileText } from "lucide-react";
 
 export const Route = createFileRoute("/_app/inspection")({
@@ -47,7 +47,17 @@ function leadVehicleLabel(lead: Lead): string {
 
 function InspectionPage() {
   const { jobs, leads, inspections, startInspection } = useStore();
-  const [sheetState, setSheetState] = useState<{ job: Job; inspection: Inspection } | null>(null);
+  // Only the id — never the Job/Inspection objects themselves. Those come
+  // from useStore()'s live, onSnapshot-backed arrays on every render (see
+  // sheetJob/sheetInspection below); freezing a snapshot here was the actual
+  // bug behind "sign-off keeps failing with a permission error even on the
+  // very first click" — the sheet went on showing a draft/pending_ack
+  // inspection as still-editable long after some other write (an earlier
+  // attempt that actually succeeded, a supersession, anything) had already
+  // moved the real document to "signed"/"superseded" server-side, so every
+  // further write against it was correctly rejected by storage.rules/
+  // firestore.rules while the stale UI kept inviting another try.
+  const [sheetJobId, setSheetJobId] = useState<string | null>(null);
   const [starting, setStarting] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -57,17 +67,20 @@ function InspectionPage() {
     .filter((j) => ELIGIBLE_STATUSES.includes(j.status))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
+  const sheetJob = sheetJobId ? (jobs.find((j) => j.id === sheetJobId) ?? null) : null;
+  const sheetInspection = sheetJob ? latestNonSupersededInspection(inspections, sheetJob.id) : null;
+
   async function handleStartOrContinue(job: Job) {
     const existing = latestNonSupersededInspection(inspections, job.id);
     if (existing && existing.status !== "signed") {
-      setSheetState({ job, inspection: existing });
+      setSheetJobId(job.id);
       return;
     }
     if (existing && existing.status === "signed") return; // no action yet — supersession is a later phase
     setStarting(job.id);
     try {
-      const inspection = await startInspection(job);
-      setSheetState({ job, inspection });
+      await startInspection(job);
+      setSheetJobId(job.id);
     } catch {
       toast.error("Couldn't start the inspection, please try again");
     } finally {
@@ -127,6 +140,10 @@ function InspectionPage() {
     setPickerOpen(false);
     setQuery("");
     setConvertLead(lead);
+  }
+
+  function closeSheet(open: boolean) {
+    if (!open) setSheetJobId(null);
   }
 
   // The vehicle-intake form (JobSheet in convertLead mode) already asks for
@@ -331,12 +348,12 @@ function InspectionPage() {
         </div>
       )}
 
-      {sheetState && (
+      {sheetJob && sheetInspection && (
         <InspectionSheet
-          open={!!sheetState}
-          onOpenChange={(open) => !open && setSheetState(null)}
-          job={sheetState.job}
-          inspection={sheetState.inspection}
+          open={!!sheetJobId}
+          onOpenChange={closeSheet}
+          job={sheetJob}
+          inspection={sheetInspection}
         />
       )}
     </div>
