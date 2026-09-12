@@ -1138,15 +1138,26 @@ async function fetchDataUrl(path: string, mime: string): Promise<string | null> 
   try {
     const bytes = await getBytes(storageRef(storage, path));
     const blob = new Blob([bytes], { type: mime });
-    return await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(blob);
-    });
+    return await blobToDataUrl(blob);
   } catch {
     return null;
   }
+}
+
+/** Same FileReader conversion fetchDataUrl uses, exposed for callers that
+ *  already hold the Blob in memory (a signature pad's own toBlob(), right
+ *  before it's uploaded) and can hand it to generateInspectionReportPDF
+ *  directly instead of uploading, then immediately reading the same bytes
+ *  back from Storage — a round trip that has nothing to do with jsPDF and
+ *  everything to do with the Storage bucket's CORS config, which the
+ *  in-memory blob was never going to be subject to in the first place. */
+export async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
 }
 
 function newPage(doc: jsPDF): number {
@@ -1348,6 +1359,16 @@ export interface InspectionReportResult {
  */
 export async function generateInspectionReportPDF(
   inspection: Inspection,
+  // Optional — a signature pad's toBlob() converted to a data URL right
+  // before upload, for a caller that already has it in memory this same
+  // sign-off action. Passing it here skips re-fetching those same bytes
+  // back from Storage (which needs the bucket's CORS config to allow this
+  // origin's XHR reads — uploads and the SDK's own internal calls don't hit
+  // that same wall, but this fetch does). Falls back to the Storage fetch
+  // when omitted, so a report generated later without the original blob in
+  // hand (there's no such caller today, but nothing stops one existing)
+  // still works exactly as before.
+  preloadedSignatures?: { customerSigDataUrl?: string | null; inspectorSigDataUrl?: string | null },
 ): Promise<InspectionReportResult> {
   const version = (inspection.documents?.report?.version ?? 0) + 1;
 
@@ -1363,12 +1384,18 @@ export async function generateInspectionReportPDF(
       ),
     ),
   );
-  const customerSigDataUrl = inspection.customerSignature
-    ? await fetchDataUrl(inspection.customerSignature.storagePath, "image/png")
-    : null;
-  const inspectorSigDataUrl = inspection.inspectorSignature
-    ? await fetchDataUrl(inspection.inspectorSignature.storagePath, "image/png")
-    : null;
+  const customerSigDataUrl =
+    preloadedSignatures?.customerSigDataUrl !== undefined
+      ? preloadedSignatures.customerSigDataUrl
+      : inspection.customerSignature
+        ? await fetchDataUrl(inspection.customerSignature.storagePath, "image/png")
+        : null;
+  const inspectorSigDataUrl =
+    preloadedSignatures?.inspectorSigDataUrl !== undefined
+      ? preloadedSignatures.inspectorSigDataUrl
+      : inspection.inspectorSignature
+        ? await fetchDataUrl(inspection.inspectorSignature.storagePath, "image/png")
+        : null;
   const remoteAckScreenshotDataUrl = inspection.remoteAck?.screenshotPath
     ? await fetchDataUrl(inspection.remoteAck.screenshotPath, "image/jpeg")
     : null;

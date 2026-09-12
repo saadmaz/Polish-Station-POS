@@ -16,7 +16,7 @@ import { useStore } from "@/lib/store";
 import { uploadSignaturePng } from "@/lib/inspection-photos";
 import { buildWALink } from "@/lib/notifications";
 import { formatDateTime } from "@/lib/date-format";
-import { generateInspectionReportPDF } from "@/lib/pdf";
+import { generateInspectionReportPDF, blobToDataUrl } from "@/lib/pdf";
 import { DamageDiagram } from "@/components/damage-diagram/damage-diagram";
 import {
   SignaturePad,
@@ -180,9 +180,12 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
   // works for the two sign actions. Failure here is swallowed (logged +
   // toasted) rather than thrown — a PDF that fails to render must never
   // block or revert the sign-off/acknowledgment-request itself.
-  async function withGeneratedReport(next: Inspection): Promise<Inspection> {
+  async function withGeneratedReport(
+    next: Inspection,
+    preloadedSignatures?: { customerSigDataUrl?: string | null; inspectorSigDataUrl?: string | null },
+  ): Promise<Inspection> {
     try {
-      const result = await generateInspectionReportPDF(next);
+      const result = await generateInspectionReportPDF(next, preloadedSignatures);
       return {
         ...next,
         documents: {
@@ -248,10 +251,13 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
       setSigning(true);
       try {
         const now = new Date().toISOString();
-        const [customerPath, inspectorPath] = await Promise.all([
-          uploadSignaturePng(job.id, draft.id, "customer", customerBlob),
-          uploadSignaturePng(job.id, draft.id, "inspector", inspectorBlob),
-        ]);
+        const [customerPath, inspectorPath, customerSigDataUrl, inspectorSigDataUrl] =
+          await Promise.all([
+            uploadSignaturePng(job.id, draft.id, "customer", customerBlob),
+            uploadSignaturePng(job.id, draft.id, "inspector", inspectorBlob),
+            blobToDataUrl(customerBlob),
+            blobToDataUrl(inspectorBlob),
+          ]);
         const next: Inspection = {
           ...draft,
           inspectedWithCustomer: true,
@@ -268,7 +274,10 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
           },
           status: "signed",
         };
-        const withReport = await withGeneratedReport(next);
+        const withReport = await withGeneratedReport(next, {
+          customerSigDataUrl,
+          inspectorSigDataUrl,
+        });
         persist(withReport);
         toast.success("Inspection signed");
       } catch {
@@ -300,7 +309,10 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
       setSigning(true);
       try {
         const now = new Date().toISOString();
-        const inspectorPath = await uploadSignaturePng(job.id, draft.id, "inspector", inspectorBlob);
+        const [inspectorPath, inspectorSigDataUrl] = await Promise.all([
+          uploadSignaturePng(job.id, draft.id, "inspector", inspectorBlob),
+          blobToDataUrl(inspectorBlob),
+        ]);
         const next: Inspection = {
           ...draft,
           remoteAck: draft.remoteAck
@@ -314,7 +326,7 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
           },
           status: "signed",
         };
-        const withReport = await withGeneratedReport(next);
+        const withReport = await withGeneratedReport(next, { inspectorSigDataUrl });
         persist(withReport);
         toast.success("Inspection signed");
       } catch {
