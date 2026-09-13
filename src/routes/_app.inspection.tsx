@@ -22,7 +22,7 @@ import {
 import { formatDate } from "@/lib/date-format";
 import type { Job, JobStatus } from "@/lib/job";
 import type { Lead } from "@/lib/db";
-import { latestNonSupersededInspection } from "@/lib/inspection";
+import { latestNonSupersededInspection, type Inspection } from "@/lib/inspection";
 import { ClipboardCheck, Camera, CheckCircle2, Plus, Car, FileText } from "lucide-react";
 
 export const Route = createFileRoute("/_app/inspection")({
@@ -43,6 +43,126 @@ function leadVehicleLabel(lead: Lead): string {
     return lead.vehicleYear ? `${makeModel} · ${lead.vehicleYear}` : makeModel;
   }
   return lead.vehicle || "No vehicle description yet";
+}
+
+// Shared by the desktop table row and the mobile card below it — same
+// status logic rendered twice would drift out of sync otherwise.
+function InspectionStatusBadge({ inspection }: { inspection: Inspection | null }) {
+  if (!inspection) return <span className="text-xs text-muted-foreground">Not started</span>;
+  if (inspection.status === "signed") {
+    return (
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="flex items-center gap-1 text-xs text-success">
+          <CheckCircle2 className="h-3.5 w-3.5" /> Signed
+        </span>
+        {inspection.documents?.report && (
+          <a
+            href={inspection.documents.report.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
+          >
+            <FileText className="h-3.5 w-3.5" /> Report
+          </a>
+        )}
+      </div>
+    );
+  }
+  if (inspection.status === "draft") {
+    return (
+      <span className="text-xs text-muted-foreground">
+        In progress · {formatDate(inspection.updatedAt)}
+      </span>
+    );
+  }
+  return <span className="text-xs text-muted-foreground">Awaiting customer ack</span>;
+}
+
+function InspectionActionButton({
+  job,
+  inspection,
+  starting,
+  onStart,
+  className,
+}: {
+  job: Job;
+  inspection: Inspection | null;
+  starting: string | null;
+  onStart: (job: Job) => void;
+  className?: string;
+}) {
+  if (!job.vehicle || inspection?.status === "signed") {
+    return <span className="text-xs text-muted-foreground">—</span>;
+  }
+  return (
+    <button
+      type="button"
+      disabled={starting === job.id}
+      onClick={() => onStart(job)}
+      className={
+        className ??
+        "inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
+      }
+    >
+      <Camera className="h-3.5 w-3.5" />
+      {inspection ? "Continue" : "Start Inspection"}
+    </button>
+  );
+}
+
+// Mobile card — the desktop table's six columns don't reflow onto a phone
+// screen, so this is a separate, narrower layout for the same row's data
+// (same pattern _app.jobs.tsx's JobCard/JobRow pair already uses).
+function InspectionJobCard({
+  job,
+  inspection,
+  starting,
+  onStart,
+}: {
+  job: Job;
+  inspection: Inspection | null;
+  starting: string | null;
+  onStart: (job: Job) => void;
+}) {
+  return (
+    <div className="p-4">
+      <div className="flex items-start justify-between gap-2.5">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-mono text-xs font-semibold">{job.id}</span>
+            <span className="text-[11px] capitalize text-muted-foreground">
+              {job.status.replace(/_/g, " ")}
+            </span>
+          </div>
+          {job.vehicle ? (
+            <div className="mt-1 text-sm">
+              <span className="font-mono">{job.vehicle.plate || "—"}</span>{" "}
+              <span className="text-xs text-muted-foreground">
+                {[job.vehicle.make, job.vehicle.model].filter(Boolean).join(" ")}
+              </span>
+            </div>
+          ) : (
+            <div className="mt-1 text-xs text-muted-foreground">No vehicle intake</div>
+          )}
+          <div className="text-[11px] text-muted-foreground truncate">
+            {job.customerSnapshot?.name ?? job.customerName}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <InspectionStatusBadge inspection={inspection} />
+        <InspectionActionButton
+          job={job}
+          inspection={inspection}
+          starting={starting}
+          onStart={onStart}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-input bg-background px-2.5 py-1.5 text-[11px] font-medium hover:bg-accent disabled:opacity-60"
+        />
+      </div>
+    </div>
+  );
 }
 
 function InspectionPage() {
@@ -200,17 +320,21 @@ function InspectionPage() {
                     .join(" ")}
                   onSelect={() => handlePickJob(job)}
                 >
-                  <Car className="mr-2 h-4 w-4 text-muted-foreground" />
-                  <span className="font-mono font-medium">{job.vehicle.plate || "—"}</span>
-                  <span className="ml-2 text-sm">
-                    {[job.vehicle.make, job.vehicle.model].filter(Boolean).join(" ")}
-                  </span>
-                  <span className="ml-2 text-sm text-muted-foreground">
-                    {job.customerSnapshot?.name ?? job.customerName}
-                  </span>
-                  <span className="ml-auto text-xs text-muted-foreground capitalize">
-                    {job.status.replace(/_/g, " ")}
-                  </span>
+                  <Car className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      <span className="font-mono font-medium">{job.vehicle.plate || "—"}</span>
+                      <span className="truncate text-sm text-muted-foreground">
+                        {[job.vehicle.make, job.vehicle.model].filter(Boolean).join(" ")}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span className="truncate">
+                        {job.customerSnapshot?.name ?? job.customerName}
+                      </span>
+                      <span className="shrink-0 capitalize">{job.status.replace(/_/g, " ")}</span>
+                    </div>
+                  </div>
                 </CommandItem>
               ))}
             </CommandGroup>
@@ -232,10 +356,14 @@ function InspectionPage() {
                     .join(" ")}
                   onSelect={() => handlePickLead(lead)}
                 >
-                  <Car className="mr-2 h-4 w-4 text-muted-foreground" />
-                  <span className="font-medium">{leadVehicleLabel(lead)}</span>
-                  <span className="ml-2 text-sm">{lead.name}</span>
-                  <span className="ml-auto text-xs text-muted-foreground">{lead.phone ?? "—"}</span>
+                  <Car className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <span className="truncate font-medium">{leadVehicleLabel(lead)}</span>
+                    <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                      <span className="truncate">{lead.name}</span>
+                      <span className="shrink-0">{lead.phone ?? "—"}</span>
+                    </div>
+                  </div>
                 </CommandItem>
               ))}
             </CommandGroup>
@@ -258,94 +386,76 @@ function InspectionPage() {
           <p className="text-sm">No vehicles currently checked in for inspection.</p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                <th className="px-4 py-3">Job</th>
-                <th className="px-4 py-3">Vehicle</th>
-                <th className="px-4 py-3">Customer</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Inspection</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody>
-              {eligibleJobs.map((job) => {
-                const inspection = latestNonSupersededInspection(inspections, job.id);
-                return (
-                  <tr key={job.id} className="border-b border-border last:border-0">
-                    <td className="px-4 py-3 font-mono text-xs">{job.id}</td>
-                    <td className="px-4 py-3">
-                      {job.vehicle ? (
-                        <div>
-                          <div className="font-mono">{job.vehicle.plate || "—"}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {[job.vehicle.make, job.vehicle.model].filter(Boolean).join(" ")}
+        <>
+          {/* Phone-width card list — the six-column table below doesn't
+              reflow onto a narrow screen, so this is a separate layout for
+              the same rows, not a smaller version of the same markup. */}
+          <div className="divide-y divide-border rounded-xl border border-border bg-card md:hidden">
+            {eligibleJobs.map((job) => (
+              <InspectionJobCard
+                key={job.id}
+                job={job}
+                inspection={latestNonSupersededInspection(inspections, job.id)}
+                starting={starting}
+                onStart={handleStartOrContinue}
+              />
+            ))}
+          </div>
+
+          <div className="hidden overflow-x-auto rounded-xl border border-border bg-card md:block">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  <th className="px-4 py-3">Job</th>
+                  <th className="px-4 py-3">Vehicle</th>
+                  <th className="px-4 py-3">Customer</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Inspection</th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {eligibleJobs.map((job) => {
+                  const inspection = latestNonSupersededInspection(inspections, job.id);
+                  return (
+                    <tr key={job.id} className="border-b border-border last:border-0">
+                      <td className="px-4 py-3 font-mono text-xs">{job.id}</td>
+                      <td className="px-4 py-3">
+                        {job.vehicle ? (
+                          <div>
+                            <div className="font-mono">{job.vehicle.plate || "—"}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {[job.vehicle.make, job.vehicle.model].filter(Boolean).join(" ")}
+                            </div>
                           </div>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">No vehicle intake</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">{job.customerSnapshot?.name ?? job.customerName}</td>
-                    <td className="px-4 py-3 text-xs capitalize text-muted-foreground">
-                      {job.status.replace(/_/g, " ")}
-                    </td>
-                    <td className="px-4 py-3">
-                      {!inspection && (
-                        <span className="text-xs text-muted-foreground">Not started</span>
-                      )}
-                      {inspection && inspection.status === "signed" && (
-                        <div className="flex items-center gap-3">
-                          <span className="flex items-center gap-1 text-xs text-success">
-                            <CheckCircle2 className="h-3.5 w-3.5" /> Signed
-                          </span>
-                          {inspection.documents?.report && (
-                            <a
-                              href={inspection.documents.report.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
-                            >
-                              <FileText className="h-3.5 w-3.5" /> Report
-                            </a>
-                          )}
-                        </div>
-                      )}
-                      {inspection && inspection.status === "draft" && (
-                        <span className="text-xs text-muted-foreground">
-                          In progress · {formatDate(inspection.updatedAt)}
-                        </span>
-                      )}
-                      {inspection && inspection.status === "pending_acknowledgment" && (
-                        <span className="text-xs text-muted-foreground">Awaiting customer ack</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {!job.vehicle ? (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      ) : inspection?.status === "signed" ? (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={starting === job.id}
-                          onClick={() => handleStartOrContinue(job)}
-                          className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-60"
-                        >
-                          <Camera className="h-3.5 w-3.5" />
-                          {inspection ? "Continue" : "Start Inspection"}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">No vehicle intake</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {job.customerSnapshot?.name ?? job.customerName}
+                      </td>
+                      <td className="px-4 py-3 text-xs capitalize text-muted-foreground">
+                        {job.status.replace(/_/g, " ")}
+                      </td>
+                      <td className="px-4 py-3">
+                        <InspectionStatusBadge inspection={inspection} />
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <InspectionActionButton
+                          job={job}
+                          inspection={inspection}
+                          starting={starting}
+                          onStart={handleStartOrContinue}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {sheetJob && sheetInspection && (
