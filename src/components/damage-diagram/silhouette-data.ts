@@ -496,44 +496,47 @@ export function roundedPolygonPath(
 // and the rear's lack of a grille panel differ — so it's defined once and
 // reused, same as before.
 const SEDAN_FRONT_REAR_ROOF: readonly Point[] = [
+  [56.31, 42.38],
   [203.69, 42.38],
   [202.19, 38],
   [57.81, 38],
-  [56.31, 42.38],
 ];
 const SEDAN_FRONT_REAR_GLASS: readonly Point[] = [
-  [218.35, 85.03],
-  [203.69, 42.38],
   [56.31, 42.38],
   [41.65, 85.03],
+  [218.35, 85.03],
+  [203.69, 42.38],
 ];
 const SEDAN_FRONT_REAR_MAIN_PANEL: readonly Point[] = [
-  [33.75, 110.19],
-  [226.25, 110.19],
-  [226.25, 108],
-  [218.35, 85.03],
   [41.65, 85.03],
   [33.75, 108],
+  [34.34, 110.19],
+  [225.66, 110.19],
+  [226.25, 108],
+  [218.35, 85.03],
 ];
 const SEDAN_FRONT_REAR_LIGHT_L: readonly Point[] = [
   [86.69, 110.19],
-  [33.75, 110.19],
-  [33.75, 143],
+  [34.34, 110.19],
+  [43.17, 143],
   [86.69, 143],
 ];
 const SEDAN_FRONT_REAR_LIGHT_R: readonly Point[] = [
   [173.31, 110.19],
   [173.31, 143],
-  [226.25, 143],
-  [226.25, 110.19],
+  [216.83, 143],
+  [225.66, 110.19],
 ];
+// Bumper genuinely tapers narrower toward the bottom now (part of the fix
+// for the body cross-section's flat vertical wall — see model comment
+// above); it's no longer the same width top-to-bottom.
 const SEDAN_FRONT_REAR_BUMPER_BAND: readonly Point[] = [
-  [33.75, 143],
-  [33.75, 164.88],
+  [43.17, 143],
+  [49.06, 164.88],
   [55.63, 178],
   [204.38, 178],
-  [226.25, 164.88],
-  [226.25, 143],
+  [210.94, 164.88],
+  [216.83, 143],
 ];
 const SEDAN_FRONT_REAR_CENTRE_BAND: readonly Point[] = [
   [173.31, 110.19],
