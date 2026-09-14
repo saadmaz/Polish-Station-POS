@@ -1,21 +1,23 @@
-// Original, hand-drawn outline shapes — not traced from any photo, template,
-// or third-party asset. Deliberately simple geometric silhouettes (straight
-// segments, no bezier tracing of a real vehicle's contours): good enough to
-// place damage markers on accurately and distinguish one body type from
-// another at a glance, not a photorealistic illustration. Swappable for
-// licensed/commissioned artwork later without touching any data model — a
-// DamageMarker only ever stores normalized {x,y} against a view's viewBox,
-// never anything about the artwork itself.
+// Two different artwork strategies live in this file, one per body type.
 //
-// The actual point data lives in silhouette-data.ts (pure, no JSX) so
-// pdf.ts's inspection report can redraw the exact same shapes with jsPDF's
-// line primitives — this file is just the SVG rendering of that data.
+// Sedan: real commissioned Illustrator artwork (five PNGs, one per view —
+// see silhouette-data.ts's "Sedan real artwork" section for how they were
+// vetted to be generic, not traced from a real model). Rendered as a
+// full-bleed <image> with each panel's hit region as an invisible overlay
+// on top — a DamageMarker only ever stores normalized {x,y} against the
+// view's viewBox, never anything about the artwork, so swapping the PNGs
+// again later needs no data-model change. pdf.ts's printed report embeds
+// the same PNGs (doc.addImage), not a redrawn vector copy.
 //
-// Front and rear reuse the same silhouette per body type (a simplification:
-// real vehicles differ front-to-back, but the outline only needs to be
-// consistent enough to place a marker on "the front bumper" vs "the rear
-// bumper" — the label above the diagram carries that distinction, not the
-// artwork). Top view carries no wheel hints; profile and front/rear do.
+// Every other body type: the original hand-drawn, not-traced-from-anything
+// single-blob outline (bodyOutlinePoints, in silhouette-data.ts) — deliberately
+// simple straight-segment silhouettes, good enough to place a marker
+// accurately and tell body types apart at a glance, not photorealistic.
+// pdf.ts's report redraws these with jsPDF's own line primitives from the
+// same point data (no image involved), which is what guarantees marker
+// positions match on screen exactly. Front and rear reuse the same
+// silhouette (the label above the diagram carries that distinction, not
+// the artwork); top view carries no wheel hints, profile and front/rear do.
 import type { BodyType } from "@/lib/job";
 import type { DamageMarkerView } from "@/lib/inspection";
 import {

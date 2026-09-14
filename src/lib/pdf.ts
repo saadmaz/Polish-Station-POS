@@ -19,18 +19,16 @@ import {
 // components/ tree that imports from it, and deliberately so: the PDF's
 // damage diagram must redraw the *exact* same shapes the screen does (see
 // the acceptance criterion that marker positions match on-screen exactly),
-// which only holds if both renderers read the same numbers.
+// which only holds if both renderers read the same numbers. Sedan no longer
+// has its own vector geometry here — it draws the same commissioned
+// illustrator PNGs (SEDAN_IMAGE_SRC) the on-screen diagram does; only the
+// other body types still use the vector single-blob outline.
 import {
   bodyOutlinePoints,
   profileWheelCentres,
   viewBoxSize,
-  sedanPanelsForView,
-  roundedPolygonPoints,
-  panelCornerRadius,
-  isPanelCircle,
-  isPanelMultiPoly,
-  seamPointKeys,
-  radiiWithSeams,
+  SEDAN_IMAGE_SRC,
+  SEDAN_IMAGE_VIEWBOX,
 } from "@/components/damage-diagram/silhouette-data";
 
 // Letterhead details come from the settings/business Firestore doc (cached in
@@ -1151,6 +1149,63 @@ async function fetchDataUrl(path: string, mime: string): Promise<string | null> 
   }
 }
 
+// Sedan diagram artwork (public/Illustrations/*.png) is a same-origin static
+// asset, not a Storage object — a plain fetch() rather than fetchDataUrl()'s
+// getBytes(storageRef(...)). Cached per document generation: the multi-page
+// report draws several views but never the same one twice, so no request
+// is ever repeated within one call.
+// The sedan artwork ships at ~1700-2000px per side (crisp for the on-screen
+// diagram, which can be tapped/zoomed) but is only ever drawn into a ~40-90mm
+// PDF box — embedding it at source resolution produced a 20MB+ single-page
+// PDF (jsPDF stores addImage() data close to verbatim, it doesn't
+// recompress). Downscaling to print-adequate resolution first, and
+// re-encoding as JPEG (no transparency to preserve, and these are line art
+// on a flat background — JPEG compresses that far smaller than PNG at a
+// quality no one will see the difference at), is what actually fixes it.
+const SEDAN_PDF_IMAGE_MAX_DIM = 700;
+const SEDAN_PDF_IMAGE_JPEG_QUALITY = 0.85;
+
+async function downscaleImageDataUrl(
+  dataUrl: string,
+  maxDim: number,
+  quality: number,
+): Promise<string> {
+  const img = new Image();
+  const loaded = new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = () => reject(new Error("image decode failed"));
+  });
+  img.src = dataUrl;
+  await loaded;
+  const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.round(img.naturalWidth * scale);
+  const h = Math.round(img.naturalHeight * scale);
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return dataUrl; // canvas unsupported — fall back to the original, oversized as it is
+  ctx.fillStyle = "#ffffff"; // flattens any transparency to white, not JPEG's default black
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+  return canvas.toDataURL("image/jpeg", quality);
+}
+
+async function fetchPublicAssetDataUrl(path: string): Promise<string | null> {
+  try {
+    const res = await fetch(path);
+    if (!res.ok) return null;
+    const original = await blobToDataUrl(await res.blob());
+    return await downscaleImageDataUrl(
+      original,
+      SEDAN_PDF_IMAGE_MAX_DIM,
+      SEDAN_PDF_IMAGE_JPEG_QUALITY,
+    );
+  } catch {
+    return null;
+  }
+}
+
 /** Same FileReader conversion fetchDataUrl uses, exposed for callers that
  *  already hold the Blob in memory (a signature pad's own toBlob(), right
  *  before it's uploaded) and can hand it to generateInspectionReportPDF
@@ -1202,60 +1257,82 @@ function strokePolygon(doc: jsPDF, points: [number, number][], style: "S" | "F" 
   doc.lines(deltas, x0, y0, [1, 1], style, true);
 }
 
+function sedanImageViewBoxSize(view: DamageMarkerView): [number, number] {
+  const [, , w, h] = SEDAN_IMAGE_VIEWBOX[view].split(" ").map(Number);
+  return [w, h];
+}
+
+/** Scale/offset transform for one diagram box (bx,by,bw,bh) — shared by the
+ *  multi-page report and the single-page sheet. Sedan letterboxes (uniform
+ *  scale, centred) against the real artwork's own aspect ratio, since
+ *  stretching a photo-like PNG to an arbitrary box would visibly distort
+ *  it; every other body type keeps the original independent-axis stretch
+ *  fit, which the pre-existing vector outlines were already tuned against —
+ *  changing that now would only risk regressing body types nothing here is
+ *  touching. Markers use the same toX/toY as whichever image/outline was
+ *  actually drawn, so they stay correctly positioned relative to it either
+ *  way. */
+function diagramTransform(
+  bodyType: BodyType,
+  view: DamageMarkerView,
+  bx: number,
+  by: number,
+  bw: number,
+  bh: number,
+): {
+  vbW: number;
+  vbH: number;
+  toX: (x: number) => number;
+  toY: (y: number) => number;
+} {
+  if (bodyType === "sedan") {
+    const [vbW, vbH] = sedanImageViewBoxSize(view);
+    const s = Math.min(bw / vbW, bh / vbH);
+    const offX = bx + (bw - vbW * s) / 2;
+    const offY = by + (bh - vbH * s) / 2;
+    return { vbW, vbH, toX: (x) => offX + x * s, toY: (y) => offY + y * s };
+  }
+  const [vbW, vbH] = viewBoxSize(view);
+  const sx = bw / vbW;
+  const sy = bh / vbH;
+  return { vbW, vbH, toX: (x) => bx + x * sx, toY: (y) => by + y * sy };
+}
+
 /** Draws the vehicle outline + wheels into a diagram box already scaled to
  *  (toX, toY) — shared by both the multi-page report (drawDiagramView) and
  *  the single-page sheet (sheetDrawDiagramView), since each needs to draw
- *  this identically. Sedan renders every panel from the same rounded-corner
- *  geometry silhouettes.tsx draws on screen (Phase 1 of the panel-clickable
- *  diagram); every other body type keeps the pre-Phase-1 single-blob
- *  outline — see bodyOutlinePoints' own callers for why. */
-function drawVehicleOutline(
+ *  this identically. Sedan embeds the same commissioned illustrator PNG the
+ *  on-screen diagram shows (SEDAN_IMAGE_SRC); every other body type keeps
+ *  the vector single-blob outline — see bodyOutlinePoints' own callers for
+ *  why. */
+async function drawVehicleOutline(
   doc: jsPDF,
   bodyType: BodyType,
   view: DamageMarkerView,
   toX: (x: number) => number,
   toY: (y: number) => number,
-  sx: number,
-  sy: number,
+  vbW: number,
+  vbH: number,
 ) {
-  doc.setDrawColor(...SLATE);
-  doc.setLineWidth(0.3);
   if (bodyType === "sedan") {
-    const panels = sedanPanelsForView(view);
-    // Per-vertex, not a flat radius: a corner shared with a neighbouring
-    // panel must round to exactly 0 in every panel that touches it, or each
-    // rounds its own copy independently and the seam splits into a visible
-    // gap — see roundedPolygonPoints' comment for what that looked like.
-    const seams = seamPointKeys(panels);
-    for (const panel of panels) {
-      if (isPanelCircle(panel)) {
-        const cx = toX(panel.cx);
-        const cy = toY(panel.cy);
-        const r = panel.r * Math.min(sx, sy);
-        doc.setFillColor(210, 210, 212);
-        doc.circle(cx, cy, r, "FD");
-        doc.setDrawColor(...SLATE);
-        doc.circle(cx, cy, r * 0.4, "S"); // plain hub ring, matches the on-screen wheel
-        continue;
-      }
-      const baseRadius = panelCornerRadius(panel.id);
-      const subpaths = isPanelMultiPoly(panel) ? panel.subpaths : [panel.points];
-      for (const sp of subpaths) {
-        const scaled = roundedPolygonPoints(sp, radiiWithSeams(sp, baseRadius, seams)).map(
-          ([x, y]) => [toX(x), toY(y)] as [number, number],
-        );
-        strokePolygon(doc, scaled, "S");
-      }
+    const dataUrl = await fetchPublicAssetDataUrl(SEDAN_IMAGE_SRC[view]);
+    if (!dataUrl) return; // box + label still drawn by the caller; just no art if the fetch failed
+    try {
+      doc.addImage(dataUrl, "JPEG", toX(0), toY(0), toX(vbW) - toX(0), toY(vbH) - toY(0));
+    } catch {
+      // corrupt/unsupported image data — omit rather than fail the whole report
     }
     return;
   }
+  doc.setDrawColor(...SLATE);
+  doc.setLineWidth(0.3);
   const outline = bodyOutlinePoints(bodyType, view).map(
     ([x, y]) => [toX(x), toY(y)] as [number, number],
   );
   strokePolygon(doc, outline, "S");
   if (view === "left" || view === "right") {
     const [fx, rx] = profileWheelCentres(bodyType, view);
-    const wr = 20 * Math.min(sx, sy);
+    const wr = 20 * ((toX(vbW) - toX(0)) / vbW);
     doc.setFillColor(210, 210, 212);
     doc.circle(toX(fx), toY(150), wr, "F");
     doc.circle(toX(rx), toY(150), wr, "F");
@@ -1267,7 +1344,7 @@ function drawVehicleOutline(
  *  the rectangle (bx,by,bw,bh) — the one thing that guarantees the spec's
  *  "marker positions in the PDF match their on-screen positions" criterion,
  *  since both renderers scale the same normalized numbers. */
-function drawDiagramView(
+async function drawDiagramView(
   doc: jsPDF,
   bodyType: BodyType,
   view: DamageMarkerView,
@@ -1277,11 +1354,7 @@ function drawDiagramView(
   bw: number,
   bh: number,
 ) {
-  const [vbW, vbH] = viewBoxSize(view);
-  const sx = bw / vbW;
-  const sy = bh / vbH;
-  const toX = (x: number) => bx + x * sx;
-  const toY = (y: number) => by + y * sy;
+  const { vbW, vbH, toX, toY } = diagramTransform(bodyType, view, bx, by, bw, bh);
 
   doc.setDrawColor(...RULE);
   doc.setLineWidth(0.2);
@@ -1292,7 +1365,7 @@ function drawDiagramView(
   doc.setTextColor(...MUTED);
   doc.text(view.toUpperCase(), bx, by - 1.5);
 
-  drawVehicleOutline(doc, bodyType, view, toX, toY, sx, sy);
+  await drawVehicleOutline(doc, bodyType, view, toX, toY, vbW, vbH);
 
   for (const m of markers) {
     if (m.view !== view) continue;
@@ -1563,8 +1636,8 @@ export async function generateInspectionReportPDF(
   const gridGap = 4;
   const bigW = (CW - gridGap) / 2;
   const bigH = bigW * (180 / 400);
-  drawDiagramView(doc, v.bodyType, "left", inspection.damageMarkers, ML, y, bigW, bigH);
-  drawDiagramView(
+  await drawDiagramView(doc, v.bodyType, "left", inspection.damageMarkers, ML, y, bigW, bigH);
+  await drawDiagramView(
     doc,
     v.bodyType,
     "right",
@@ -1578,7 +1651,7 @@ export async function generateInspectionReportPDF(
   const smallW = (CW - gridGap * 2) / 3;
   const smallHFrontRear = smallW * (180 / 260);
   const smallHTop = smallW * (200 / 400);
-  drawDiagramView(
+  await drawDiagramView(
     doc,
     v.bodyType,
     "front",
@@ -1588,7 +1661,7 @@ export async function generateInspectionReportPDF(
     smallW,
     smallHFrontRear,
   );
-  drawDiagramView(
+  await drawDiagramView(
     doc,
     v.bodyType,
     "rear",
@@ -1598,7 +1671,7 @@ export async function generateInspectionReportPDF(
     smallW,
     smallHFrontRear,
   );
-  drawDiagramView(
+  await drawDiagramView(
     doc,
     v.bodyType,
     "top",
@@ -2016,7 +2089,7 @@ function sheetDrawSeverityShape(
  *  source as drawDiagramView() above (silhouette-data.ts) so marker
  *  positions still match the on-screen diagram exactly — only the marker
  *  shape-per-severity convention differs (see sheetDrawSeverityShape). */
-function sheetDrawDiagramView(
+async function sheetDrawDiagramView(
   doc: jsPDF,
   bodyType: BodyType,
   view: DamageMarkerView,
@@ -2027,11 +2100,7 @@ function sheetDrawDiagramView(
   bh: number,
   label: string,
 ) {
-  const [vbW, vbH] = viewBoxSize(view);
-  const sx = bw / vbW;
-  const sy = bh / vbH;
-  const toX = (x: number) => bx + x * sx;
-  const toY = (y: number) => by + y * sy;
+  const { vbW, vbH, toX, toY } = diagramTransform(bodyType, view, bx, by, bw, bh);
 
   doc.setDrawColor(...RULE);
   doc.setLineWidth(0.2);
@@ -2041,7 +2110,7 @@ function sheetDrawDiagramView(
   doc.setTextColor(...MUTED);
   doc.text(label, bx + 1, by + 3.5);
 
-  drawVehicleOutline(doc, bodyType, view, toX, toY, sx, sy);
+  await drawVehicleOutline(doc, bodyType, view, toX, toY, vbW, vbH);
 
   for (const m of markers) {
     if (m.view !== view) continue;
@@ -2157,10 +2226,10 @@ export interface InspectionSummarySheetOptions {
  *   E Damage table 40 · F Inventory/systems 48 · G Condition/priority 16 ·
  *   H Disclaimer 25
  */
-export function generateInspectionSummarySheetPDF(
+export async function generateInspectionSummarySheetPDF(
   inspection: Inspection,
   options: InspectionSummarySheetOptions,
-): jsPDF {
+): Promise<jsPDF> {
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
   const v = inspection.vehicleSnapshot;
   let y = SHEET_M;
@@ -2274,7 +2343,7 @@ export function generateInspectionSummarySheetPDF(
   const rightW = SHEET_CW - leftW - gap;
   const frH = 38;
   const frW = (leftW - gap) / 2;
-  sheetDrawDiagramView(
+  await sheetDrawDiagramView(
     doc,
     v.bodyType,
     "front",
@@ -2285,7 +2354,7 @@ export function generateInspectionSummarySheetPDF(
     frH,
     "FRONT",
   );
-  sheetDrawDiagramView(
+  await sheetDrawDiagramView(
     doc,
     v.bodyType,
     "rear",
@@ -2301,7 +2370,7 @@ export function generateInspectionSummarySheetPDF(
   // overlap the right-profile box (both computed against the same 88mm
   // budget, but this one silently ran 3mm over it).
   const profileH = (diagH - frH - gap * 2) / 2;
-  sheetDrawDiagramView(
+  await sheetDrawDiagramView(
     doc,
     v.bodyType,
     "left",
@@ -2312,7 +2381,7 @@ export function generateInspectionSummarySheetPDF(
     profileH,
     "LEFT PROFILE",
   );
-  sheetDrawDiagramView(
+  await sheetDrawDiagramView(
     doc,
     v.bodyType,
     "right",
@@ -2323,7 +2392,7 @@ export function generateInspectionSummarySheetPDF(
     profileH,
     "RIGHT PROFILE",
   );
-  sheetDrawDiagramView(
+  await sheetDrawDiagramView(
     doc,
     v.bodyType,
     "top",
