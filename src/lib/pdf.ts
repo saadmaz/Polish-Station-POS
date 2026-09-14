@@ -2129,30 +2129,33 @@ export function generateInspectionSummarySheetPDF(
   const v = inspection.vehicleSnapshot;
   let y = SHEET_M;
 
-  // ── Zone A — Header (18mm: y=12→30) ─────────────────────────────────────
-  const zoneATop = y;
-  const LOGO_BOX = 12;
-  drawLogo(doc, SHEET_M, y, LOGO_BOX);
+  // ── Zone A — Header (18mm budget: y=12→30, bar bleeds to the page edge —
+  // same charcoal-bar-with-logo language as the multi-page report's header,
+  // kept to this budget's existing 30mm so every zone below is unaffected) ─
+  const HEADER_H = SHEET_M + 18; // 30 — bar bottom edge; content still starts here
+  doc.setFillColor(...CHARCOAL);
+  doc.rect(0, 0, SHEET_PW, HEADER_H, "F");
+  const LOGO_BOX = 14;
+  drawLogo(doc, SHEET_M, 8, LOGO_BOX);
+  const TX = SHEET_M + LOGO_BOX + 4;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.setTextColor(...CHARCOAL);
-  doc.text("VEHICLE INSPECTION SHEET", SHEET_PW / 2, y + 8, { align: "center" });
+  doc.setFontSize(13);
+  doc.setTextColor(...WHITE);
+  doc.text(getBusinessInfo().trading.toUpperCase(), TX, 16);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7);
-  doc.setTextColor(...SLATE);
-  doc.text(getBusinessInfo().trading, SHEET_PW / 2, y + 13, { align: "center" });
+  doc.setTextColor(255, 200, 200);
+  doc.text("Vehicle Inspection Sheet", TX, 21);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.setTextColor(...CHARCOAL);
-  doc.text(`Ref: ${options.documentId}`, SHEET_MR, y + 5, { align: "right" });
+  doc.setFontSize(12);
+  doc.setTextColor(...WHITE);
+  doc.text("INSPECTION SHEET", SHEET_MR, 14, { align: "right" });
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
-  doc.setTextColor(...SLATE);
-  doc.text(formatDateTimeInColombo(inspection.inspectedAt), SHEET_MR, y + 10, { align: "right" });
-  y = zoneATop + 18;
-  doc.setDrawColor(...CHARCOAL);
-  doc.setLineWidth(0.5);
-  doc.line(SHEET_M, y - 1, SHEET_MR, y - 1);
+  doc.setTextColor(255, 220, 220);
+  doc.text(`Ref: ${options.documentId}`, SHEET_MR, 20, { align: "right" });
+  doc.text(formatDateTimeInColombo(inspection.inspectedAt), SHEET_MR, 25, { align: "right" });
+  y = HEADER_H;
 
   // ── Zone B — Parties & vehicle (24mm: y=30→54) ──────────────────────────
   const halfW = (SHEET_CW - 6) / 2;
@@ -2512,6 +2515,23 @@ export function generateInspectionSummarySheetPDF(
       });
     }
   }
+
+  // ── Footer — lives in the page's own bottom margin (below SHEET_BOTTOM,
+  // untouched by any zone above), same "POLISH STATION" + page count style
+  // as the multi-page report's footer for a consistent look. Manual
+  // SHEET_M/SHEET_MR line rather than the shared rule() helper, which draws
+  // against the multi-page report's own (different) ML/MR margins. ────────
+  doc.setDrawColor(...RULE);
+  doc.setLineWidth(0.25);
+  doc.line(SHEET_M, 290, SHEET_MR, 290);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7);
+  doc.setTextColor(...RED);
+  doc.text("POLISH STATION", SHEET_M, 294);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.5);
+  doc.setTextColor(...MUTED);
+  doc.text("Page 1 of 1", SHEET_MR, 294, { align: "right" });
 
   return doc;
 }
