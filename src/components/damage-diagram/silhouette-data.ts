@@ -120,12 +120,12 @@ export const PROFILE_WHEELS: Record<BodyType, readonly [number, number]> = {
 // Ground line every PROFILE_TOP entry above sits on (its first/last point is
 // always y=140) — the constant every wheel-arch/wheel-circle computation
 // below measures from.
-const PROFILE_GROUND_Y = 140;
+export const PROFILE_GROUND_Y = 140;
 // Bigger than the r=20 wheel circle silhouettes.tsx/pdf.ts draw, so the
 // silhouette reads as a wheel *arch* the wheel sits inside, not a wheel
 // clipping straight through the bodywork — the gap between the two radii is
 // the visible "fender" lip.
-const WHEEL_ARCH_RADIUS = 27;
+export const WHEEL_ARCH_RADIUS = 27;
 
 /** A half-circle notch cut up into the body outline above (cx, groundY),
  *  traced right-to-left (from (cx+radius, groundY) to (cx-radius, groundY))
@@ -134,7 +134,7 @@ const WHEEL_ARCH_RADIUS = 27;
  *  corner back to its own front-bottom corner), and consistent with every
  *  other shape in this file: drawable by both the SVG path builder and
  *  jsPDF's straight-line polygon stroke, no arcs. */
-function wheelArchPoints(cx: number, groundY: number, radius: number): Point[] {
+export function wheelArchPoints(cx: number, groundY: number, radius: number): Point[] {
   const segments = 8;
   const pts: Point[] = [];
   for (let i = 0; i <= segments; i++) {
@@ -323,4 +323,379 @@ export function profileWheelCentres(bodyType: BodyType, view: "left" | "right"):
   if (view === "left") return [frontX, rearX];
   const [, , w] = PROFILE_VIEWBOX.split(" ").map(Number);
   return [w - frontX, w - rearX];
+}
+
+// ── Sedan panel segmentation (Phase 1 of the panel-clickable diagram) ──────
+// Generic, hand-plotted straight-line panel boundaries — not traced from any
+// reference photo, template, or third-party asset. Sedan only for now; other
+// body types keep rendering the single-blob outline above until their own
+// panel sets are drawn (see silhouettes.tsx). Panels are authored to tile
+// edge-to-edge (shared boundary lines have zero area) so their hit regions
+// never overlap; a few small unassigned slivers near pillar corners are
+// deliberate — no panel id in the spec covers that sliver of bodywork,
+// rather than it being a gap left by mistake.
+export type SedanPanelPoly = { readonly id: string; readonly points: readonly Point[] };
+export type SedanPanelMultiPoly = {
+  readonly id: string;
+  readonly subpaths: readonly (readonly Point[])[];
+};
+export type SedanPanelCircle = {
+  readonly id: string;
+  readonly cx: number;
+  readonly cy: number;
+  readonly r: number;
+};
+export type SedanPanel = SedanPanelPoly | SedanPanelMultiPoly | SedanPanelCircle;
+
+export function isPanelCircle(panel: SedanPanel): panel is SedanPanelCircle {
+  return "cx" in panel;
+}
+export function isPanelMultiPoly(panel: SedanPanel): panel is SedanPanelMultiPoly {
+  return "subpaths" in panel;
+}
+
+// Front/rear share the same band layout (roof/glass/hood-or-boot/lights) at
+// the same coordinates — only the ids and the rear's lack of a grille panel
+// differ — so the geometry is defined once and reused.
+const SEDAN_FRONT_REAR_ROOF: readonly Point[] = [
+  [100, 38],
+  [160, 38],
+  [172, 52],
+  [88, 52],
+];
+const SEDAN_FRONT_REAR_GLASS: readonly Point[] = [
+  [88, 52],
+  [172, 52],
+  [190, 86],
+  [70, 86],
+];
+const SEDAN_FRONT_REAR_MAIN_PANEL: readonly Point[] = [
+  [70, 86],
+  [190, 86],
+  [205, 116],
+  [55, 116],
+];
+const SEDAN_FRONT_REAR_LIGHT_L: readonly Point[] = [
+  [45, 122],
+  [95, 116],
+  [95, 142],
+  [48, 142],
+];
+const SEDAN_FRONT_REAR_LIGHT_R: readonly Point[] = [
+  [215, 122],
+  [165, 116],
+  [165, 142],
+  [212, 142],
+];
+const SEDAN_FRONT_REAR_BUMPER_BAND: readonly Point[] = [
+  [35, 178],
+  [38, 142],
+  [222, 142],
+  [225, 178],
+];
+const SEDAN_FRONT_REAR_CENTRE_BAND: readonly Point[] = [
+  [95, 116],
+  [165, 116],
+  [165, 142],
+  [95, 142],
+];
+
+export const SEDAN_FRONT: readonly SedanPanel[] = [
+  { id: "panel-roof", points: SEDAN_FRONT_REAR_ROOF },
+  { id: "panel-windscreen", points: SEDAN_FRONT_REAR_GLASS },
+  { id: "panel-bonnet", points: SEDAN_FRONT_REAR_MAIN_PANEL },
+  { id: "panel-headlight-l", points: SEDAN_FRONT_REAR_LIGHT_L },
+  { id: "panel-headlight-r", points: SEDAN_FRONT_REAR_LIGHT_R },
+  { id: "panel-grille", points: SEDAN_FRONT_REAR_CENTRE_BAND },
+  { id: "panel-bumper-front", points: SEDAN_FRONT_REAR_BUMPER_BAND },
+  {
+    id: "panel-mirror-l",
+    points: [
+      [70, 86],
+      [60, 86],
+      [55, 78],
+      [68, 76],
+    ],
+  },
+  {
+    id: "panel-mirror-r",
+    points: [
+      [190, 86],
+      [200, 86],
+      [205, 78],
+      [192, 76],
+    ],
+  },
+];
+
+export const SEDAN_REAR: readonly SedanPanel[] = [
+  { id: "panel-roof", points: SEDAN_FRONT_REAR_ROOF },
+  { id: "panel-rear-glass", points: SEDAN_FRONT_REAR_GLASS },
+  { id: "panel-boot", points: SEDAN_FRONT_REAR_MAIN_PANEL },
+  { id: "panel-taillight-l", points: SEDAN_FRONT_REAR_LIGHT_L },
+  { id: "panel-taillight-r", points: SEDAN_FRONT_REAR_LIGHT_R },
+  // No grille on a rear bumper — the centre band the front's grille occupies
+  // is just more bumper here, so one panel covers both as two subpaths.
+  {
+    id: "panel-bumper-rear",
+    subpaths: [SEDAN_FRONT_REAR_BUMPER_BAND, SEDAN_FRONT_REAR_CENTRE_BAND],
+  },
+];
+
+// Left profile only; the right profile mirrors this geometry with a
+// transform and remaps each id via SEDAN_LEFT_TO_RIGHT_ID, same approach
+// bodyOutlinePoints() already uses for the single-blob outline.
+const SEDAN_PROFILE_FRONT_ARCH = wheelArchPoints(
+  PROFILE_WHEELS.sedan[0],
+  PROFILE_GROUND_Y,
+  WHEEL_ARCH_RADIUS,
+);
+const SEDAN_PROFILE_REAR_ARCH = wheelArchPoints(
+  PROFILE_WHEELS.sedan[1],
+  PROFILE_GROUND_Y,
+  WHEEL_ARCH_RADIUS,
+);
+// x boundaries between adjacent profile panels — chosen so each wheel arch
+// (front: 73-127, rear: 273-327, given PROFILE_WHEELS.sedan + the arch
+// radius above) sits fully inside its own panel, never straddling a seam.
+const SEDAN_PROFILE_FENDER_DOOR_X = 130;
+const SEDAN_PROFILE_DOOR_DOOR_X = 195;
+const SEDAN_PROFILE_DOOR_QUARTER_X = 255;
+const SEDAN_PROFILE_BELT_Y = 95;
+const SEDAN_PROFILE_SILL_Y = 128;
+
+export const SEDAN_LEFT: readonly SedanPanel[] = [
+  {
+    id: "panel-fender-lf",
+    points: [
+      [30, PROFILE_GROUND_Y],
+      [30, 112],
+      [48, 88],
+      [90, 72],
+      [SEDAN_PROFILE_FENDER_DOOR_X, 60],
+      [SEDAN_PROFILE_FENDER_DOOR_X, PROFILE_GROUND_Y],
+      ...SEDAN_PROFILE_FRONT_ARCH,
+    ],
+  },
+  {
+    id: "panel-glass-lf",
+    points: [
+      [SEDAN_PROFILE_FENDER_DOOR_X, 60],
+      [SEDAN_PROFILE_DOOR_DOOR_X, 47],
+      [SEDAN_PROFILE_DOOR_DOOR_X, SEDAN_PROFILE_BELT_Y],
+      [SEDAN_PROFILE_FENDER_DOOR_X, SEDAN_PROFILE_BELT_Y],
+    ],
+  },
+  {
+    id: "panel-glass-lr",
+    points: [
+      [SEDAN_PROFILE_DOOR_DOOR_X, 47],
+      [SEDAN_PROFILE_DOOR_QUARTER_X, 52],
+      [SEDAN_PROFILE_DOOR_QUARTER_X, SEDAN_PROFILE_BELT_Y],
+      [SEDAN_PROFILE_DOOR_DOOR_X, SEDAN_PROFILE_BELT_Y],
+    ],
+  },
+  {
+    id: "panel-door-lf",
+    points: [
+      [SEDAN_PROFILE_FENDER_DOOR_X, SEDAN_PROFILE_BELT_Y],
+      [SEDAN_PROFILE_DOOR_DOOR_X, SEDAN_PROFILE_BELT_Y],
+      [SEDAN_PROFILE_DOOR_DOOR_X, SEDAN_PROFILE_SILL_Y],
+      [SEDAN_PROFILE_FENDER_DOOR_X, SEDAN_PROFILE_SILL_Y],
+    ],
+  },
+  {
+    id: "panel-door-lr",
+    points: [
+      [SEDAN_PROFILE_DOOR_DOOR_X, SEDAN_PROFILE_BELT_Y],
+      [SEDAN_PROFILE_DOOR_QUARTER_X, SEDAN_PROFILE_BELT_Y],
+      [SEDAN_PROFILE_DOOR_QUARTER_X, SEDAN_PROFILE_SILL_Y],
+      [SEDAN_PROFILE_DOOR_DOOR_X, SEDAN_PROFILE_SILL_Y],
+    ],
+  },
+  {
+    id: "panel-sill-l",
+    points: [
+      [SEDAN_PROFILE_FENDER_DOOR_X, SEDAN_PROFILE_SILL_Y],
+      [SEDAN_PROFILE_DOOR_QUARTER_X, SEDAN_PROFILE_SILL_Y],
+      [SEDAN_PROFILE_DOOR_QUARTER_X, PROFILE_GROUND_Y],
+      [SEDAN_PROFILE_FENDER_DOOR_X, PROFILE_GROUND_Y],
+    ],
+  },
+  {
+    id: "panel-quarter-l",
+    points: [
+      [SEDAN_PROFILE_DOOR_QUARTER_X, PROFILE_GROUND_Y],
+      [SEDAN_PROFILE_DOOR_QUARTER_X, 52],
+      [275, 58],
+      [300, 80],
+      [330, 100],
+      [370, 118],
+      [370, PROFILE_GROUND_Y],
+      ...SEDAN_PROFILE_REAR_ARCH,
+    ],
+  },
+  {
+    id: "panel-mirror-l",
+    points: [
+      [112, 56],
+      [128, 44],
+      [134, 52],
+      [120, 64],
+    ],
+  },
+  { id: "panel-wheel-lf", cx: PROFILE_WHEELS.sedan[0], cy: 150, r: 20 },
+  { id: "panel-wheel-lr", cx: PROFILE_WHEELS.sedan[1], cy: 150, r: 20 },
+];
+
+export const SEDAN_LEFT_TO_RIGHT_ID: Readonly<Record<string, string>> = {
+  "panel-fender-lf": "panel-fender-rf",
+  "panel-glass-lf": "panel-glass-rf",
+  "panel-glass-lr": "panel-glass-rr",
+  "panel-door-lf": "panel-door-rf",
+  "panel-door-lr": "panel-door-rr",
+  "panel-sill-l": "panel-sill-r",
+  "panel-quarter-l": "panel-quarter-r",
+  "panel-mirror-l": "panel-mirror-r",
+  "panel-wheel-lf": "panel-wheel-rf",
+  "panel-wheel-lr": "panel-wheel-rr",
+};
+
+// Top view shows both sides at once (no mirroring needed): an outer body
+// outline (bonnet/boot) with a smaller inset roof/glass shape in the middle,
+// the standard top-down car diagram convention — the visible strip between
+// the two, left and right, is what panel-door-*f/*r pick up.
+export const SEDAN_TOP: readonly SedanPanel[] = [
+  {
+    id: "panel-bonnet",
+    points: [
+      [200, 15],
+      [225, 20],
+      [240, 50],
+      [160, 50],
+      [175, 20],
+    ],
+  },
+  {
+    id: "panel-windscreen",
+    points: [
+      [185, 50],
+      [215, 50],
+      [225, 68],
+      [175, 68],
+    ],
+  },
+  {
+    id: "panel-roof",
+    points: [
+      [175, 68],
+      [225, 68],
+      [225, 130],
+      [175, 130],
+    ],
+  },
+  {
+    id: "panel-rear-glass",
+    points: [
+      [175, 130],
+      [225, 130],
+      [215, 148],
+      [185, 148],
+    ],
+  },
+  {
+    id: "panel-boot",
+    points: [
+      [185, 148],
+      [215, 148],
+      [240, 155],
+      [230, 185],
+      [200, 190],
+      [170, 185],
+      [160, 155],
+    ],
+  },
+  {
+    id: "panel-door-lf",
+    points: [
+      [155, 68],
+      [175, 68],
+      [175, 99],
+      [155, 99],
+    ],
+  },
+  {
+    id: "panel-door-lr",
+    points: [
+      [155, 99],
+      [175, 99],
+      [175, 130],
+      [155, 130],
+    ],
+  },
+  {
+    id: "panel-door-rf",
+    points: [
+      [245, 68],
+      [225, 68],
+      [225, 99],
+      [245, 99],
+    ],
+  },
+  {
+    id: "panel-door-rr",
+    points: [
+      [245, 99],
+      [225, 99],
+      [225, 130],
+      [245, 130],
+    ],
+  },
+];
+
+const PANEL_LABELS: Readonly<Record<string, string>> = {
+  "panel-bumper-front": "Front bumper",
+  "panel-bumper-rear": "Rear bumper",
+  "panel-grille": "Grille",
+  "panel-headlight-l": "Headlight (left)",
+  "panel-headlight-r": "Headlight (right)",
+  "panel-taillight-l": "Tail light (left)",
+  "panel-taillight-r": "Tail light (right)",
+  "panel-bonnet": "Bonnet",
+  "panel-boot": "Boot",
+  "panel-windscreen": "Windscreen",
+  "panel-rear-glass": "Rear glass",
+  "panel-roof": "Roof",
+  "panel-mirror-l": "Mirror (left)",
+  "panel-mirror-r": "Mirror (right)",
+  "panel-fender-lf": "Front fender (left)",
+  "panel-fender-rf": "Front fender (right)",
+  "panel-door-lf": "Front door (left)",
+  "panel-door-lr": "Rear door (left)",
+  "panel-door-rf": "Front door (right)",
+  "panel-door-rr": "Rear door (right)",
+  "panel-quarter-l": "Rear quarter (left)",
+  "panel-quarter-r": "Rear quarter (right)",
+  "panel-sill-l": "Sill (left)",
+  "panel-sill-r": "Sill (right)",
+  "panel-glass-lf": "Front door glass (left)",
+  "panel-glass-lr": "Rear door glass (left)",
+  "panel-glass-rf": "Front door glass (right)",
+  "panel-glass-rr": "Rear door glass (right)",
+  "panel-wheel-lf": "Wheel (front left)",
+  "panel-wheel-lr": "Wheel (rear left)",
+  "panel-wheel-rf": "Wheel (front right)",
+  "panel-wheel-rr": "Wheel (rear right)",
+};
+
+/** Human label for a panel id — falls back to de-kebabing an unrecognised
+ *  id (future body types before their PANEL_LABELS entries are added). */
+export function panelLabel(panelId: string): string {
+  return (
+    PANEL_LABELS[panelId] ??
+    panelId
+      .replace(/^panel-/, "")
+      .replace(/-/g, " ")
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+  );
 }

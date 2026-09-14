@@ -316,6 +316,11 @@ export interface DamageMarker {
   severity: DamageMarkerSeverity;
   note: string;
   photoIds: string[]; // ids into Inspection.photos
+  // Which panel-* id (see damage-diagram/silhouette-data.ts) the marker
+  // landed on, resolved from the tap position at placement time. Sedan only
+  // for now — other body types don't render panel ids yet, so this stays
+  // undefined for them.
+  panelId?: string;
 }
 
 /** moderate/severe cannot be saved without a linked photo — the deliberate

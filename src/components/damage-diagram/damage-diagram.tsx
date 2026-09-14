@@ -27,7 +27,7 @@ import {
   type DamageMarker,
   type DamageMarkerView,
 } from "@/lib/inspection";
-import { VehicleSilhouette, viewBoxFor } from "./silhouettes";
+import { VehicleSilhouette, viewBoxFor, panelLabel } from "./silhouettes";
 import {
   MARKER_TYPE_COLOR,
   MARKER_TYPE_LABELS,
@@ -81,9 +81,22 @@ export function DamageDiagram({ bodyType, markers, onMarkersChange }: DamageDiag
     onMarkersChange(markers.map((m) => (m.seq === seq ? { ...m, ...patch } : m)));
   }
 
+  // Resolves the panel-* id (see silhouette-data.ts) under a tap, when the
+  // artwork for this body type is panel-segmented (sedan only, for now) —
+  // elementFromPoint finds the topmost hit-testable element there, since
+  // panels render with fill="transparent" specifically to receive pointer
+  // events; other body types' single-blob outline carries no panel-* id, so
+  // this naturally resolves to undefined for them.
+  function resolvePanelId(clientX: number, clientY: number): string | undefined {
+    const el = document.elementFromPoint(clientX, clientY);
+    const panelEl = el?.closest("[id^='panel-']");
+    return panelEl?.id;
+  }
+
   function placeNewMarker(clientX: number, clientY: number) {
     const { x, y } = clientToNormalized(clientX, clientY);
     const seq = markers.length > 0 ? Math.max(...markers.map((m) => m.seq)) + 1 : 1;
+    const panelId = resolvePanelId(clientX, clientY);
     const marker: DamageMarker = {
       seq,
       view,
@@ -93,6 +106,7 @@ export function DamageDiagram({ bodyType, markers, onMarkersChange }: DamageDiag
       severity: "minor",
       note: "",
       photoIds: [],
+      ...(panelId ? { panelId } : {}),
     };
     onMarkersChange([...markers, marker]);
     setSelectedSeq(seq);
@@ -283,7 +297,12 @@ function MarkerEditor({ marker, onChange, onClose, onDelete }: MarkerEditorProps
   return (
     <div className="space-y-3 rounded-xl border border-border bg-card p-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Marker #{marker.seq}</h3>
+        <div>
+          <h3 className="text-sm font-semibold">Marker #{marker.seq}</h3>
+          {marker.panelId && (
+            <p className="text-xs text-muted-foreground">{panelLabel(marker.panelId)}</p>
+          )}
+        </div>
         <button
           type="button"
           onClick={onClose}
@@ -379,6 +398,7 @@ function DamageMarkerTable({
           <tr className="border-b border-border text-left text-xs font-bold uppercase tracking-wider text-muted-foreground">
             <th className="px-3 py-2">#</th>
             <th className="px-3 py-2">View</th>
+            <th className="px-3 py-2">Panel</th>
             <th className="px-3 py-2">Type</th>
             <th className="px-3 py-2">Severity</th>
             <th className="px-3 py-2">Note</th>
@@ -393,6 +413,9 @@ function DamageMarkerTable({
             >
               <td className="px-3 py-2 font-mono">{m.seq}</td>
               <td className="px-3 py-2 capitalize">{m.view}</td>
+              <td className="px-3 py-2 text-muted-foreground">
+                {m.panelId ? panelLabel(m.panelId) : "—"}
+              </td>
               <td className="px-3 py-2">{MARKER_TYPE_LABELS[m.type]}</td>
               <td className="px-3 py-2">{SEVERITY_LABELS[m.severity]}</td>
               <td className="max-w-[220px] truncate px-3 py-2 text-muted-foreground">
