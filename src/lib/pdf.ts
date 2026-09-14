@@ -29,6 +29,8 @@ import {
   panelCornerRadius,
   isPanelCircle,
   isPanelMultiPoly,
+  seamPointKeys,
+  radiiWithSeams,
 } from "@/components/damage-diagram/silhouette-data";
 
 // Letterhead details come from the settings/business Firestore doc (cached in
@@ -1219,7 +1221,13 @@ function drawVehicleOutline(
   doc.setDrawColor(...SLATE);
   doc.setLineWidth(0.3);
   if (bodyType === "sedan") {
-    for (const panel of sedanPanelsForView(view)) {
+    const panels = sedanPanelsForView(view);
+    // Per-vertex, not a flat radius: a corner shared with a neighbouring
+    // panel must round to exactly 0 in every panel that touches it, or each
+    // rounds its own copy independently and the seam splits into a visible
+    // gap — see roundedPolygonPoints' comment for what that looked like.
+    const seams = seamPointKeys(panels);
+    for (const panel of panels) {
       if (isPanelCircle(panel)) {
         const cx = toX(panel.cx);
         const cy = toY(panel.cy);
@@ -1230,10 +1238,10 @@ function drawVehicleOutline(
         doc.circle(cx, cy, r * 0.4, "S"); // plain hub ring, matches the on-screen wheel
         continue;
       }
-      const radius = panelCornerRadius(panel.id);
+      const baseRadius = panelCornerRadius(panel.id);
       const subpaths = isPanelMultiPoly(panel) ? panel.subpaths : [panel.points];
       for (const sp of subpaths) {
-        const scaled = roundedPolygonPoints(sp, radius).map(
+        const scaled = roundedPolygonPoints(sp, radiiWithSeams(sp, baseRadius, seams)).map(
           ([x, y]) => [toX(x), toY(y)] as [number, number],
         );
         strokePolygon(doc, scaled, "S");

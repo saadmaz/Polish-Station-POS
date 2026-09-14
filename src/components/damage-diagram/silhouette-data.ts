@@ -358,35 +358,44 @@ export function isPanelMultiPoly(panel: SedanPanel): panel is SedanPanelMultiPol
   return "subpaths" in panel;
 }
 
-/** Rounds every corner of a closed polygon by cutting it back and sampling
- *  the resulting quadratic-bezier curve into a dense run of straight
- *  segments — turning the straight-edged panel outlines above into the
- *  smoother, more naturalistic shapes a real car's bodywork actually has,
- *  without moving or redrawing any of the underlying points (so the
- *  hit-tested interior of each panel, already verified against the point
- *  data, is unchanged; only the few units right at each corner are
- *  affected). Points, not an SVG path string, for the same reason
- *  wheelArchPoints() is points: pdf.ts's report redraws this exact shape
- *  with jsPDF's straight-line polygon stroke, which has no curve primitive
- *  of its own — one data source, two renderers, per this file's header.
- *  `radius` is cut back along each adjacent edge (clamped to half that
- *  edge's length so short edges, like a wheel arch's many near-straight
- *  segments, don't overlap themselves — those corners are already so
- *  obtuse the rounding is invisible anyway, which is what makes it safe to
- *  run every sedan panel through this uniformly, arches included). */
+/** Rounds a closed polygon's corners by cutting each back and sampling the
+ *  resulting quadratic-bezier curve into a dense run of straight segments —
+ *  turning the straight-edged panel outlines above into the smoother, more
+ *  naturalistic shapes a real car's bodywork actually has, without moving
+ *  or redrawing any of the underlying points (so the hit-tested interior of
+ *  each panel, already verified against the point data, is unchanged; only
+ *  the few units right at each corner are affected). Points, not an SVG
+ *  path string, for the same reason wheelArchPoints() is points: pdf.ts's
+ *  report redraws this exact shape with jsPDF's straight-line polygon
+ *  stroke, which has no curve primitive of its own — one data source, two
+ *  renderers, per this file's header.
+ *
+ *  `radius` may be a single number (every corner rounds the same amount) or
+ *  a per-vertex array. The per-vertex form exists for one reason: a corner
+ *  shared with an adjacent panel — the same (x,y) appearing in both panels'
+ *  point lists — must round to exactly 0 in BOTH panels, or each rounds its
+ *  own copy of that corner independently and the two curves bulge apart,
+ *  leaving a gap where a flush seam used to be (this shipped once; see
+ *  seamPointKeys() below, which is what callers use to build that array).
+ *  A plain non-zero radius is only safe on a corner no other panel touches.
+ *  Cut-back distance is clamped to half the adjacent edge's length so short
+ *  edges — a wheel arch's many near-straight segments — don't overlap
+ *  themselves; those corners are already so obtuse the rounding is
+ *  invisible anyway. */
 export function roundedPolygonPoints(
   points: readonly Point[],
-  radius: number,
+  radius: number | readonly number[],
   curveSegments = 6,
 ): Point[] {
   const n = points.length;
-  if (radius <= 0 || n < 3) return [...points];
+  if (n < 3) return [...points];
+  const radiusAt = (i: number): number => (typeof radius === "number" ? radius : radius[i]);
   const at = (i: number): Point => points[((i % n) + n) % n];
-  const cut = (from: Point, to: Point): Point => {
+  const cut = (from: Point, to: Point, r: number): Point => {
     const dx = to[0] - from[0];
     const dy = to[1] - from[1];
     const len = Math.hypot(dx, dy);
-    const t = len === 0 ? 0 : Math.min(radius, len / 2) / len;
+    const t = len === 0 ? 0 : Math.min(r, len / 2) / len;
     return [from[0] + dx * t, from[1] + dy * t];
   };
   const quadAt = (start: Point, control: Point, end: Point, t: number): Point => {
@@ -398,11 +407,16 @@ export function roundedPolygonPoints(
   };
   const out: Point[] = [];
   for (let i = 0; i < n; i++) {
-    const prev = at(i - 1);
+    const r = radiusAt(i);
     const curr = at(i);
+    if (r <= 0) {
+      out.push(curr);
+      continue;
+    }
+    const prev = at(i - 1);
     const next = at(i + 1);
-    const start = cut(curr, prev);
-    const end = cut(curr, next);
+    const start = cut(curr, prev, r);
+    const end = cut(curr, next, r);
     for (let s = 0; s <= curveSegments; s++) {
       out.push(quadAt(start, curr, end, s / curveSegments));
     }
@@ -410,11 +424,49 @@ export function roundedPolygonPoints(
   return out;
 }
 
+/** Every (x,y) that appears — exactly, to 2dp — in more than one panel's
+ *  point list within `panels` (one view's worth, e.g. SEDAN_FRONT). Feed the
+ *  result into roundedPolygonPoints' per-vertex radius array (0 at these
+ *  keys, the panel's normal radius everywhere else) so a corner shared
+ *  between panels stays a single flush line instead of each panel rounding
+ *  its own copy independently — see roundedPolygonPoints' comment for what
+ *  that looked like. Circles aren't polygons and never seam with anything,
+ *  so they're skipped. */
+export function seamPointKeys(panels: readonly SedanPanel[]): ReadonlySet<string> {
+  const owners = new Map<string, Set<string>>();
+  const key = ([x, y]: Point) => `${x.toFixed(2)},${y.toFixed(2)}`;
+  for (const panel of panels) {
+    if (isPanelCircle(panel)) continue;
+    const allPoints = isPanelMultiPoly(panel) ? panel.subpaths.flat() : panel.points;
+    for (const p of allPoints) {
+      const k = key(p);
+      (owners.get(k) ?? owners.set(k, new Set()).get(k)!).add(panel.id);
+    }
+  }
+  const seams = new Set<string>();
+  for (const [k, ids] of owners) if (ids.size > 1) seams.add(k);
+  return seams;
+}
+
+/** Per-vertex radius array for roundedPolygonPoints(): `baseRadius` at every
+ *  point, 0 at any point whose coordinate is in `seams` (see
+ *  seamPointKeys()). */
+export function radiiWithSeams(
+  points: readonly Point[],
+  baseRadius: number,
+  seams: ReadonlySet<string>,
+): number[] {
+  return points.map(([x, y]) => (seams.has(`${x.toFixed(2)},${y.toFixed(2)}`) ? 0 : baseRadius));
+}
+
 /** SVG-path-string wrapper around roundedPolygonPoints(), for the on-screen
  *  renderer (silhouettes.tsx) — see roundedPolygonPoints' own comment for
  *  why the underlying computation is points-based rather than curve
  *  commands. */
-export function roundedPolygonPath(points: readonly Point[], radius: number): string {
+export function roundedPolygonPath(
+  points: readonly Point[],
+  radius: number | readonly number[],
+): string {
   const rounded = roundedPolygonPoints(points, radius);
   return (
     rounded.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`).join(" ") +
@@ -652,10 +704,15 @@ export const SEDAN_TOP: readonly SedanPanel[] = [
     ],
   },
   {
+    // Bottom (cowl) edge widened from an earlier [185,50]/[215,50] to match
+    // panel-bonnet's own bottom edge exactly (160,50)/(240,50) — they used
+    // to miss each other by 25 units on each side, an uncovered sliver of
+    // background wide enough to read as a visible gap once corner-rounding
+    // made every panel's edge bow slightly away from its own corners.
     id: "panel-windscreen",
     points: [
-      [185, 50],
-      [215, 50],
+      [160, 50],
+      [240, 50],
       [225, 68],
       [175, 68],
     ],

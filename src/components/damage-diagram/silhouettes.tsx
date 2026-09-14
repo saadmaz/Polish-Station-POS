@@ -31,6 +31,8 @@ import {
   isPanelMultiPoly,
   roundedPolygonPath,
   panelCornerRadius,
+  seamPointKeys,
+  radiiWithSeams,
   type SedanPanel,
 } from "./silhouette-data";
 
@@ -47,7 +49,7 @@ const PANEL_STROKE_PROPS = {
   strokeLinejoin: "round" as const,
 };
 
-function renderPanel(panel: SedanPanel, remapId: boolean) {
+function renderPanel(panel: SedanPanel, remapId: boolean, seams: ReadonlySet<string>) {
   const id = remapId ? (SEDAN_LEFT_TO_RIGHT_ID[panel.id] ?? panel.id) : panel.id;
   if (isPanelCircle(panel)) {
     // A concentric hub ring reads as a plain wheel centre-cap, not a spoke
@@ -68,10 +70,16 @@ function renderPanel(panel: SedanPanel, remapId: boolean) {
       </g>
     );
   }
-  const radius = panelCornerRadius(panel.id);
+  // Per-vertex, not a flat number: a corner shared with a neighbouring panel
+  // must round to exactly 0 in every panel that touches it, or each rounds
+  // its own copy independently and the seam splits into a visible gap — see
+  // roundedPolygonPoints' comment for what that looked like on screen.
+  const baseRadius = panelCornerRadius(panel.id);
   const d = isPanelMultiPoly(panel)
-    ? panel.subpaths.map((sp) => roundedPolygonPath(sp, radius)).join(" ")
-    : roundedPolygonPath(panel.points, radius);
+    ? panel.subpaths
+        .map((sp) => roundedPolygonPath(sp, radiiWithSeams(sp, baseRadius, seams)))
+        .join(" ")
+    : roundedPolygonPath(panel.points, radiiWithSeams(panel.points, baseRadius, seams));
   return <path key={id} id={id} d={d} {...PANEL_STROKE_PROPS} />;
 }
 
@@ -80,34 +88,40 @@ function renderPanel(panel: SedanPanel, remapId: boolean) {
  *  spec, instead of the single-blob outline other body types still use. */
 function renderSedanPanels(view: DamageMarkerView, className?: string) {
   if (view === "front") {
+    const seams = seamPointKeys(SEDAN_FRONT);
     return (
       <g id="view-front" className={className}>
-        {SEDAN_FRONT.map((p) => renderPanel(p, false))}
+        {SEDAN_FRONT.map((p) => renderPanel(p, false, seams))}
       </g>
     );
   }
   if (view === "rear") {
+    const seams = seamPointKeys(SEDAN_REAR);
     return (
       <g id="view-rear" className={className}>
-        {SEDAN_REAR.map((p) => renderPanel(p, false))}
+        {SEDAN_REAR.map((p) => renderPanel(p, false, seams))}
       </g>
     );
   }
   if (view === "top") {
+    const seams = seamPointKeys(SEDAN_TOP);
     return (
       <g id="view-top" className={className}>
-        {SEDAN_TOP.map((p) => renderPanel(p, false))}
+        {SEDAN_TOP.map((p) => renderPanel(p, false, seams))}
       </g>
     );
   }
+  // "right" mirrors SEDAN_LEFT's own (unmirrored) coordinates via transform,
+  // so its seam set is computed against those same coordinates too.
   const mirror = view === "right";
+  const seams = seamPointKeys(SEDAN_LEFT);
   return (
     <g
       id={`view-${view}`}
       className={className}
       transform={mirror ? "translate(400,0) scale(-1,1)" : undefined}
     >
-      {SEDAN_LEFT.map((p) => renderPanel(p, mirror))}
+      {SEDAN_LEFT.map((p) => renderPanel(p, mirror, seams))}
     </g>
   );
 }
