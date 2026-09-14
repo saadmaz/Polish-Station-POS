@@ -1881,3 +1881,637 @@ export async function generateInspectionReportPDF(
 
   return { url, storagePath, version };
 }
+
+// ─── One-page A4 inspection summary sheet ──────────────────────────────────
+//
+// SAMPLE / DESIGN STAGE — not wired to live sign-off yet. Per the spec this
+// was built against: "Show the layout as a rendered sample PDF with
+// realistic data for approval before wiring it to live records." This
+// function renders and returns the jsPDF doc only; nothing here uploads to
+// Storage, touches the Inspection schema, or is called from the sign-off
+// flow. generateInspectionReportPDF() above is untouched and keeps its
+// current role (it becomes the "evidence pack" per the spec's §7 once that
+// split is approved and wired up — its content already matches what §7
+// describes almost exactly: full damage table, full photo appendix,
+// systems/inventory/paint-history detail).
+//
+// Deliberately a separate set of layout constants (12mm margin, its own
+// page-bottom) rather than reusing ML/MR/CW/PAGE_BOTTOM above — those are
+// the *multi-page* report's 16mm-margin geometry, shared with invoices/
+// quotations/job cards via buildDoc(); changing them would move every other
+// document in this file.
+const SHEET_M = 12;
+const SHEET_PW = 210;
+const SHEET_MR = SHEET_PW - SHEET_M;
+const SHEET_CW = SHEET_PW - SHEET_M * 2; // 186mm
+const SHEET_BOTTOM = 297 - SHEET_M; // 285mm — no footer strip on this one, the sign-off row IS the bottom
+
+// Severity shapes for this document only — circle/square/triangle per the
+// spec, deliberately different from the multi-page report's circle/
+// triangle/diamond above (matching MARKER_TYPE_COLOR/SEVERITY_SHAPE in
+// marker-style.ts, the on-screen convention this codebase already ships).
+// Not reconciling the two is a real inconsistency worth flagging at review:
+// today a "severe" marker is a diamond on screen and in the evidence report,
+// but a triangle here. Left as specified rather than silently overridden,
+// since this whole layout is still pending approval.
+function sheetStrokePolygon(doc: jsPDF, points: [number, number][], style: "S" | "F" | "FD") {
+  strokePolygon(doc, points, style);
+}
+
+function sheetDrawSeverityShape(
+  doc: jsPDF,
+  severity: DamageMarkerSeverity,
+  cx: number,
+  cy: number,
+  r: number,
+  seq: number,
+) {
+  doc.setFillColor(...CHARCOAL);
+  doc.setDrawColor(...WHITE);
+  doc.setLineWidth(0.25);
+  if (severity === "minor") {
+    doc.circle(cx, cy, r, "FD");
+  } else if (severity === "moderate") {
+    sheetStrokePolygon(
+      doc,
+      [
+        [cx - r, cy - r],
+        [cx + r, cy - r],
+        [cx + r, cy + r],
+        [cx - r, cy + r],
+      ],
+      "FD",
+    );
+  } else {
+    sheetStrokePolygon(
+      doc,
+      [
+        [cx, cy - r * 1.15],
+        [cx + r * 1.05, cy + r * 0.75],
+        [cx - r * 1.05, cy + r * 0.75],
+      ],
+      "FD",
+    );
+  }
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(4.2);
+  doc.setTextColor(...WHITE);
+  doc.text(String(seq), cx, cy + 1, { align: "center" });
+}
+
+/** Redraws one silhouette view scaled into (bx,by,bw,bh), same geometry
+ *  source as drawDiagramView() above (silhouette-data.ts) so marker
+ *  positions still match the on-screen diagram exactly — only the marker
+ *  shape-per-severity convention differs (see sheetDrawSeverityShape). */
+function sheetDrawDiagramView(
+  doc: jsPDF,
+  bodyType: BodyType,
+  view: DamageMarkerView,
+  markers: readonly DamageMarker[],
+  bx: number,
+  by: number,
+  bw: number,
+  bh: number,
+  label: string,
+) {
+  const [vbW, vbH] = viewBoxSize(view);
+  const sx = bw / vbW;
+  const sy = bh / vbH;
+  const toX = (x: number) => bx + x * sx;
+  const toY = (y: number) => by + y * sy;
+
+  doc.setDrawColor(...RULE);
+  doc.setLineWidth(0.2);
+  doc.rect(bx, by, bw, bh);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(5.5);
+  doc.setTextColor(...MUTED);
+  doc.text(label, bx + 1, by + 3.5);
+
+  const outline = bodyOutlinePoints(bodyType, view).map(
+    ([x, y]) => [toX(x), toY(y)] as [number, number],
+  );
+  doc.setDrawColor(...SLATE);
+  doc.setLineWidth(0.3);
+  sheetStrokePolygon(doc, outline, "S");
+
+  if (view === "left" || view === "right") {
+    const [fx, rx] = profileWheelCentres(bodyType, view);
+    const wr = 20 * Math.min(sx, sy);
+    doc.setFillColor(210, 210, 212);
+    doc.circle(toX(fx), toY(150), wr, "F");
+    doc.circle(toX(rx), toY(150), wr, "F");
+  }
+
+  for (const m of markers) {
+    if (m.view !== view) continue;
+    sheetDrawSeverityShape(doc, m.severity, toX(m.x * vbW), toY(m.y * vbH), 2.4, m.seq);
+  }
+}
+
+/** Compact table for the damage zone — the multi-page report's drawTable()
+ *  uses a fixed 7mm row height (fine when it can spill across pages); this
+ *  document can't spill, and the spec budgets 40mm total for up to 12 rows
+ *  plus a header, so rows here are ~2.6mm — a different enough shape that
+ *  reusing drawTable() would mean fighting its fixed sizing rather than
+ *  saving code. */
+function sheetDamageTable(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  w: number,
+  columns: { label: string; width: number }[],
+  rows: string[][],
+): number {
+  const rowH = 2.4;
+  doc.setFillColor(...CHARCOAL);
+  doc.rect(x, y, w, 3, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(5.5);
+  doc.setTextColor(...WHITE);
+  let cx = x + 1.5;
+  for (const col of columns) {
+    doc.text(col.label.toUpperCase(), cx, y + 2.2);
+    cx += col.width;
+  }
+  y += 3;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6);
+  rows.forEach((cells, i) => {
+    if (i % 2 === 1) {
+      doc.setFillColor(...ROW_ALT);
+      doc.rect(x, y, w, rowH, "F");
+    }
+    doc.setTextColor(...CHARCOAL);
+    let cxx = x + 1.5;
+    cells.forEach((cell, ci) => {
+      const col = columns[ci];
+      const lines = doc.splitTextToSize(cell, col.width - 2);
+      doc.text(lines[0] ?? "", cxx, y + rowH - 0.7);
+      cxx += col.width;
+    });
+    y += rowH;
+  });
+  doc.setDrawColor(...RULE);
+  doc.setLineWidth(0.2);
+  doc.rect(x, y - rows.length * rowH - 3, w, rows.length * rowH + 3, "S");
+  return y;
+}
+
+/** Vector-drawn state glyph — never colour, never a text character. jsPDF's
+ *  core Helvetica is WinAnsi/Standard-encoded and cannot render ✓/✗ (they
+ *  came out as a stray apostrophe in the first render of this layout);
+ *  there's no bundled Unicode font in this pipeline to fall back on, so the
+ *  correct fix is drawing the marks as line strokes the same way severity
+ *  shapes already are, not swapping in some other text character and
+ *  hoping it exists in the font's 256-glyph table. `x,y` is the glyph's
+ *  vertical-center-left anchor, matching where a text baseline would sit. */
+function sheetDrawStateGlyph(
+  doc: jsPDF,
+  state: "present" | "absent" | "na" | "working" | "faulty" | "not_tested",
+  x: number,
+  y: number,
+) {
+  doc.setDrawColor(...CHARCOAL);
+  doc.setLineWidth(0.35);
+  if (state === "present" || state === "working") {
+    doc.line(x, y - 0.3, x + 0.7, y + 0.6);
+    doc.line(x + 0.7, y + 0.6, x + 2, y - 1.1);
+  } else if (state === "absent" || state === "faulty") {
+    doc.line(x, y - 1, x + 1.6, y + 0.6);
+    doc.line(x, y + 0.6, x + 1.6, y - 1);
+  } else {
+    doc.line(x, y - 0.3, x + 1.6, y - 0.3); // na / not_tested
+  }
+}
+
+export interface InspectionSummarySheetOptions {
+  /** New field per the redesign spec — a short, human-readable document id
+   *  (e.g. "PS-0501-INS-01"). Not yet a schema field (see the module note
+   *  above); passed in until the sample layout is approved and this
+   *  actually lands on Inspection. */
+  documentId: string;
+  /** Data: URL of a pre-rendered QR image pointing at qrTargetUrl. Omit to
+   *  draw a labelled placeholder box instead — no QR library is wired in
+   *  yet (see the constraint on adding dependencies without flagging them
+   *  first); this keeps the layout reviewable without deciding that yet. */
+  qrDataUrl?: string | null;
+  /** Only for the placeholder box's caption when qrDataUrl is omitted. */
+  qrTargetUrl?: string;
+  /** Option A/B from the spec, or a caller-supplied final wording — kept as
+   *  a parameter rather than a second constant so this function has
+   *  exactly one place that decides the printed disclaimer, per §6's
+   *  "single configurable constant" requirement; inspection-sheet.tsx's
+   *  on-screen disclaimer is the other reader of that same constant. */
+  disclaimerText: string;
+}
+
+/**
+ * Renders the one-page A4 inspection summary sheet per the redesign spec.
+ * Pure layout function: takes an Inspection (+ the options above) and
+ * returns the built jsPDF doc. No Storage upload, no photo/signature
+ * fetches (this document never renders photos or signature images — see
+ * §6: those fields stay on the schema but stop being rendered here), no
+ * side effects at all. Callers decide what to do with the result
+ * (doc.save(), doc.output("blob") + upload, etc.).
+ *
+ * Zone budget (must total exactly 273mm between the 12mm top/bottom
+ * margins — see the spec's §2 table):
+ *   A Header 18 · B Parties/vehicle 24 · C Intake 14 · D Diagram 88 ·
+ *   E Damage table 40 · F Inventory/systems 48 · G Condition/priority 16 ·
+ *   H Disclaimer/sign-off 25
+ */
+export function generateInspectionSummarySheetPDF(
+  inspection: Inspection,
+  options: InspectionSummarySheetOptions,
+): jsPDF {
+  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+  const v = inspection.vehicleSnapshot;
+  let y = SHEET_M;
+
+  // ── Zone A — Header (18mm: y=12→30) ─────────────────────────────────────
+  const zoneATop = y;
+  const LOGO_BOX = 12;
+  drawLogo(doc, SHEET_M, y, LOGO_BOX);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.setTextColor(...CHARCOAL);
+  doc.text("VEHICLE INSPECTION SHEET", SHEET_PW / 2, y + 8, { align: "center" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.setTextColor(...SLATE);
+  doc.text(getBusinessInfo().trading, SHEET_PW / 2, y + 13, { align: "center" });
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(...CHARCOAL);
+  doc.text(`Ref: ${options.documentId}`, SHEET_MR, y + 5, { align: "right" });
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(...SLATE);
+  doc.text(formatDateTimeInColombo(inspection.inspectedAt), SHEET_MR, y + 10, { align: "right" });
+  y = zoneATop + 18;
+  doc.setDrawColor(...CHARCOAL);
+  doc.setLineWidth(0.5);
+  doc.line(SHEET_M, y - 1, SHEET_MR, y - 1);
+
+  // ── Zone B — Parties & vehicle (24mm: y=30→54) ──────────────────────────
+  const halfW = (SHEET_CW - 6) / 2;
+  const rightColX = SHEET_M + halfW + 6;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6.5);
+  doc.setTextColor(...MUTED);
+  doc.text("CUSTOMER", SHEET_M, y + 4);
+  doc.text("VEHICLE", rightColX, y + 4);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(...CHARCOAL);
+  doc.text(
+    doc.splitTextToSize(inspection.customerSnapshot.name, halfW - 2)[0] ?? "—",
+    SHEET_M,
+    y + 10,
+  );
+  const vehicleTitle = [v.year, v.make, v.model].filter(Boolean).join(" ") || "—";
+  doc.text(doc.splitTextToSize(vehicleTitle, halfW - 2)[0] ?? "—", rightColX, y + 10);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(...SLATE);
+  doc.text(`Phone: ${inspection.customerSnapshot.phone || "—"}`, SHEET_M, y + 16);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...CHARCOAL);
+  doc.text(v.plate || "—", rightColX, y + 16);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(...SLATE);
+  doc.text(`Colour: ${v.colour || "—"}`, rightColX + doc.getTextWidth(v.plate || "—") + 4, y + 16);
+  const chassisLine = inspection.vin ? `Chassis/VIN: ${inspection.vin}` : "Chassis/VIN: —";
+  doc.text(chassisLine, rightColX, y + 21);
+  y += 24;
+  doc.setDrawColor(...RULE);
+  doc.setLineWidth(0.2);
+  doc.line(SHEET_M, y - 2, SHEET_MR, y - 2);
+
+  // ── Zone C — Intake baseline (14mm: y=54→68) ────────────────────────────
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.setTextColor(...CHARCOAL);
+  const intakeLine1 = `ODOMETER: ${inspection.odometer.toLocaleString()} km      KEYS: ${inspection.keysHandedOver}      STARTS NORMALLY: ${inspection.startsNormally ? "Yes" : "No"}`;
+  doc.text(intakeLine1, SHEET_M, y + 4);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  doc.setTextColor(...SLATE);
+  const warningLine = `Warning lights: ${inspection.warningLights.length ? inspection.warningLights.join(", ").replace(/_/g, " ") : "none"}`;
+  doc.text(doc.splitTextToSize(warningLine, SHEET_CW - 44)[0] ?? "", SHEET_M, y + 9.5);
+  // Fuel gauge — 4 segments, E→F, shaded left-to-right per FUEL_LEVELS order.
+  const FUEL_ORDER = ["E", "quarter", "half", "three_quarter", "F"];
+  const filledSegments = FUEL_ORDER.indexOf(inspection.fuelLevel); // 0..4
+  const segW = 6.5;
+  const segH = 5;
+  const gaugeX = SHEET_MR - segW * 4 - 10;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6);
+  doc.setTextColor(...MUTED);
+  doc.text("E", gaugeX - 3.5, y + 8.2);
+  doc.text("F", gaugeX + segW * 4 + 2, y + 8.2);
+  for (let i = 0; i < 4; i++) {
+    const sxPos = gaugeX + i * segW;
+    doc.setDrawColor(...CHARCOAL);
+    doc.setLineWidth(0.25);
+    if (i < filledSegments) doc.setFillColor(...CHARCOAL);
+    else doc.setFillColor(...WHITE);
+    doc.rect(sxPos, y + 4, segW - 0.8, segH, i < filledSegments ? "FD" : "S");
+  }
+  y += 14;
+  doc.setDrawColor(...RULE);
+  doc.line(SHEET_M, y - 2, SHEET_MR, y - 2);
+
+  // ── Zone D — Diagram (88mm: y=68→156, incl. 6mm legend strip) ───────────
+  const zoneDTop = y;
+  const diagH = 82;
+  const legendH = 6;
+  const gap = 3;
+  const leftW = 118;
+  const rightW = SHEET_CW - leftW - gap;
+  const frH = 38;
+  const frW = (leftW - gap) / 2;
+  sheetDrawDiagramView(
+    doc,
+    v.bodyType,
+    "front",
+    inspection.damageMarkers,
+    SHEET_M,
+    zoneDTop,
+    frW,
+    frH,
+    "FRONT",
+  );
+  sheetDrawDiagramView(
+    doc,
+    v.bodyType,
+    "rear",
+    inspection.damageMarkers,
+    SHEET_M + frW + gap,
+    zoneDTop,
+    frW,
+    frH,
+    "REAR",
+  );
+  // Two gaps needed here (row1→row2, row2→row3), not one — this being `gap`
+  // instead of `gap * 2` was the bug that let the legend strip below
+  // overlap the right-profile box (both computed against the same 88mm
+  // budget, but this one silently ran 3mm over it).
+  const profileH = (diagH - frH - gap * 2) / 2;
+  sheetDrawDiagramView(
+    doc,
+    v.bodyType,
+    "left",
+    inspection.damageMarkers,
+    SHEET_M,
+    zoneDTop + frH + gap,
+    leftW,
+    profileH,
+    "LEFT PROFILE",
+  );
+  sheetDrawDiagramView(
+    doc,
+    v.bodyType,
+    "right",
+    inspection.damageMarkers,
+    SHEET_M,
+    zoneDTop + frH + gap + profileH + gap,
+    leftW,
+    profileH,
+    "RIGHT PROFILE",
+  );
+  sheetDrawDiagramView(
+    doc,
+    v.bodyType,
+    "top",
+    inspection.damageMarkers,
+    SHEET_M + leftW + gap,
+    zoneDTop,
+    rightW,
+    diagH,
+    "TOP",
+  );
+  // Legend strip
+  const legendY = zoneDTop + diagH + 2;
+  let lx = SHEET_M;
+  const legendEntries: [DamageMarkerSeverity, string][] = [
+    ["minor", "Minor"],
+    ["moderate", "Moderate"],
+    ["severe", "Severe"],
+  ];
+  for (const [sev, label] of legendEntries) {
+    sheetDrawSeverityShape(doc, sev, lx + 2, legendY + 1.8, 2, 0);
+    // Reset after sheetDrawSeverityShape — it leaves the font/colour state
+    // set to bold white 4.2pt (for the number inside the shape), which
+    // otherwise silently makes this label white-on-white and invisible.
+    // The first render of this layout had exactly that: shapes with no
+    // visible "Minor"/"Moderate"/"Severe" text next to them.
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6);
+    doc.setTextColor(...SLATE);
+    doc.text(label, lx + 5, legendY + 2.6);
+    lx += 28;
+  }
+  y = zoneDTop + diagH + legendH;
+
+  // ── Zone E — Damage table (40mm: y=156→196) ─────────────────────────────
+  // A compact 3mm title bar, not the shared ensureSheetSection()'s 4.5mm+gap
+  // — at 12 rows this zone is already tight (12 rows leaves under 1mm of
+  // slack for the overflow footnote), so every mm of header overhead here
+  // was coming straight out of row budget. This is what the first render's
+  // 12th row bled into zone F's header for.
+  doc.setFillColor(...CHARCOAL);
+  doc.rect(SHEET_M, y, SHEET_CW, 3, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(5.5);
+  doc.setTextColor(...WHITE);
+  doc.text("DAMAGE DETAIL", SHEET_M + 2, y + 2.2);
+  y += 3;
+  const MAX_ROWS = 12;
+  const severityRank: Record<DamageMarkerSeverity, number> = { severe: 0, moderate: 1, minor: 2 };
+  const bySeverity = [...inspection.damageMarkers].sort(
+    (a, b) => severityRank[a.severity] - severityRank[b.severity] || a.seq - b.seq,
+  );
+  const shown = bySeverity.slice(0, MAX_ROWS).sort((a, b) => a.seq - b.seq);
+  if (shown.length > 0) {
+    y = sheetDamageTable(
+      doc,
+      SHEET_M,
+      y,
+      SHEET_CW,
+      [
+        { label: "#", width: 8 },
+        { label: "View", width: 18 },
+        { label: "Type", width: 28 },
+        { label: "Severity", width: 20 },
+        { label: "Note", width: SHEET_CW - 8 - 18 - 28 - 20 },
+      ],
+      shown.map((m) => [
+        String(m.seq),
+        m.view,
+        MARKER_TYPE_LABELS_PDF[m.type],
+        SEVERITY_LABELS_PDF[m.severity],
+        (m.note || "—").slice(0, 45),
+      ]),
+    );
+  } else {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(7.5);
+    doc.setTextColor(...MUTED);
+    doc.text("No damage recorded.", SHEET_M, y + 4);
+    y += 6;
+  }
+  if (inspection.damageMarkers.length > MAX_ROWS) {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(6);
+    doc.setTextColor(...MUTED);
+    doc.text(
+      `${MAX_ROWS} of ${inspection.damageMarkers.length} recorded defects shown — full record via QR.`,
+      SHEET_M,
+      y + 3,
+    );
+  }
+
+  // ── Zone F — Inventory & systems (48mm: y=196→244) ──────────────────────
+  type GlyphState = "present" | "absent" | "na" | "working" | "faulty" | "not_tested";
+  const zoneFTop = SHEET_M + 18 + 24 + 14 + 88 + 40; // fixed budget boundary, not `y` — keeps zone F pinned even if E ran short
+  doc.setFillColor(...CHARCOAL);
+  doc.rect(SHEET_M, zoneFTop, SHEET_CW, 4.5, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6);
+  doc.setTextColor(...WHITE);
+  doc.text("INVENTORY & SYSTEMS", SHEET_M + 2, zoneFTop + 3.2);
+  // The legend's own three marks are drawn (not typed) for the same reason
+  // every glyph below is — see sheetDrawStateGlyph's comment.
+  let legendKeyX = SHEET_MR - 2;
+  const legendKeyParts: [GlyphState, string][] = [
+    ["na", "n/a"],
+    ["absent", "absent/faulty"],
+    ["present", "present/working"],
+  ];
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(5.5);
+  doc.setTextColor(...WHITE);
+  for (const [state, label] of legendKeyParts) {
+    legendKeyX -= doc.getTextWidth(label);
+    doc.text(label, legendKeyX, zoneFTop + 3.2);
+    legendKeyX -= 3.5;
+    doc.setDrawColor(...WHITE);
+    sheetDrawStateGlyph(doc, state, legendKeyX - 2, zoneFTop + 2.9);
+    legendKeyX -= 5;
+  }
+  const fCols = 3;
+  const fColW = (SHEET_CW - 4) / fCols;
+  const fBodyTop = zoneFTop + 6;
+  const fLineH = 3.1;
+  function drawChecklist(
+    colX: number,
+    top: number,
+    title: string,
+    entries: [GlyphState, string][],
+  ) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6);
+    doc.setTextColor(...MUTED);
+    doc.text(title, colX, top);
+    let ly = top + fLineH;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(6.5);
+    for (const [state, label] of entries) {
+      sheetDrawStateGlyph(doc, state, colX, ly - 0.8);
+      doc.setTextColor(...SLATE);
+      doc.text(doc.splitTextToSize(label, fColW - 6)[0] ?? label, colX + 4, ly);
+      ly += fLineH;
+    }
+    return ly;
+  }
+  const inventoryEntries: [GlyphState, string][] = inspection.inventoryItems
+    .filter((it) => it.state !== "na")
+    .map((it) => [it.state, it.key.replace(/_/g, " ")]);
+  const systemsEntries: [GlyphState, string][] = inspection.systemsCheck
+    .filter((s) => s.state !== "not_tested")
+    .map((s) => [s.state, s.key.replace(/_/g, " ")]);
+  const flagEntries: [GlyphState, string][] = inspection.conditionFlags.map((f) => [
+    "absent",
+    f.replace(/_/g, " "),
+  ]);
+  drawChecklist(SHEET_M, fBodyTop, "LOOSE ITEMS", inventoryEntries);
+  drawChecklist(SHEET_M + fColW + 2, fBodyTop, "SYSTEMS CHECKED", systemsEntries);
+  drawChecklist(
+    SHEET_M + (fColW + 2) * 2,
+    fBodyTop,
+    "CONDITION FLAGS",
+    flagEntries.length ? flagEntries : [["na", "none noted"]],
+  );
+
+  // ── Zone G — Condition & priority (16mm: y=244→260) ─────────────────────
+  const zoneGTop = zoneFTop + 48;
+  doc.setDrawColor(...RULE);
+  doc.line(SHEET_M, zoneGTop - 1, SHEET_MR, zoneGTop - 1);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(6.5);
+  doc.setTextColor(...MUTED);
+  doc.text("CUSTOMER PRIORITY", SHEET_M, zoneGTop + 4);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(...CHARCOAL);
+  const priorityText = inspection.customerPriority || "—";
+  const priorityLines = doc.splitTextToSize(priorityText, SHEET_CW);
+  doc.text(priorityLines[0] + (priorityLines.length > 1 ? "…" : ""), SHEET_M, zoneGTop + 9);
+
+  // ── Zone H — Disclaimer & sign-off (25mm: y=260→285) ────────────────────
+  const zoneHTop = zoneGTop + 16;
+  doc.setDrawColor(...RULE);
+  doc.line(SHEET_M, zoneHTop - 1, SHEET_MR, zoneHTop - 1);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.2);
+  doc.setTextColor(...SLATE);
+  const discLines = doc.splitTextToSize(options.disclaimerText, SHEET_CW).slice(0, 6);
+  doc.text(discLines, SHEET_M, zoneHTop + 3, { align: "justify", maxWidth: SHEET_CW });
+
+  const signRowY = SHEET_BOTTOM - 5;
+  doc.setDrawColor(...CHARCOAL);
+  doc.setLineWidth(0.2);
+  doc.line(SHEET_M, signRowY, SHEET_M + 55, signRowY);
+  doc.line(SHEET_M + 65, signRowY, SHEET_M + 110, signRowY);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(6.5);
+  doc.setTextColor(...SLATE);
+  doc.text(`Inspected by: ${inspection.inspectedByName}`, SHEET_M, signRowY + 3.5);
+  doc.text(
+    `Date/Time: ${formatDateTimeInColombo(inspection.inspectedAt)}`,
+    SHEET_M + 65,
+    signRowY + 3.5,
+  );
+
+  const qrSize = 18;
+  const qrX = SHEET_MR - qrSize;
+  const qrY = SHEET_BOTTOM - qrSize;
+  if (options.qrDataUrl) {
+    try {
+      doc.addImage(options.qrDataUrl, "PNG", qrX, qrY, qrSize, qrSize);
+    } catch {
+      // fall through to placeholder box below if the data URL is bad
+    }
+  } else {
+    doc.setDrawColor(...CHARCOAL);
+    doc.setLineWidth(0.3);
+    doc.rect(qrX, qrY, qrSize, qrSize);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(6);
+    doc.setTextColor(...MUTED);
+    doc.text("QR", qrX + qrSize / 2, qrY + qrSize / 2, { align: "center" });
+    if (options.qrTargetUrl) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(4.5);
+      const urlLines = doc.splitTextToSize(options.qrTargetUrl, qrSize + 20);
+      doc.text(urlLines.slice(0, 2), qrX + qrSize / 2, qrY + qrSize + 3.5, {
+        align: "center",
+        maxWidth: qrSize + 20,
+      });
+    }
+  }
+
+  return doc;
+}
