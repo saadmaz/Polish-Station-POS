@@ -24,6 +24,11 @@ import {
   bodyOutlinePoints,
   profileWheelCentres,
   viewBoxSize,
+  sedanPanelsForView,
+  roundedPolygonPoints,
+  panelCornerRadius,
+  isPanelCircle,
+  isPanelMultiPoly,
 } from "@/components/damage-diagram/silhouette-data";
 
 // Letterhead details come from the settings/business Firestore doc (cached in
@@ -1195,6 +1200,60 @@ function strokePolygon(doc: jsPDF, points: [number, number][], style: "S" | "F" 
   doc.lines(deltas, x0, y0, [1, 1], style, true);
 }
 
+/** Draws the vehicle outline + wheels into a diagram box already scaled to
+ *  (toX, toY) — shared by both the multi-page report (drawDiagramView) and
+ *  the single-page sheet (sheetDrawDiagramView), since each needs to draw
+ *  this identically. Sedan renders every panel from the same rounded-corner
+ *  geometry silhouettes.tsx draws on screen (Phase 1 of the panel-clickable
+ *  diagram); every other body type keeps the pre-Phase-1 single-blob
+ *  outline — see bodyOutlinePoints' own callers for why. */
+function drawVehicleOutline(
+  doc: jsPDF,
+  bodyType: BodyType,
+  view: DamageMarkerView,
+  toX: (x: number) => number,
+  toY: (y: number) => number,
+  sx: number,
+  sy: number,
+) {
+  doc.setDrawColor(...SLATE);
+  doc.setLineWidth(0.3);
+  if (bodyType === "sedan") {
+    for (const panel of sedanPanelsForView(view)) {
+      if (isPanelCircle(panel)) {
+        const cx = toX(panel.cx);
+        const cy = toY(panel.cy);
+        const r = panel.r * Math.min(sx, sy);
+        doc.setFillColor(210, 210, 212);
+        doc.circle(cx, cy, r, "FD");
+        doc.setDrawColor(...SLATE);
+        doc.circle(cx, cy, r * 0.4, "S"); // plain hub ring, matches the on-screen wheel
+        continue;
+      }
+      const radius = panelCornerRadius(panel.id);
+      const subpaths = isPanelMultiPoly(panel) ? panel.subpaths : [panel.points];
+      for (const sp of subpaths) {
+        const scaled = roundedPolygonPoints(sp, radius).map(
+          ([x, y]) => [toX(x), toY(y)] as [number, number],
+        );
+        strokePolygon(doc, scaled, "S");
+      }
+    }
+    return;
+  }
+  const outline = bodyOutlinePoints(bodyType, view).map(
+    ([x, y]) => [toX(x), toY(y)] as [number, number],
+  );
+  strokePolygon(doc, outline, "S");
+  if (view === "left" || view === "right") {
+    const [fx, rx] = profileWheelCentres(bodyType, view);
+    const wr = 20 * Math.min(sx, sy);
+    doc.setFillColor(210, 210, 212);
+    doc.circle(toX(fx), toY(150), wr, "F");
+    doc.circle(toX(rx), toY(150), wr, "F");
+  }
+}
+
 /** Redraws the exact same outline/wheel/marker geometry the on-screen
  *  DamageDiagram renders (see silhouette-data.ts's header comment) inside
  *  the rectangle (bx,by,bw,bh) — the one thing that guarantees the spec's
@@ -1225,20 +1284,7 @@ function drawDiagramView(
   doc.setTextColor(...MUTED);
   doc.text(view.toUpperCase(), bx, by - 1.5);
 
-  const outline = bodyOutlinePoints(bodyType, view).map(
-    ([x, y]) => [toX(x), toY(y)] as [number, number],
-  );
-  doc.setDrawColor(...SLATE);
-  doc.setLineWidth(0.3);
-  strokePolygon(doc, outline, "S");
-
-  if (view === "left" || view === "right") {
-    const [fx, rx] = profileWheelCentres(bodyType, view);
-    const wr = 20 * Math.min(sx, sy);
-    doc.setFillColor(210, 210, 212);
-    doc.circle(toX(fx), toY(150), wr, "F");
-    doc.circle(toX(rx), toY(150), wr, "F");
-  }
+  drawVehicleOutline(doc, bodyType, view, toX, toY, sx, sy);
 
   for (const m of markers) {
     if (m.view !== view) continue;
@@ -1987,20 +2033,7 @@ function sheetDrawDiagramView(
   doc.setTextColor(...MUTED);
   doc.text(label, bx + 1, by + 3.5);
 
-  const outline = bodyOutlinePoints(bodyType, view).map(
-    ([x, y]) => [toX(x), toY(y)] as [number, number],
-  );
-  doc.setDrawColor(...SLATE);
-  doc.setLineWidth(0.3);
-  sheetStrokePolygon(doc, outline, "S");
-
-  if (view === "left" || view === "right") {
-    const [fx, rx] = profileWheelCentres(bodyType, view);
-    const wr = 20 * Math.min(sx, sy);
-    doc.setFillColor(210, 210, 212);
-    doc.circle(toX(fx), toY(150), wr, "F");
-    doc.circle(toX(rx), toY(150), wr, "F");
-  }
+  drawVehicleOutline(doc, bodyType, view, toX, toY, sx, sy);
 
   for (const m of markers) {
     if (m.view !== view) continue;

@@ -358,22 +358,29 @@ export function isPanelMultiPoly(panel: SedanPanel): panel is SedanPanelMultiPol
   return "subpaths" in panel;
 }
 
-/** Rounds every corner of a closed polygon into a quadratic-bezier curve,
- *  turning the straight-edged panel outlines above into the smoother,
- *  more naturalistic shapes a real car's bodywork actually has — without
- *  moving or redrawing any of the underlying points (so the hit-tested
- *  interior of each panel, already verified against the point data, is
- *  unchanged; only the few units right at each corner are affected).
+/** Rounds every corner of a closed polygon by cutting it back and sampling
+ *  the resulting quadratic-bezier curve into a dense run of straight
+ *  segments — turning the straight-edged panel outlines above into the
+ *  smoother, more naturalistic shapes a real car's bodywork actually has,
+ *  without moving or redrawing any of the underlying points (so the
+ *  hit-tested interior of each panel, already verified against the point
+ *  data, is unchanged; only the few units right at each corner are
+ *  affected). Points, not an SVG path string, for the same reason
+ *  wheelArchPoints() is points: pdf.ts's report redraws this exact shape
+ *  with jsPDF's straight-line polygon stroke, which has no curve primitive
+ *  of its own — one data source, two renderers, per this file's header.
  *  `radius` is cut back along each adjacent edge (clamped to half that
  *  edge's length so short edges, like a wheel arch's many near-straight
  *  segments, don't overlap themselves — those corners are already so
  *  obtuse the rounding is invisible anyway, which is what makes it safe to
- *  run every sedan panel through this uniformly, arches included. */
-export function roundedPolygonPath(points: readonly Point[], radius: number): string {
+ *  run every sedan panel through this uniformly, arches included). */
+export function roundedPolygonPoints(
+  points: readonly Point[],
+  radius: number,
+  curveSegments = 6,
+): Point[] {
   const n = points.length;
-  if (radius <= 0 || n < 3) {
-    return points.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x} ${y}`).join(" ") + " Z";
-  }
+  if (radius <= 0 || n < 3) return [...points];
   const at = (i: number): Point => points[((i % n) + n) % n];
   const cut = (from: Point, to: Point): Point => {
     const dx = to[0] - from[0];
@@ -382,20 +389,37 @@ export function roundedPolygonPath(points: readonly Point[], radius: number): st
     const t = len === 0 ? 0 : Math.min(radius, len / 2) / len;
     return [from[0] + dx * t, from[1] + dy * t];
   };
-  const cmds: string[] = [];
+  const quadAt = (start: Point, control: Point, end: Point, t: number): Point => {
+    const mt = 1 - t;
+    return [
+      mt * mt * start[0] + 2 * mt * t * control[0] + t * t * end[0],
+      mt * mt * start[1] + 2 * mt * t * control[1] + t * t * end[1],
+    ];
+  };
+  const out: Point[] = [];
   for (let i = 0; i < n; i++) {
     const prev = at(i - 1);
     const curr = at(i);
     const next = at(i + 1);
     const start = cut(curr, prev);
     const end = cut(curr, next);
-    cmds.push(`${i === 0 ? "M" : "L"}${start[0].toFixed(2)} ${start[1].toFixed(2)}`);
-    cmds.push(
-      `Q${curr[0].toFixed(2)} ${curr[1].toFixed(2)} ${end[0].toFixed(2)} ${end[1].toFixed(2)}`,
-    );
+    for (let s = 0; s <= curveSegments; s++) {
+      out.push(quadAt(start, curr, end, s / curveSegments));
+    }
   }
-  cmds.push("Z");
-  return cmds.join(" ");
+  return out;
+}
+
+/** SVG-path-string wrapper around roundedPolygonPoints(), for the on-screen
+ *  renderer (silhouettes.tsx) — see roundedPolygonPoints' own comment for
+ *  why the underlying computation is points-based rather than curve
+ *  commands. */
+export function roundedPolygonPath(points: readonly Point[], radius: number): string {
+  const rounded = roundedPolygonPoints(points, radius);
+  return (
+    rounded.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(2)} ${y.toFixed(2)}`).join(" ") +
+    " Z"
+  );
 }
 
 // Front/rear share the same band layout (roof/glass/hood-or-boot/lights) at
@@ -703,6 +727,30 @@ export const SEDAN_TOP: readonly SedanPanel[] = [
     ],
   },
 ];
+
+/** The sedan panel list for `view`, mirrored (and ids remapped) for "right"
+ *  the same way bodyOutlinePoints() mirrors the single-blob outline — flip
+ *  x about the profile viewBox's width, keep y. Both renderers (the SVG
+ *  component's transform-based mirror and pdf.ts, which has no transform
+ *  primitive as convenient) call this rather than duplicating the mirror
+ *  math, so a coordinate change to SEDAN_LEFT only has to stay correct in
+ *  one place. */
+export function sedanPanelsForView(view: DamageMarkerView): readonly SedanPanel[] {
+  if (view === "front") return SEDAN_FRONT;
+  if (view === "rear") return SEDAN_REAR;
+  if (view === "top") return SEDAN_TOP;
+  if (view === "left") return SEDAN_LEFT;
+  const [, , w] = PROFILE_VIEWBOX.split(" ").map(Number);
+  const mirrorPoint = ([x, y]: Point): Point => [w - x, y];
+  return SEDAN_LEFT.map((panel): SedanPanel => {
+    const id = SEDAN_LEFT_TO_RIGHT_ID[panel.id] ?? panel.id;
+    if (isPanelCircle(panel)) return { id, cx: w - panel.cx, cy: panel.cy, r: panel.r };
+    if (isPanelMultiPoly(panel)) {
+      return { id, subpaths: panel.subpaths.map((sp) => sp.map(mirrorPoint)) };
+    }
+    return { id, points: panel.points.map(mirrorPoint) };
+  });
+}
 
 // Corner radius roundedPolygonPath() rounds each sedan panel by — bigger
 // sweeping body panels get a soft, naturalistic curve; small rectangular
