@@ -474,50 +474,72 @@ export function roundedPolygonPath(
   );
 }
 
-// Front/rear share the same band layout (roof/glass/hood-or-boot/lights) at
-// the same coordinates — only the ids and the rear's lack of a grille panel
-// differ — so the geometry is defined once and reused.
+// Sedan geometry below (front/rear, profile, top) is derived, not hand-
+// plotted: a one-time authoring script (not part of the app) built a
+// generic sedan from two convex 3D parts — a tapered lower-body block and
+// an inset greenhouse block — per the original brief's §6 production
+// method ("build a simple 3D block model... render five orthographic
+// views"), then orthographically projected each view and sliced it into
+// these panels. That's what guarantees the proportions agree across views
+// (a wheelbase, a beltline height, a greenhouse width — one 3D number each,
+// not five independently-typed 2D guesses that can drift apart) and why
+// the outer edges read as one continuous body rather than stacked bands.
+// Front/rear view is a straight convex-hull projection (width vs. height,
+// dropping length) — a real dome/taper shape, convex hull suits it fine.
+// Profile is NOT a convex hull, deliberately: a real hood/windshield
+// transition is genuinely concave (the hood sits below the straight line
+// from bumper to roof), which a hull always flattens into a wedge — so
+// profile instead walks the 3D block's actual corners in order. Wheel
+// arches are spliced into the profile's ground edge afterward the same way
+// wheelArchPoints() already worked. Front/rear share one band layout (roof/
+// glass/hood-or-boot/lights/bumper) at the same coordinates — only the ids
+// and the rear's lack of a grille panel differ — so it's defined once and
+// reused, same as before.
 const SEDAN_FRONT_REAR_ROOF: readonly Point[] = [
-  [100, 38],
-  [160, 38],
-  [172, 52],
-  [88, 52],
+  [203.69, 42.38],
+  [202.19, 38],
+  [57.81, 38],
+  [56.31, 42.38],
 ];
 const SEDAN_FRONT_REAR_GLASS: readonly Point[] = [
-  [88, 52],
-  [172, 52],
-  [190, 86],
-  [70, 86],
+  [218.35, 85.03],
+  [203.69, 42.38],
+  [56.31, 42.38],
+  [41.65, 85.03],
 ];
 const SEDAN_FRONT_REAR_MAIN_PANEL: readonly Point[] = [
-  [70, 86],
-  [190, 86],
-  [205, 116],
-  [55, 116],
+  [33.75, 110.19],
+  [226.25, 110.19],
+  [226.25, 108],
+  [218.35, 85.03],
+  [41.65, 85.03],
+  [33.75, 108],
 ];
 const SEDAN_FRONT_REAR_LIGHT_L: readonly Point[] = [
-  [45, 122],
-  [95, 116],
-  [95, 142],
-  [48, 142],
+  [86.69, 110.19],
+  [33.75, 110.19],
+  [33.75, 143],
+  [86.69, 143],
 ];
 const SEDAN_FRONT_REAR_LIGHT_R: readonly Point[] = [
-  [215, 122],
-  [165, 116],
-  [165, 142],
-  [212, 142],
+  [173.31, 110.19],
+  [173.31, 143],
+  [226.25, 143],
+  [226.25, 110.19],
 ];
 const SEDAN_FRONT_REAR_BUMPER_BAND: readonly Point[] = [
-  [35, 178],
-  [38, 142],
-  [222, 142],
-  [225, 178],
+  [33.75, 143],
+  [33.75, 164.88],
+  [55.63, 178],
+  [204.38, 178],
+  [226.25, 164.88],
+  [226.25, 143],
 ];
 const SEDAN_FRONT_REAR_CENTRE_BAND: readonly Point[] = [
-  [95, 116],
-  [165, 116],
-  [165, 142],
-  [95, 142],
+  [173.31, 110.19],
+  [86.69, 110.19],
+  [86.69, 143],
+  [173.31, 143],
 ];
 
 export const SEDAN_FRONT: readonly SedanPanel[] = [
@@ -531,19 +553,19 @@ export const SEDAN_FRONT: readonly SedanPanel[] = [
   {
     id: "panel-mirror-l",
     points: [
-      [70, 86],
-      [60, 86],
-      [55, 78],
-      [68, 76],
+      [29.38, 80.66],
+      [11.88, 74.09],
+      [16.25, 89.41],
+      [33.75, 93.78],
     ],
   },
   {
     id: "panel-mirror-r",
     points: [
-      [190, 86],
-      [200, 86],
-      [205, 78],
-      [192, 76],
+      [230.63, 80.66],
+      [248.13, 74.09],
+      [243.75, 89.41],
+      [226.25, 93.78],
     ],
   },
 ];
@@ -564,115 +586,139 @@ export const SEDAN_REAR: readonly SedanPanel[] = [
 
 // Left profile only; the right profile mirrors this geometry with a
 // transform and remaps each id via SEDAN_LEFT_TO_RIGHT_ID, same approach
-// bodyOutlinePoints() already uses for the single-blob outline.
-// 24 segments (vs. the 8 other body types' single-blob outline uses) — at
-// this radius a plain 8-segment arch reads as faintly faceted once every
-// corner elsewhere is rounded too; 24 is smooth at this stroke width without
-// meaningfully growing the panel's point count.
-const SEDAN_ARCH_SEGMENTS = 24;
-const SEDAN_PROFILE_FRONT_ARCH = wheelArchPoints(
-  PROFILE_WHEELS.sedan[0],
-  PROFILE_GROUND_Y,
-  WHEEL_ARCH_RADIUS,
-  SEDAN_ARCH_SEGMENTS,
-);
-const SEDAN_PROFILE_REAR_ARCH = wheelArchPoints(
-  PROFILE_WHEELS.sedan[1],
-  PROFILE_GROUND_Y,
-  WHEEL_ARCH_RADIUS,
-  SEDAN_ARCH_SEGMENTS,
-);
-// x boundaries between adjacent profile panels — chosen so each wheel arch
-// (front: 73-127, rear: 273-327, given PROFILE_WHEELS.sedan + the arch
-// radius above) sits fully inside its own panel, never straddling a seam.
-const SEDAN_PROFILE_FENDER_DOOR_X = 130;
-const SEDAN_PROFILE_DOOR_DOOR_X = 195;
-const SEDAN_PROFILE_DOOR_QUARTER_X = 255;
-const SEDAN_PROFILE_BELT_Y = 95;
-const SEDAN_PROFILE_SILL_Y = 128;
-
+// bodyOutlinePoints() already uses for the single-blob outline. Wheel axle
+// x-coordinates (92.83 / 321.96) come straight out of the 3D model's
+// wheelbase, not PROFILE_WHEELS.sedan (that entry stays only for the
+// single-blob fallback other body types still use).
 export const SEDAN_LEFT: readonly SedanPanel[] = [
   {
     id: "panel-fender-lf",
     points: [
-      [30, PROFILE_GROUND_Y],
-      [30, 112],
-      [48, 88],
-      [90, 72],
-      [SEDAN_PROFILE_FENDER_DOOR_X, 60],
-      [SEDAN_PROFILE_FENDER_DOOR_X, PROFILE_GROUND_Y],
-      ...SEDAN_PROFILE_FRONT_ARCH,
-    ],
-  },
-  {
-    id: "panel-glass-lf",
-    points: [
-      [SEDAN_PROFILE_FENDER_DOOR_X, 60],
-      [SEDAN_PROFILE_DOOR_DOOR_X, 47],
-      [SEDAN_PROFILE_DOOR_DOOR_X, SEDAN_PROFILE_BELT_Y],
-      [SEDAN_PROFILE_FENDER_DOOR_X, SEDAN_PROFILE_BELT_Y],
-    ],
-  },
-  {
-    id: "panel-glass-lr",
-    points: [
-      [SEDAN_PROFILE_DOOR_DOOR_X, 47],
-      [SEDAN_PROFILE_DOOR_QUARTER_X, 52],
-      [SEDAN_PROFILE_DOOR_QUARTER_X, SEDAN_PROFILE_BELT_Y],
-      [SEDAN_PROFILE_DOOR_DOOR_X, SEDAN_PROFILE_BELT_Y],
-    ],
-  },
-  {
-    id: "panel-door-lf",
-    points: [
-      [SEDAN_PROFILE_FENDER_DOOR_X, SEDAN_PROFILE_BELT_Y],
-      [SEDAN_PROFILE_DOOR_DOOR_X, SEDAN_PROFILE_BELT_Y],
-      [SEDAN_PROFILE_DOOR_DOOR_X, SEDAN_PROFILE_SILL_Y],
-      [SEDAN_PROFILE_FENDER_DOOR_X, SEDAN_PROFILE_SILL_Y],
-    ],
-  },
-  {
-    id: "panel-door-lr",
-    points: [
-      [SEDAN_PROFILE_DOOR_DOOR_X, SEDAN_PROFILE_BELT_Y],
-      [SEDAN_PROFILE_DOOR_QUARTER_X, SEDAN_PROFILE_BELT_Y],
-      [SEDAN_PROFILE_DOOR_QUARTER_X, SEDAN_PROFILE_SILL_Y],
-      [SEDAN_PROFILE_DOOR_DOOR_X, SEDAN_PROFILE_SILL_Y],
-    ],
-  },
-  {
-    id: "panel-sill-l",
-    points: [
-      [SEDAN_PROFILE_FENDER_DOOR_X, SEDAN_PROFILE_SILL_Y],
-      [SEDAN_PROFILE_DOOR_QUARTER_X, SEDAN_PROFILE_SILL_Y],
-      [SEDAN_PROFILE_DOOR_QUARTER_X, PROFILE_GROUND_Y],
-      [SEDAN_PROFILE_FENDER_DOOR_X, PROFILE_GROUND_Y],
+      [133.48, 140],
+      [129.78, 140],
+      [129.47, 135.18],
+      [128.52, 130.43],
+      [126.97, 125.86],
+      [124.83, 121.52],
+      [122.15, 117.5],
+      [118.96, 113.87],
+      [115.32, 110.68],
+      [111.3, 107.99],
+      [106.97, 105.86],
+      [102.39, 104.3],
+      [97.65, 103.36],
+      [92.83, 103.04],
+      [88, 103.36],
+      [83.26, 104.3],
+      [78.68, 105.86],
+      [74.35, 107.99],
+      [70.33, 110.68],
+      [66.69, 113.87],
+      [63.51, 117.5],
+      [60.82, 121.52],
+      [58.68, 125.86],
+      [57.13, 130.43],
+      [56.19, 135.18],
+      [55.87, 140],
+      [30, 140],
+      [30, 116.35],
+      [66.96, 92.7],
+      [133.48, 92.7],
     ],
   },
   {
     id: "panel-quarter-l",
     points: [
-      [SEDAN_PROFILE_DOOR_QUARTER_X, PROFILE_GROUND_Y],
-      [SEDAN_PROFILE_DOOR_QUARTER_X, 52],
-      [275, 58],
-      [300, 80],
-      [330, 100],
-      [370, 118],
-      [370, PROFILE_GROUND_Y],
-      ...SEDAN_PROFILE_REAR_ARCH,
+      [273.91, 140],
+      [273.91, 92.7],
+      [333.04, 92.7],
+      [370, 116.35],
+      [370, 140],
+      [358.91, 140],
+      [358.6, 135.18],
+      [357.65, 130.43],
+      [356.1, 125.86],
+      [353.96, 121.52],
+      [351.28, 117.5],
+      [348.09, 113.87],
+      [344.45, 110.68],
+      [340.43, 107.99],
+      [336.1, 105.86],
+      [331.52, 104.3],
+      [326.78, 103.36],
+      [321.96, 103.04],
+      [317.13, 103.36],
+      [312.39, 104.3],
+      [307.81, 105.86],
+      [303.48, 107.99],
+      [299.46, 110.68],
+      [295.82, 113.87],
+      [292.64, 117.5],
+      [289.95, 121.52],
+      [287.81, 125.86],
+      [286.26, 130.43],
+      [285.32, 135.18],
+      [285, 140],
+    ],
+  },
+  {
+    id: "panel-glass-lf",
+    points: [
+      [203.7, 77.17],
+      [143.18, 77.17],
+      [163.04, 45.39],
+      [203.7, 45.39],
+    ],
+  },
+  {
+    id: "panel-glass-lr",
+    points: [
+      [203.7, 77.17],
+      [203.7, 45.39],
+      [251.74, 45.39],
+      [266.64, 77.17],
+    ],
+  },
+  {
+    id: "panel-door-lf",
+    points: [
+      [203.7, 123.74],
+      [133.48, 123.74],
+      [133.48, 92.7],
+      [143.18, 77.17],
+      [203.7, 77.17],
+    ],
+  },
+  {
+    id: "panel-door-lr",
+    points: [
+      [273.91, 123.74],
+      [203.7, 123.74],
+      [203.7, 77.17],
+      [266.64, 77.17],
+      [273.91, 92.7],
+    ],
+  },
+  {
+    id: "panel-sill-l",
+    points: [
+      [273.91, 123.74],
+      [273.91, 140],
+      [133.48, 140],
+      [133.48, 123.74],
     ],
   },
   {
     id: "panel-mirror-l",
     points: [
-      [112, 56],
-      [128, 44],
-      [134, 52],
-      [120, 64],
+      [118.7, 86.04],
+      [143.83, 97.13],
+      [149.74, 88.26],
+      [127.57, 76.43],
     ],
   },
-  { id: "panel-wheel-lf", cx: PROFILE_WHEELS.sedan[0], cy: 150, r: 20 },
-  { id: "panel-wheel-lr", cx: PROFILE_WHEELS.sedan[1], cy: 150, r: 20 },
+  { id: "panel-wheel-lf", cx: 92.83, cy: 150, r: 20 },
+  { id: "panel-wheel-lr", cx: 321.96, cy: 150, r: 20 },
 ];
 
 export const SEDAN_LEFT_TO_RIGHT_ID: Readonly<Record<string, string>> = {
@@ -689,98 +735,96 @@ export const SEDAN_LEFT_TO_RIGHT_ID: Readonly<Record<string, string>> = {
 };
 
 // Top view shows both sides at once (no mirroring needed): an outer body
-// outline (bonnet/boot) with a smaller inset roof/glass shape in the middle,
-// the standard top-down car diagram convention — the visible strip between
-// the two, left and right, is what panel-door-*f/*r pick up.
+// outline (bonnet/boot, from the 3D model's tapered lower-body block) with
+// a smaller inset roof/glass strip in the middle (the greenhouse block,
+// narrower than the body — real tumblehome, not just a stylistic inset).
+// The centre strip further splits lengthwise into windscreen/roof/rear-
+// glass so this view carries those two keys too, not just profile/front/
+// rear; the flanking strips are panel-door-*f/*r.
 export const SEDAN_TOP: readonly SedanPanel[] = [
   {
     id: "panel-bonnet",
     points: [
-      [200, 15],
-      [225, 20],
-      [240, 50],
-      [160, 50],
-      [175, 20],
-    ],
-  },
-  {
-    // Bottom (cowl) edge widened from an earlier [185,50]/[215,50] to match
-    // panel-bonnet's own bottom edge exactly (160,50)/(240,50) — they used
-    // to miss each other by 25 units on each side, an uncovered sliver of
-    // background wide enough to read as a visible gap once corner-rounding
-    // made every panel's edge bow slightly away from its own corners.
-    id: "panel-windscreen",
-    points: [
-      [160, 50],
-      [240, 50],
-      [225, 68],
-      [175, 68],
-    ],
-  },
-  {
-    id: "panel-roof",
-    points: [
-      [175, 68],
-      [225, 68],
-      [225, 130],
-      [175, 130],
-    ],
-  },
-  {
-    id: "panel-rear-glass",
-    points: [
-      [175, 130],
-      [225, 130],
-      [215, 148],
-      [185, 148],
+      [174.13, 15],
+      [166.52, 34.02],
+      [166.52, 68.26],
+      [233.48, 68.26],
+      [233.48, 34.02],
+      [225.87, 15],
     ],
   },
   {
     id: "panel-boot",
     points: [
-      [185, 148],
-      [215, 148],
-      [240, 155],
-      [230, 185],
-      [200, 190],
-      [170, 185],
-      [160, 155],
+      [166.52, 140.54],
+      [166.52, 170.98],
+      [174.13, 190],
+      [225.87, 190],
+      [233.48, 170.98],
+      [233.48, 140.54],
+    ],
+  },
+  {
+    id: "panel-windscreen",
+    points: [
+      [223.59, 81.58],
+      [223.59, 68.26],
+      [176.41, 68.26],
+      [176.41, 81.58],
+    ],
+  },
+  {
+    id: "panel-roof",
+    points: [
+      [223.59, 127.23],
+      [223.59, 81.58],
+      [176.41, 81.58],
+      [176.41, 127.23],
+    ],
+  },
+  {
+    id: "panel-rear-glass",
+    points: [
+      [223.59, 127.23],
+      [176.41, 127.23],
+      [176.41, 140.54],
+      [223.59, 140.54],
     ],
   },
   {
     id: "panel-door-lf",
     points: [
-      [155, 68],
-      [175, 68],
-      [175, 99],
-      [155, 99],
+      [176.41, 104.4],
+      [176.41, 68.26],
+      [166.52, 68.26],
+      [166.52, 104.4],
     ],
   },
   {
     id: "panel-door-lr",
     points: [
-      [155, 99],
-      [175, 99],
-      [175, 130],
-      [155, 130],
+      [176.41, 104.4],
+      [166.52, 104.4],
+      [166.52, 140.54],
+      [176.41, 140.54],
     ],
   },
   {
     id: "panel-door-rf",
     points: [
-      [245, 68],
-      [225, 68],
-      [225, 99],
-      [245, 99],
+      [223.59, 68.26],
+      [223.59, 104.4],
+      [233.48, 104.4],
+      [233.48, 68.26],
     ],
   },
   {
     id: "panel-door-rr",
     points: [
-      [245, 99],
-      [225, 99],
-      [225, 130],
-      [245, 130],
+      [223.59, 104.4],
+      [223.59, 140.54],
+      [233.48, 140.54],
+      [233.48, 104.4],
     ],
   },
 ];
