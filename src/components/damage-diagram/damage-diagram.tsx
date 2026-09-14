@@ -27,7 +27,7 @@ import {
   type DamageMarker,
   type DamageMarkerView,
 } from "@/lib/inspection";
-import { VehicleSilhouette, viewBoxFor, panelLabel } from "./silhouettes";
+import { VehicleSilhouette, viewBoxFor, panelLabel, SEDAN_IMAGE_VIEWBOX } from "./silhouettes";
 import {
   MARKER_TYPE_COLOR,
   MARKER_TYPE_LABELS,
@@ -60,7 +60,11 @@ export function DamageDiagram({ bodyType, markers, onMarkersChange }: DamageDiag
     dragging: boolean;
   } | null>(null);
 
-  const viewBox = viewBoxFor(view);
+  // Sedan's on-screen diagram is the real illustrator artwork now, sized to
+  // each PNG's own pixel dimensions rather than the shared vector viewBoxes
+  // other body types (and pdf.ts's sedan fallback) still use — see
+  // silhouette-data.ts's "Sedan real artwork" section.
+  const viewBox = bodyType === "sedan" ? SEDAN_IMAGE_VIEWBOX[view] : viewBoxFor(view);
   const [, , vbW, vbH] = viewBox.split(" ").map(Number);
   const viewMarkers = markers.filter((m) => m.view === view);
   const selected = markers.find((m) => m.seq === selectedSeq) ?? null;
@@ -224,7 +228,14 @@ export function DamageDiagram({ bodyType, markers, onMarkersChange }: DamageDiag
             const color = MARKER_TYPE_COLOR[m.type];
             const cx = m.x * vbW;
             const cy = m.y * vbH;
-            const r = 13;
+            // Proportional to viewBox width, not a fixed unit count — sedan's
+            // real-artwork viewBoxes are ~6x larger in each dimension than
+            // the old vector ones (image pixel space vs. hand-picked small
+            // numbers), and a fixed r=13 would render as a barely-visible
+            // speck against that. 0.05 reproduces the old fixed r=13 exactly
+            // for the 260-wide front/rear viewBox other body types still use.
+            const r = vbW * 0.05;
+            const markerStrokeWidth = r * 0.15; // matches the old fixed 2 at r=13
             return (
               <g
                 key={m.seq}
@@ -240,21 +251,21 @@ export function DamageDiagram({ bodyType, markers, onMarkersChange }: DamageDiag
                     r={r}
                     fill={color}
                     stroke={m.seq === selectedSeq ? "var(--foreground)" : "white"}
-                    strokeWidth={2}
+                    strokeWidth={markerStrokeWidth}
                   />
                 ) : (
                   <path
                     d={markerShapePath(shape, r)}
                     fill={color}
                     stroke={m.seq === selectedSeq ? "var(--foreground)" : "white"}
-                    strokeWidth={2}
+                    strokeWidth={markerStrokeWidth}
                     strokeLinejoin="round"
                   />
                 )}
                 <text
                   textAnchor="middle"
                   dominantBaseline="central"
-                  fontSize={11}
+                  fontSize={r * 0.85}
                   fontWeight={700}
                   fill="white"
                   className="pointer-events-none"

@@ -22,106 +22,57 @@ import {
   PROFILE_WHEELS,
   bodyOutlinePoints,
   type Point,
-  SEDAN_FRONT,
-  SEDAN_REAR,
-  SEDAN_LEFT,
-  SEDAN_TOP,
-  SEDAN_LEFT_TO_RIGHT_ID,
+  SEDAN_IMAGE_SRC,
+  SEDAN_IMAGE_VIEWBOX,
+  sedanImagePanelsForView,
   isPanelCircle,
   isPanelMultiPoly,
-  roundedPolygonPath,
-  panelCornerRadius,
-  seamPointKeys,
-  radiiWithSeams,
   type SedanPanel,
 } from "./silhouette-data";
 
-export { viewBoxFor, BODY_TYPE_LABELS, panelLabel } from "./silhouette-data";
+export { viewBoxFor, BODY_TYPE_LABELS, panelLabel, SEDAN_IMAGE_VIEWBOX } from "./silhouette-data";
 
 function pointsToPath(points: readonly Point[]): string {
   return points.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x} ${y}`).join(" ") + " Z";
 }
 
-const PANEL_STROKE_PROPS = {
-  fill: "transparent",
-  stroke: "currentColor",
-  strokeWidth: 2,
-  strokeLinejoin: "round" as const,
-};
+// Invisible on top of the real artwork below — fill="transparent" (not
+// "none") is what makes an otherwise-invisible shape still receive pointer
+// events, per elementFromPoint's rules; that's the whole hit-testing trick,
+// see damage-diagram.tsx's resolvePanelId().
+const HIT_REGION_PROPS = { fill: "transparent", stroke: "none" };
 
-function renderPanel(panel: SedanPanel, remapId: boolean, seams: ReadonlySet<string>) {
-  const id = remapId ? (SEDAN_LEFT_TO_RIGHT_ID[panel.id] ?? panel.id) : panel.id;
+function renderImagePanel(panel: SedanPanel) {
   if (isPanelCircle(panel)) {
-    // A concentric hub ring reads as a plain wheel centre-cap, not a spoke
-    // pattern — no fill, so it's purely decorative and never intercepts a
-    // tap; elementFromPoint skips unfilled shapes, falling through to the
-    // panel circle underneath.
     return (
-      <g key={id}>
-        <circle id={id} cx={panel.cx} cy={panel.cy} r={panel.r} {...PANEL_STROKE_PROPS} />
-        <circle
-          cx={panel.cx}
-          cy={panel.cy}
-          r={panel.r * 0.4}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={1.2}
-        />
-      </g>
+      <circle
+        key={panel.id}
+        id={panel.id}
+        cx={panel.cx}
+        cy={panel.cy}
+        r={panel.r}
+        {...HIT_REGION_PROPS}
+      />
     );
   }
-  // Per-vertex, not a flat number: a corner shared with a neighbouring panel
-  // must round to exactly 0 in every panel that touches it, or each rounds
-  // its own copy independently and the seam splits into a visible gap — see
-  // roundedPolygonPoints' comment for what that looked like on screen.
-  const baseRadius = panelCornerRadius(panel.id);
   const d = isPanelMultiPoly(panel)
-    ? panel.subpaths
-        .map((sp) => roundedPolygonPath(sp, radiiWithSeams(sp, baseRadius, seams)))
-        .join(" ")
-    : roundedPolygonPath(panel.points, radiiWithSeams(panel.points, baseRadius, seams));
-  return <path key={id} id={id} d={d} {...PANEL_STROKE_PROPS} />;
+    ? panel.subpaths.map((sp) => pointsToPath(sp)).join(" ")
+    : pointsToPath(panel.points);
+  return <path key={panel.id} id={panel.id} d={d} {...HIT_REGION_PROPS} />;
 }
 
-/** Sedan-only (Phase 1): renders each panel as its own hit-testable
- *  <path>/<circle> with a `panel-*` id, per the panel-clickable diagram
- *  spec, instead of the single-blob outline other body types still use. */
-function renderSedanPanels(view: DamageMarkerView, className?: string) {
-  if (view === "front") {
-    const seams = seamPointKeys(SEDAN_FRONT);
-    return (
-      <g id="view-front" className={className}>
-        {SEDAN_FRONT.map((p) => renderPanel(p, false, seams))}
-      </g>
-    );
-  }
-  if (view === "rear") {
-    const seams = seamPointKeys(SEDAN_REAR);
-    return (
-      <g id="view-rear" className={className}>
-        {SEDAN_REAR.map((p) => renderPanel(p, false, seams))}
-      </g>
-    );
-  }
-  if (view === "top") {
-    const seams = seamPointKeys(SEDAN_TOP);
-    return (
-      <g id="view-top" className={className}>
-        {SEDAN_TOP.map((p) => renderPanel(p, false, seams))}
-      </g>
-    );
-  }
-  // "right" mirrors SEDAN_LEFT's own (unmirrored) coordinates via transform,
-  // so its seam set is computed against those same coordinates too.
-  const mirror = view === "right";
-  const seams = seamPointKeys(SEDAN_LEFT);
+/** Sedan-only (Phase 1): the commissioned illustrator artwork as a full-bleed
+ *  background image, with each panel's hit region as an invisible overlay
+ *  on top — the visible line art comes entirely from the PNG now, the
+ *  overlay only exists for elementFromPoint to resolve which panel-* a tap
+ *  landed on. See silhouette-data.ts's "Sedan real artwork" section for
+ *  where the coordinates come from and their accuracy caveats. */
+function renderSedanImage(view: DamageMarkerView, className?: string) {
+  const [, , vbW, vbH] = SEDAN_IMAGE_VIEWBOX[view].split(" ").map(Number);
   return (
-    <g
-      id={`view-${view}`}
-      className={className}
-      transform={mirror ? "translate(400,0) scale(-1,1)" : undefined}
-    >
-      {SEDAN_LEFT.map((p) => renderPanel(p, mirror, seams))}
+    <g id={`view-${view}`} className={className}>
+      <image href={SEDAN_IMAGE_SRC[view]} x={0} y={0} width={vbW} height={vbH} />
+      {sedanImagePanelsForView(view).map(renderImagePanel)}
     </g>
   );
 }
@@ -137,7 +88,7 @@ interface VehicleSilhouetteProps {
  *  coordinate space as this artwork. */
 export function VehicleSilhouette({ bodyType, view, className }: VehicleSilhouetteProps) {
   if (bodyType === "sedan") {
-    return renderSedanPanels(view, className);
+    return renderSedanImage(view, className);
   }
 
   if (view === "top") {

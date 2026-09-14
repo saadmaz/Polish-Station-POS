@@ -856,6 +856,390 @@ export function sedanPanelsForView(view: DamageMarkerView): readonly SedanPanel[
   });
 }
 
+// ── Sedan real artwork (commissioned Illustrator drawings) ─────────────────
+// Replaces the programmatic 3D-derived panels above for the on-screen
+// interactive diagram only — pdf.ts's printed report still draws the
+// vector data above (SEDAN_FRONT/REAR/LEFT/TOP via sedanPanelsForView), no
+// raster embedding wired into that path yet. Panel coordinates here were
+// hand-aligned against each PNG's own pixel space (viewBox = the image's
+// native width/height) by overlaying candidate regions on the artwork and
+// adjusting until they tracked the visible line art — approximate, not
+// pixel-perfect, but that's adequate for a tap-to-place marker tool.
+// Left/right are two separate hand-drawn files (not one mirrored via
+// transform, unlike the vector geometry above), so SEDAN_IMAGE_RIGHT's
+// coordinates are the left set's numerically mirrored as an approximation
+// of the second drawing, not a measurement of it directly.
+export const SEDAN_IMAGE_SRC: Record<DamageMarkerView, string> = {
+  front: "/Illustrations/front.png",
+  rear: "/Illustrations/rear.png",
+  left: "/Illustrations/left.png",
+  right: "/Illustrations/right.png",
+  top: "/Illustrations/top.png",
+};
+
+export const SEDAN_IMAGE_VIEWBOX: Record<DamageMarkerView, string> = {
+  front: "0 0 1698 926",
+  rear: "0 0 1699 926",
+  left: "0 0 1981 794",
+  right: "0 0 1981 794",
+  top: "0 0 1698 926",
+};
+
+export const SEDAN_IMAGE_FRONT: readonly SedanPanel[] = [
+  {
+    id: "panel-roof",
+    points: [
+      [565, 60],
+      [1135, 60],
+      [1115, 128],
+      [583, 128],
+    ],
+  },
+  {
+    id: "panel-windscreen",
+    points: [
+      [583, 128],
+      [1115, 128],
+      [1300, 232],
+      [398, 232],
+    ],
+  },
+  {
+    id: "panel-mirror-l",
+    points: [
+      [140, 195],
+      [305, 205],
+      [280, 248],
+      [150, 238],
+    ],
+  },
+  {
+    id: "panel-mirror-r",
+    points: [
+      [1558, 195],
+      [1393, 205],
+      [1418, 248],
+      [1548, 238],
+    ],
+  },
+  {
+    id: "panel-bonnet",
+    points: [
+      [398, 232],
+      [1300, 232],
+      [1345, 345],
+      [353, 345],
+    ],
+  },
+  {
+    id: "panel-headlight-l",
+    points: [
+      [195, 345],
+      [639, 345],
+      [639, 478],
+      [228, 478],
+    ],
+  },
+  {
+    id: "panel-grille",
+    points: [
+      [639, 345],
+      [1059, 345],
+      [1059, 478],
+      [639, 478],
+    ],
+  },
+  {
+    id: "panel-headlight-r",
+    points: [
+      [1059, 345],
+      [1503, 345],
+      [1470, 478],
+      [1059, 478],
+    ],
+  },
+  {
+    id: "panel-bumper-front",
+    points: [
+      [228, 478],
+      [1470, 478],
+      [1440, 660],
+      [258, 660],
+    ],
+  },
+];
+
+export const SEDAN_IMAGE_REAR: readonly SedanPanel[] = [
+  {
+    id: "panel-roof",
+    points: [
+      [565, 55],
+      [1135, 55],
+      [1115, 118],
+      [583, 118],
+    ],
+  },
+  {
+    id: "panel-rear-glass",
+    points: [
+      [583, 118],
+      [1115, 118],
+      [1230, 265],
+      [468, 265],
+    ],
+  },
+  {
+    id: "panel-mirror-l",
+    points: [
+      [140, 255],
+      [305, 265],
+      [280, 305],
+      [150, 298],
+    ],
+  },
+  {
+    id: "panel-mirror-r",
+    points: [
+      [1558, 255],
+      [1393, 265],
+      [1418, 305],
+      [1548, 298],
+    ],
+  },
+  {
+    id: "panel-boot",
+    points: [
+      [468, 265],
+      [1230, 265],
+      [1290, 350],
+      [408, 350],
+    ],
+  },
+  {
+    id: "panel-taillight-l",
+    points: [
+      [330, 350],
+      [622, 350],
+      [605, 485],
+      [350, 485],
+    ],
+  },
+  {
+    id: "panel-taillight-r",
+    points: [
+      [1368, 350],
+      [1076, 350],
+      [1093, 485],
+      [1348, 485],
+    ],
+  },
+  {
+    id: "panel-bumper-rear",
+    subpaths: [
+      [
+        [228, 485],
+        [1470, 485],
+        [1440, 660],
+        [258, 660],
+      ],
+      [
+        [622, 350],
+        [1076, 350],
+        [1093, 485],
+        [605, 485],
+      ],
+    ],
+  },
+];
+
+export const SEDAN_IMAGE_LEFT: readonly SedanPanel[] = [
+  {
+    id: "panel-fender-lf",
+    points: [
+      [40, 610],
+      [40, 340],
+      [100, 270],
+      [280, 150],
+      [470, 255],
+      [470, 610],
+    ],
+  },
+  {
+    id: "panel-glass-lf",
+    points: [
+      [470, 300],
+      [1010, 300],
+      [1010, 140],
+      [640, 120],
+      [470, 255],
+    ],
+  },
+  {
+    id: "panel-door-lf",
+    points: [
+      [470, 300],
+      [1010, 300],
+      [1010, 560],
+      [470, 560],
+    ],
+  },
+  {
+    id: "panel-glass-lr",
+    points: [
+      [1010, 300],
+      [1400, 300],
+      [1370, 140],
+      [1010, 140],
+    ],
+  },
+  {
+    id: "panel-door-lr",
+    points: [
+      [1010, 300],
+      [1400, 300],
+      [1400, 560],
+      [1010, 560],
+    ],
+  },
+  {
+    id: "panel-sill-l",
+    points: [
+      [470, 560],
+      [1400, 560],
+      [1400, 610],
+      [470, 610],
+    ],
+  },
+  {
+    id: "panel-quarter-l",
+    points: [
+      [1400, 610],
+      [1400, 255],
+      [1600, 150],
+      [1880, 270],
+      [1940, 340],
+      [1940, 610],
+    ],
+  },
+  {
+    id: "panel-mirror-l",
+    points: [
+      [660, 150],
+      [775, 130],
+      [785, 175],
+      [670, 195],
+    ],
+  },
+  { id: "panel-wheel-lf", cx: 205, cy: 460, r: 140 },
+  { id: "panel-wheel-lr", cx: 1790, cy: 460, r: 140 },
+];
+
+export const SEDAN_IMAGE_TOP: readonly SedanPanel[] = [
+  {
+    id: "panel-bonnet",
+    points: [
+      [20, 463],
+      [430, 220],
+      [430, 706],
+    ],
+  },
+  {
+    id: "panel-windscreen",
+    points: [
+      [430, 220],
+      [620, 170],
+      [620, 756],
+      [430, 706],
+    ],
+  },
+  {
+    id: "panel-roof",
+    points: [
+      [620, 170],
+      [1180, 170],
+      [1180, 756],
+      [620, 756],
+    ],
+  },
+  {
+    id: "panel-rear-glass",
+    points: [
+      [1180, 170],
+      [1300, 220],
+      [1300, 706],
+      [1180, 756],
+    ],
+  },
+  {
+    id: "panel-boot",
+    points: [
+      [1300, 220],
+      [1678, 463],
+      [1300, 706],
+    ],
+  },
+  {
+    id: "panel-door-lf",
+    points: [
+      [430, 60],
+      [780, 60],
+      [780, 170],
+      [620, 170],
+      [430, 220],
+    ],
+  },
+  {
+    id: "panel-door-lr",
+    points: [
+      [780, 60],
+      [1180, 60],
+      [1180, 170],
+      [780, 170],
+    ],
+  },
+  {
+    id: "panel-door-rf",
+    points: [
+      [430, 866],
+      [780, 866],
+      [780, 756],
+      [620, 756],
+      [430, 706],
+    ],
+  },
+  {
+    id: "panel-door-rr",
+    points: [
+      [780, 866],
+      [1180, 866],
+      [1180, 756],
+      [780, 756],
+    ],
+  },
+];
+
+/** Image-backed sedan panels for `view` — same id-remap convention as
+ *  sedanPanelsForView(), but mirroring SEDAN_IMAGE_LEFT's coordinates about
+ *  its own viewBox width rather than reading a second measured set, since
+ *  right.png is only approximated by the left drawing's numbers (see the
+ *  header comment above). */
+export function sedanImagePanelsForView(view: DamageMarkerView): readonly SedanPanel[] {
+  if (view === "front") return SEDAN_IMAGE_FRONT;
+  if (view === "rear") return SEDAN_IMAGE_REAR;
+  if (view === "top") return SEDAN_IMAGE_TOP;
+  if (view === "left") return SEDAN_IMAGE_LEFT;
+  const [, , w] = SEDAN_IMAGE_VIEWBOX.left.split(" ").map(Number);
+  const mirrorPoint = ([x, y]: Point): Point => [w - x, y];
+  return SEDAN_IMAGE_LEFT.map((panel): SedanPanel => {
+    const id = SEDAN_LEFT_TO_RIGHT_ID[panel.id] ?? panel.id;
+    if (isPanelCircle(panel)) return { id, cx: w - panel.cx, cy: panel.cy, r: panel.r };
+    if (isPanelMultiPoly(panel)) {
+      return { id, subpaths: panel.subpaths.map((sp) => sp.map(mirrorPoint)) };
+    }
+    return { id, points: panel.points.map(mirrorPoint) };
+  });
+}
+
 // Corner radius roundedPolygonPath() rounds each sedan panel by — bigger
 // sweeping body panels get a soft, naturalistic curve; small rectangular
 // ones (doors, glass, sill) stay closer to a real shutline's crisp corners.
