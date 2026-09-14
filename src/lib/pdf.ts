@@ -1904,7 +1904,6 @@ const SHEET_M = 12;
 const SHEET_PW = 210;
 const SHEET_MR = SHEET_PW - SHEET_M;
 const SHEET_CW = SHEET_PW - SHEET_M * 2; // 186mm
-const SHEET_BOTTOM = 297 - SHEET_M; // 285mm — no footer strip on this one, the sign-off row IS the bottom
 
 // Severity shapes for this document only — circle/square/triangle per the
 // spec, deliberately different from the multi-page report's circle/
@@ -2091,13 +2090,6 @@ export interface InspectionSummarySheetOptions {
    *  above); passed in until the sample layout is approved and this
    *  actually lands on Inspection. */
   documentId: string;
-  /** Data: URL of a pre-rendered QR image pointing at qrTargetUrl. Omit to
-   *  draw a labelled placeholder box instead — no QR library is wired in
-   *  yet (see the constraint on adding dependencies without flagging them
-   *  first); this keeps the layout reviewable without deciding that yet. */
-  qrDataUrl?: string | null;
-  /** Only for the placeholder box's caption when qrDataUrl is omitted. */
-  qrTargetUrl?: string;
   /** Option A/B from the spec, or a caller-supplied final wording — kept as
    *  a parameter rather than a second constant so this function has
    *  exactly one place that decides the printed disclaimer, per §6's
@@ -2115,11 +2107,14 @@ export interface InspectionSummarySheetOptions {
  * side effects at all. Callers decide what to do with the result
  * (doc.save(), doc.output("blob") + upload, etc.).
  *
- * Zone budget (must total exactly 273mm between the 12mm top/bottom
- * margins — see the spec's §2 table):
+ * Zone budget (originally had to total exactly 273mm between the 12mm top/
+ * bottom margins per the spec's §2 table; H no longer fills its 25mm since
+ * a later review round dropped the sign-off row and QR code — inspector/
+ * date moved up into the header instead — leaving the zone as disclaimer
+ * text plus trailing whitespace above the footer):
  *   A Header 18 · B Parties/vehicle 24 · C Intake 14 · D Diagram 88 ·
  *   E Damage table 40 · F Inventory/systems 48 · G Condition/priority 16 ·
- *   H Disclaimer/sign-off 25
+ *   H Disclaimer 25
  */
 export function generateInspectionSummarySheetPDF(
   inspection: Inspection,
@@ -2149,12 +2144,15 @@ export function generateInspectionSummarySheetPDF(
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.setTextColor(...WHITE);
-  doc.text("INSPECTION SHEET", SHEET_MR, 14, { align: "right" });
+  doc.text("INSPECTION SHEET", SHEET_MR, 13, { align: "right" });
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
+  doc.setFontSize(7);
   doc.setTextColor(255, 220, 220);
-  doc.text(`Ref: ${options.documentId}`, SHEET_MR, 20, { align: "right" });
-  doc.text(formatDateTimeInColombo(inspection.inspectedAt), SHEET_MR, 25, { align: "right" });
+  doc.text(`Ref: ${options.documentId}`, SHEET_MR, 18, { align: "right" });
+  // Inspector + date moved up here from the old sign-off row at the bottom
+  // of the sheet, which this redesign removed.
+  doc.text(`Inspected by: ${inspection.inspectedByName}`, SHEET_MR, 22.5, { align: "right" });
+  doc.text(formatDateTimeInColombo(inspection.inspectedAt), SHEET_MR, 27, { align: "right" });
   y = HEADER_H;
 
   // ── Zone B — Parties & vehicle (24mm: y=30→54) ──────────────────────────
@@ -2463,7 +2461,10 @@ export function generateInspectionSummarySheetPDF(
   const priorityLines = doc.splitTextToSize(priorityText, SHEET_CW);
   doc.text(priorityLines[0] + (priorityLines.length > 1 ? "…" : ""), SHEET_M, zoneGTop + 9);
 
-  // ── Zone H — Disclaimer & sign-off (25mm: y=260→285) ────────────────────
+  // ── Zone H — Disclaimer (25mm budget: y=260→285) ────────────────────────
+  // Sign-off row (inspector/date lines + signature rules) and the QR block
+  // were removed per review — inspector + date now live in the header
+  // instead (see Zone A above).
   const zoneHTop = zoneGTop + 16;
   doc.setDrawColor(...RULE);
   doc.line(SHEET_M, zoneHTop - 1, SHEET_MR, zoneHTop - 1);
@@ -2473,54 +2474,11 @@ export function generateInspectionSummarySheetPDF(
   const discLines = doc.splitTextToSize(options.disclaimerText, SHEET_CW).slice(0, 6);
   doc.text(discLines, SHEET_M, zoneHTop + 3, { align: "justify", maxWidth: SHEET_CW });
 
-  const signRowY = SHEET_BOTTOM - 5;
-  doc.setDrawColor(...CHARCOAL);
-  doc.setLineWidth(0.2);
-  doc.line(SHEET_M, signRowY, SHEET_M + 55, signRowY);
-  doc.line(SHEET_M + 65, signRowY, SHEET_M + 110, signRowY);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(6.5);
-  doc.setTextColor(...SLATE);
-  doc.text(`Inspected by: ${inspection.inspectedByName}`, SHEET_M, signRowY + 3.5);
-  doc.text(
-    `Date/Time: ${formatDateTimeInColombo(inspection.inspectedAt)}`,
-    SHEET_M + 65,
-    signRowY + 3.5,
-  );
-
-  const qrSize = 18;
-  const qrX = SHEET_MR - qrSize;
-  const qrY = SHEET_BOTTOM - qrSize;
-  if (options.qrDataUrl) {
-    try {
-      doc.addImage(options.qrDataUrl, "PNG", qrX, qrY, qrSize, qrSize);
-    } catch {
-      // fall through to placeholder box below if the data URL is bad
-    }
-  } else {
-    doc.setDrawColor(...CHARCOAL);
-    doc.setLineWidth(0.3);
-    doc.rect(qrX, qrY, qrSize, qrSize);
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(6);
-    doc.setTextColor(...MUTED);
-    doc.text("QR", qrX + qrSize / 2, qrY + qrSize / 2, { align: "center" });
-    if (options.qrTargetUrl) {
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(4.5);
-      const urlLines = doc.splitTextToSize(options.qrTargetUrl, qrSize + 20);
-      doc.text(urlLines.slice(0, 2), qrX + qrSize / 2, qrY + qrSize + 3.5, {
-        align: "center",
-        maxWidth: qrSize + 20,
-      });
-    }
-  }
-
-  // ── Footer — lives in the page's own bottom margin (below SHEET_BOTTOM,
-  // untouched by any zone above), same "POLISH STATION" + page count style
-  // as the multi-page report's footer for a consistent look. Manual
-  // SHEET_M/SHEET_MR line rather than the shared rule() helper, which draws
-  // against the multi-page report's own (different) ML/MR margins. ────────
+  // ── Footer — lives in the page's own bottom margin, below where zone H's
+  // content ends, same "POLISH STATION" + page count style as the multi-page
+  // report's footer for a consistent look. Manual SHEET_M/SHEET_MR line
+  // rather than the shared rule() helper, which draws against the
+  // multi-page report's own (different) ML/MR margins. ───────────────────
   doc.setDrawColor(...RULE);
   doc.setLineWidth(0.25);
   doc.line(SHEET_M, 290, SHEET_MR, 290);
