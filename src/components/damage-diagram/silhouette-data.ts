@@ -134,8 +134,12 @@ export const WHEEL_ARCH_RADIUS = 27;
  *  corner back to its own front-bottom corner), and consistent with every
  *  other shape in this file: drawable by both the SVG path builder and
  *  jsPDF's straight-line polygon stroke, no arcs. */
-export function wheelArchPoints(cx: number, groundY: number, radius: number): Point[] {
-  const segments = 8;
+export function wheelArchPoints(
+  cx: number,
+  groundY: number,
+  radius: number,
+  segments = 8,
+): Point[] {
   const pts: Point[] = [];
   for (let i = 0; i <= segments; i++) {
     const angle = (Math.PI * i) / segments; // sweeps 0 → π
@@ -354,6 +358,46 @@ export function isPanelMultiPoly(panel: SedanPanel): panel is SedanPanelMultiPol
   return "subpaths" in panel;
 }
 
+/** Rounds every corner of a closed polygon into a quadratic-bezier curve,
+ *  turning the straight-edged panel outlines above into the smoother,
+ *  more naturalistic shapes a real car's bodywork actually has — without
+ *  moving or redrawing any of the underlying points (so the hit-tested
+ *  interior of each panel, already verified against the point data, is
+ *  unchanged; only the few units right at each corner are affected).
+ *  `radius` is cut back along each adjacent edge (clamped to half that
+ *  edge's length so short edges, like a wheel arch's many near-straight
+ *  segments, don't overlap themselves — those corners are already so
+ *  obtuse the rounding is invisible anyway, which is what makes it safe to
+ *  run every sedan panel through this uniformly, arches included. */
+export function roundedPolygonPath(points: readonly Point[], radius: number): string {
+  const n = points.length;
+  if (radius <= 0 || n < 3) {
+    return points.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x} ${y}`).join(" ") + " Z";
+  }
+  const at = (i: number): Point => points[((i % n) + n) % n];
+  const cut = (from: Point, to: Point): Point => {
+    const dx = to[0] - from[0];
+    const dy = to[1] - from[1];
+    const len = Math.hypot(dx, dy);
+    const t = len === 0 ? 0 : Math.min(radius, len / 2) / len;
+    return [from[0] + dx * t, from[1] + dy * t];
+  };
+  const cmds: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const prev = at(i - 1);
+    const curr = at(i);
+    const next = at(i + 1);
+    const start = cut(curr, prev);
+    const end = cut(curr, next);
+    cmds.push(`${i === 0 ? "M" : "L"}${start[0].toFixed(2)} ${start[1].toFixed(2)}`);
+    cmds.push(
+      `Q${curr[0].toFixed(2)} ${curr[1].toFixed(2)} ${end[0].toFixed(2)} ${end[1].toFixed(2)}`,
+    );
+  }
+  cmds.push("Z");
+  return cmds.join(" ");
+}
+
 // Front/rear share the same band layout (roof/glass/hood-or-boot/lights) at
 // the same coordinates — only the ids and the rear's lack of a grille panel
 // differ — so the geometry is defined once and reused.
@@ -445,15 +489,22 @@ export const SEDAN_REAR: readonly SedanPanel[] = [
 // Left profile only; the right profile mirrors this geometry with a
 // transform and remaps each id via SEDAN_LEFT_TO_RIGHT_ID, same approach
 // bodyOutlinePoints() already uses for the single-blob outline.
+// 24 segments (vs. the 8 other body types' single-blob outline uses) — at
+// this radius a plain 8-segment arch reads as faintly faceted once every
+// corner elsewhere is rounded too; 24 is smooth at this stroke width without
+// meaningfully growing the panel's point count.
+const SEDAN_ARCH_SEGMENTS = 24;
 const SEDAN_PROFILE_FRONT_ARCH = wheelArchPoints(
   PROFILE_WHEELS.sedan[0],
   PROFILE_GROUND_Y,
   WHEEL_ARCH_RADIUS,
+  SEDAN_ARCH_SEGMENTS,
 );
 const SEDAN_PROFILE_REAR_ARCH = wheelArchPoints(
   PROFILE_WHEELS.sedan[1],
   PROFILE_GROUND_Y,
   WHEEL_ARCH_RADIUS,
+  SEDAN_ARCH_SEGMENTS,
 );
 // x boundaries between adjacent profile panels — chosen so each wheel arch
 // (front: 73-127, rear: 273-327, given PROFILE_WHEELS.sedan + the arch
@@ -652,6 +703,47 @@ export const SEDAN_TOP: readonly SedanPanel[] = [
     ],
   },
 ];
+
+// Corner radius roundedPolygonPath() rounds each sedan panel by — bigger
+// sweeping body panels get a soft, naturalistic curve; small rectangular
+// ones (doors, glass, sill) stay closer to a real shutline's crisp corners.
+// Keyed by the same panel-* id as everything else here; DEFAULT_PANEL_RADIUS
+// covers anything not listed (future top-view/other additions).
+const DEFAULT_PANEL_RADIUS = 4;
+const PANEL_CORNER_RADIUS: Readonly<Record<string, number>> = {
+  "panel-bumper-front": 9,
+  "panel-bumper-rear": 9,
+  "panel-grille": 3,
+  "panel-headlight-l": 4,
+  "panel-headlight-r": 4,
+  "panel-taillight-l": 4,
+  "panel-taillight-r": 4,
+  "panel-bonnet": 11,
+  "panel-boot": 11,
+  "panel-windscreen": 5,
+  "panel-rear-glass": 5,
+  "panel-roof": 9,
+  "panel-mirror-l": 1.5,
+  "panel-mirror-r": 1.5,
+  "panel-fender-lf": 12,
+  "panel-fender-rf": 12,
+  "panel-door-lf": 2.5,
+  "panel-door-lr": 2.5,
+  "panel-door-rf": 2.5,
+  "panel-door-rr": 2.5,
+  "panel-quarter-l": 12,
+  "panel-quarter-r": 12,
+  "panel-sill-l": 2,
+  "panel-sill-r": 2,
+  "panel-glass-lf": 3,
+  "panel-glass-lr": 3,
+  "panel-glass-rf": 3,
+  "panel-glass-rr": 3,
+};
+
+export function panelCornerRadius(panelId: string): number {
+  return PANEL_CORNER_RADIUS[panelId] ?? DEFAULT_PANEL_RADIUS;
+}
 
 const PANEL_LABELS: Readonly<Record<string, string>> = {
   "panel-bumper-front": "Front bumper",

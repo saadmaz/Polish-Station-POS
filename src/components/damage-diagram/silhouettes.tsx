@@ -29,6 +29,8 @@ import {
   SEDAN_LEFT_TO_RIGHT_ID,
   isPanelCircle,
   isPanelMultiPoly,
+  roundedPolygonPath,
+  panelCornerRadius,
   type SedanPanel,
 } from "./silhouette-data";
 
@@ -48,22 +50,28 @@ const PANEL_STROKE_PROPS = {
 function renderPanel(panel: SedanPanel, remapId: boolean) {
   const id = remapId ? (SEDAN_LEFT_TO_RIGHT_ID[panel.id] ?? panel.id) : panel.id;
   if (isPanelCircle(panel)) {
+    // A concentric hub ring reads as a plain wheel centre-cap, not a spoke
+    // pattern — no fill, so it's purely decorative and never intercepts a
+    // tap; elementFromPoint skips unfilled shapes, falling through to the
+    // panel circle underneath.
     return (
-      <circle
-        key={id}
-        id={id}
-        cx={panel.cx}
-        cy={panel.cy}
-        r={panel.r}
-        fill="transparent"
-        stroke="currentColor"
-        strokeWidth={2}
-      />
+      <g key={id}>
+        <circle id={id} cx={panel.cx} cy={panel.cy} r={panel.r} {...PANEL_STROKE_PROPS} />
+        <circle
+          cx={panel.cx}
+          cy={panel.cy}
+          r={panel.r * 0.4}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.2}
+        />
+      </g>
     );
   }
+  const radius = panelCornerRadius(panel.id);
   const d = isPanelMultiPoly(panel)
-    ? panel.subpaths.map((sp) => pointsToPath(sp)).join(" ")
-    : pointsToPath(panel.points);
+    ? panel.subpaths.map((sp) => roundedPolygonPath(sp, radius)).join(" ")
+    : roundedPolygonPath(panel.points, radius);
   return <path key={id} id={id} d={d} {...PANEL_STROKE_PROPS} />;
 }
 
