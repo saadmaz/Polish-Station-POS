@@ -16,6 +16,7 @@
 // useConfirm (src/hooks/use-confirm.tsx) -- each call to `requireStepUp()`
 // reuses the single dialog.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { retryTransient } from "@/lib/auth";
 import { auth as firebaseAuth } from "@/lib/firebase";
 import { verifyStepUpPinFn } from "@/server/auth";
 import {
@@ -28,18 +29,8 @@ import {
 import { cn } from "@/lib/utils";
 
 const PIN_LEN = 4;
-const STEP_UP_TIMEOUT_MS = 20_000;
 
 class StepUpSessionExpiredError extends Error {}
-
-function withStepUpTimeout<T>(p: Promise<T>): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("timed out")), STEP_UP_TIMEOUT_MS),
-    ),
-  ]);
-}
 
 export function useStepUpAuth() {
   const [open, setOpen] = useState(false);
@@ -72,18 +63,31 @@ export function useStepUpAuth() {
       setError(null);
       try {
         // The whole round trip -- including the client-side getIdToken()
-        // call, not just the server request -- must sit under one timeout.
-        // getIdToken() can itself stall (a flaky connection, the SDK stuck
-        // silently refreshing an expired token) with no timeout of its own,
-        // which used to leave `busy` stuck true forever: pressDigit() and
-        // backspace() both bail out while busy, so the keypad looked dead
-        // with no way back short of dismissing the whole dialog.
-        const result = await withStepUpTimeout(
-          (async () => {
+        // call, not just the server request -- must sit under a timeout per
+        // attempt, same as login/change-PIN/session-resume (retryTransient,
+        // src/lib/auth.tsx): this host's shared hosting cold-starts after
+        // ~5 min idle and its outbound network intermittently stalls a
+        // single request even when warm, so one attempt alone used to
+        // surface "Couldn't reach the server" on an ordinary cold-worker
+        // delay. getIdToken() can itself stall (a flaky connection, the SDK
+        // stuck silently refreshing an expired token) with no timeout of
+        // its own -- without the per-attempt timeout this used to leave
+        // `busy` stuck true forever: pressDigit() and backspace() both bail
+        // out while busy, so the keypad looked dead with no way back short
+        // of dismissing the whole dialog.
+        const result = await retryTransient(
+          async () => {
             const idToken = await firebaseAuth.currentUser?.getIdToken();
             if (!idToken) throw new StepUpSessionExpiredError();
             return verifyStepUpPinFn({ data: { idToken, pin: value } });
-          })(),
+          },
+          "step-up verify",
+          6,
+          20_000,
+          // A missing token is a definitive "not signed in", not a network
+          // stall -- retrying it for a minute-plus would just delay the
+          // "sign in again" message the user actually needs to see.
+          (err) => !(err instanceof StepUpSessionExpiredError),
         );
         if (result.success) {
           settle(true);
