@@ -26,6 +26,7 @@ import {
   ChevronDown,
   ChevronUp,
   FileDown,
+  FileText,
   MessageCircle,
   AlertTriangle,
 } from "lucide-react";
@@ -268,6 +269,24 @@ function JobDetailPanel({ job }: { job: Job }) {
           >
             <MessageCircle className="h-3.5 w-3.5" />
             Share via WhatsApp
+          </a>
+        )}
+        {/* Inspection reports are generated and saved once (see
+            InspectionSheet's handleCompleteInspection) and never
+            regenerated from here — this just surfaces the same permanent
+            Storage URL the Inspection worklist page already links to, so
+            it's findable from the job itself too, not only by navigating
+            to that separate page and finding the matching row. */}
+        {inspection?.documents?.report && (
+          <a
+            href={inspection.documents.report.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Inspection Report
           </a>
         )}
       </div>
