@@ -1453,14 +1453,16 @@ async function drawDiagramView(
     if (m.view !== view) continue;
     const cx = toX(m.x * vbW);
     const cy = toY(m.y * vbH);
-    // Shrunk from the original 2.6 (operator request, 2026-09-19): that size
-    // was tuned for the old, much larger diagram boxes (the single compact
-    // row this report uses now is roughly half the width), so it read as
-    // oversized against the smaller artwork.
-    const r = 1.8;
+    // Sized for the two-row Left/Right (large) + Front/Rear/Top (smaller)
+    // grid drawDiagramView's callers use — briefly shrunk to 1.8 during a
+    // one-row-of-5 layout that made everything ~half this width (operator
+    // reverted that layout back to this bigger one, 2026-09-19); restored
+    // alongside it rather than left proportioned for boxes that no longer
+    // exist.
+    const r = 2.6;
     doc.setFillColor(...RED);
     doc.setDrawColor(...WHITE);
-    doc.setLineWidth(0.25);
+    doc.setLineWidth(0.3);
     // Shape-coded by severity, same as the screen — the report may be
     // printed in greyscale, so colour alone can't carry this.
     if (m.severity === "minor") {
@@ -1489,10 +1491,10 @@ async function drawDiagramView(
     }
     // Properly cap-height-centred on the baseline, not a guessed fixed
     // offset — jsPDF's y coordinate is the text baseline, so a plain "cy"
-    // (or a rough constant like the "+1" this used before shrinking the
-    // marker) sits visibly low inside a small circle. Same CAP_HEIGHT_RATIO
-    // conversion badge() above already uses for the identical problem.
-    const markerFontSize = 3.2;
+    // (or the rough hand-picked constant this used before) sits visibly low
+    // inside the circle. Same CAP_HEIGHT_RATIO conversion badge() above
+    // already uses for the identical problem.
+    const markerFontSize = 4.5;
     const markerCapH = markerFontSize * CAP_HEIGHT_RATIO * 0.3528;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(markerFontSize);
@@ -1741,39 +1743,66 @@ export async function buildInspectionReportDoc(
   rule(doc, y);
   y += 8;
 
-  // ── B. Vehicle Inspection — the diagram (all 5 views, one compact row)
-  // plus a terse legend of the numbered points marked on it. Paint history/
-  // interior condition/systems/inventory/customer priority all used to live
-  // in their own sections after this one; all dropped now (see this
-  // function's header comment) so this stays the report's one visual/data
-  // section instead of a long scroll of mostly-empty ones. ─────────────────
+  // ── B. Vehicle Inspection — the diagram (Left/Right large on their own
+  // row, Front/Rear/Top smaller on the row below — operator-requested size
+  // back up, 2026-09-19, from the single compact row this briefly was; the
+  // page-count budget can afford it) plus a terse legend of the numbered
+  // points marked on it. Paint history/interior condition/systems/
+  // inventory/customer priority all used to live in their own sections
+  // after this one; all dropped now (see this function's header comment)
+  // so this stays the report's one visual/data section instead of a long
+  // scroll of mostly-empty ones. ────────────────────────────────────────
   y = sectionTitle(doc, y, "Vehicle Inspection");
-  y = ensureSpace(doc, y, 32);
-  const gridGap = 3;
-  const cellW = (CW - gridGap * 4) / 5;
-  const diagramViews: DamageMarkerView[] = ["left", "right", "front", "rear", "top"];
-  const cellH: Record<DamageMarkerView, number> = {
-    left: cellW * (180 / 400),
-    right: cellW * (180 / 400),
-    front: cellW * (180 / 260),
-    rear: cellW * (180 / 260),
-    top: cellW * (200 / 400),
-  };
-  const diagramRowH = Math.max(...diagramViews.map((dv) => cellH[dv]));
-  for (let i = 0; i < diagramViews.length; i++) {
-    const view = diagramViews[i];
-    await drawDiagramView(
-      doc,
-      view,
-      inspection.damageMarkers,
-      ML + i * (cellW + gridGap),
-      y,
-      cellW,
-      cellH[view],
-      fetchAsset,
-    );
-  }
-  y += diagramRowH + 8;
+  y = ensureSpace(doc, y, 60);
+  const diagramGap = 4;
+  const bigW = (CW - diagramGap) / 2;
+  const bigH = bigW * (180 / 400);
+  await drawDiagramView(doc, "left", inspection.damageMarkers, ML, y, bigW, bigH, fetchAsset);
+  await drawDiagramView(
+    doc,
+    "right",
+    inspection.damageMarkers,
+    ML + bigW + diagramGap,
+    y,
+    bigW,
+    bigH,
+    fetchAsset,
+  );
+  y += bigH + 10;
+  const smallW = (CW - diagramGap * 2) / 3;
+  const smallHFrontRear = smallW * (180 / 260);
+  const smallHTop = smallW * (200 / 400);
+  await drawDiagramView(
+    doc,
+    "front",
+    inspection.damageMarkers,
+    ML,
+    y,
+    smallW,
+    smallHFrontRear,
+    fetchAsset,
+  );
+  await drawDiagramView(
+    doc,
+    "rear",
+    inspection.damageMarkers,
+    ML + smallW + diagramGap,
+    y,
+    smallW,
+    smallHFrontRear,
+    fetchAsset,
+  );
+  await drawDiagramView(
+    doc,
+    "top",
+    inspection.damageMarkers,
+    ML + (smallW + diagramGap) * 2,
+    y,
+    smallW,
+    smallHTop,
+    fetchAsset,
+  );
+  y += Math.max(smallHFrontRear, smallHTop) + 10;
 
   if (inspection.damageMarkers.length > 0) {
     const sorted = [...inspection.damageMarkers].sort((a, b) => a.seq - b.seq);
