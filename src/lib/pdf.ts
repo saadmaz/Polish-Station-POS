@@ -1744,12 +1744,14 @@ export async function buildInspectionReportDoc(
   y += 8;
 
   // ── B. Vehicle Inspection — the diagram (Left/Right large on their own
-  // row, Front/Rear/Top smaller on the row below). Scaled to ~78% of the
+  // row, Front/Rear/Top smaller on the row below). Scaled to ~65% of the
   // full content width, centred, rather than full-bleed (operator request,
   // 2026-09-19 — the full-width version pushed Quote onto a second page;
-  // this size still reads as "the big two-row grid", just small enough for
-  // everything to fit on one page) plus a terse legend of the numbered
-  // points marked on it. Paint history/interior condition/systems/
+  // ~78% still did once a couple more damage markers pushed the legend
+  // table to 9 rows, so this leaves headroom for a handful more before it
+  // has to spill again; still reads as "the big two-row grid", just small
+  // enough for everything to fit on one page) plus a terse legend of the
+  // numbered points marked on it. Paint history/interior condition/systems/
   // inventory/customer priority all used to live in their own sections
   // after this one; all dropped now (see this function's header comment)
   // so this stays the report's one visual/data section instead of a long
@@ -1757,7 +1759,7 @@ export async function buildInspectionReportDoc(
   y = sectionTitle(doc, y, "Vehicle Inspection");
   y = ensureSpace(doc, y, 50);
   const diagramGap = 4;
-  const diagramScale = 0.78;
+  const diagramScale = 0.65;
   const diagramW = CW * diagramScale;
   const diagramX0 = ML + (CW - diagramW) / 2;
   const bigW = (diagramW - diagramGap) / 2;
@@ -1782,7 +1784,7 @@ export async function buildInspectionReportDoc(
     bigH,
     fetchAsset,
   );
-  y += bigH + 8;
+  y += bigH + 6;
   const smallW = (diagramW - diagramGap * 2) / 3;
   const smallHFrontRear = smallW * (180 / 260);
   const smallHTop = smallW * (200 / 400);
@@ -1816,7 +1818,7 @@ export async function buildInspectionReportDoc(
     smallHTop,
     fetchAsset,
   );
-  y += Math.max(smallHFrontRear, smallHTop) + 8;
+  y += Math.max(smallHFrontRear, smallHTop) + 6;
 
   if (inspection.damageMarkers.length > 0) {
     const sorted = [...inspection.damageMarkers].sort((a, b) => a.seq - b.seq);
