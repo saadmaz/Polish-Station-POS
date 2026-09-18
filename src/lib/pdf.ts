@@ -6,7 +6,7 @@ import { formatCurrency } from "./currency";
 import { formatDate, formatDateTimeInColombo } from "./date-format";
 import { LOGO_PNG_BASE64 } from "./logo-asset";
 import { storage } from "./firebase";
-import type { Job, BodyType } from "./job";
+import type { Job } from "./job";
 import {
   INSPECTION_DISCLAIMER_TEXT,
   type DamageMarker,
@@ -15,21 +15,15 @@ import {
   type DamageMarkerView,
   type Inspection,
 } from "./inspection";
-// Pure geometry data, no JSX — this is the one place outside the
-// components/ tree that imports from it, and deliberately so: the PDF's
-// damage diagram must redraw the *exact* same shapes the screen does (see
-// the acceptance criterion that marker positions match on-screen exactly),
-// which only holds if both renderers read the same numbers. Sedan no longer
-// has its own vector geometry here — it draws the same commissioned
-// illustrator PNGs (SEDAN_IMAGE_SRC) the on-screen diagram does; only the
-// other body types still use the vector single-blob outline.
-import {
-  bodyOutlinePoints,
-  profileWheelCentres,
-  viewBoxSize,
-  SEDAN_IMAGE_SRC,
-  SEDAN_IMAGE_VIEWBOX,
-} from "@/components/damage-diagram/silhouette-data";
+// This is the one place outside the components/ tree that imports from
+// silhouette-data.ts, and deliberately so: the PDF's damage diagram must
+// redraw the *exact* same artwork the screen does (see the acceptance
+// criterion that marker positions match on-screen exactly), which only
+// holds if both renderers embed the same PNGs at the same normalized
+// coordinates. Every body type uses this same commissioned artwork now —
+// the vector single-blob outline this used to fall back to for non-sedan
+// vehicles is gone.
+import { SEDAN_IMAGE_SRC, SEDAN_IMAGE_VIEWBOX } from "@/components/damage-diagram/silhouette-data";
 
 // Letterhead details come from the settings/business Firestore doc (cached in
 // db.ts by the store), except the website and the two landline/mobile
@@ -1263,17 +1257,15 @@ function sedanImageViewBoxSize(view: DamageMarkerView): [number, number] {
 }
 
 /** Scale/offset transform for one diagram box (bx,by,bw,bh) — shared by the
- *  multi-page report and the single-page sheet. Sedan letterboxes (uniform
- *  scale, centred) against the real artwork's own aspect ratio, since
- *  stretching a photo-like PNG to an arbitrary box would visibly distort
- *  it; every other body type keeps the original independent-axis stretch
- *  fit, which the pre-existing vector outlines were already tuned against —
- *  changing that now would only risk regressing body types nothing here is
- *  touching. Markers use the same toX/toY as whichever image/outline was
- *  actually drawn, so they stay correctly positioned relative to it either
- *  way. */
+ *  multi-page report and the single-page sheet. Letterboxes (uniform scale,
+ *  centred) against the real artwork's own aspect ratio, since stretching a
+ *  photo-like PNG to an arbitrary box would visibly distort it. Markers use
+ *  the same toX/toY as the image, so they stay correctly positioned
+ *  relative to it. Same commissioned artwork for every body type (see
+ *  drawVehicleOutline below) — this used to branch on bodyType for a
+ *  vector-outline fallback on non-sedan vehicles; that's gone now that every
+ *  body type uses the same PNGs. */
 function diagramTransform(
-  bodyType: BodyType,
   view: DamageMarkerView,
   bx: number,
   by: number,
@@ -1285,57 +1277,32 @@ function diagramTransform(
   toX: (x: number) => number;
   toY: (y: number) => number;
 } {
-  if (bodyType === "sedan") {
-    const [vbW, vbH] = sedanImageViewBoxSize(view);
-    const s = Math.min(bw / vbW, bh / vbH);
-    const offX = bx + (bw - vbW * s) / 2;
-    const offY = by + (bh - vbH * s) / 2;
-    return { vbW, vbH, toX: (x) => offX + x * s, toY: (y) => offY + y * s };
-  }
-  const [vbW, vbH] = viewBoxSize(view);
-  const sx = bw / vbW;
-  const sy = bh / vbH;
-  return { vbW, vbH, toX: (x) => bx + x * sx, toY: (y) => by + y * sy };
+  const [vbW, vbH] = sedanImageViewBoxSize(view);
+  const s = Math.min(bw / vbW, bh / vbH);
+  const offX = bx + (bw - vbW * s) / 2;
+  const offY = by + (bh - vbH * s) / 2;
+  return { vbW, vbH, toX: (x) => offX + x * s, toY: (y) => offY + y * s };
 }
 
-/** Draws the vehicle outline + wheels into a diagram box already scaled to
- *  (toX, toY) — shared by both the multi-page report (drawDiagramView) and
- *  the single-page sheet (sheetDrawDiagramView), since each needs to draw
- *  this identically. Sedan embeds the same commissioned illustrator PNG the
- *  on-screen diagram shows (SEDAN_IMAGE_SRC); every other body type keeps
- *  the vector single-blob outline — see bodyOutlinePoints' own callers for
- *  why. */
+/** Draws the vehicle artwork into a diagram box already scaled to (toX,
+ *  toY) — shared by both the multi-page report (drawDiagramView) and the
+ *  single-page sheet (sheetDrawDiagramView), since each needs to draw this
+ *  identically. Embeds the same commissioned illustrator PNG the on-screen
+ *  diagram shows (SEDAN_IMAGE_SRC), for every body type, not just sedans. */
 async function drawVehicleOutline(
   doc: jsPDF,
-  bodyType: BodyType,
   view: DamageMarkerView,
   toX: (x: number) => number,
   toY: (y: number) => number,
   vbW: number,
   vbH: number,
 ) {
-  if (bodyType === "sedan") {
-    const dataUrl = await fetchPublicAssetDataUrl(SEDAN_IMAGE_SRC[view]);
-    if (!dataUrl) return; // box + label still drawn by the caller; just no art if the fetch failed
-    try {
-      doc.addImage(dataUrl, "JPEG", toX(0), toY(0), toX(vbW) - toX(0), toY(vbH) - toY(0));
-    } catch {
-      // corrupt/unsupported image data — omit rather than fail the whole report
-    }
-    return;
-  }
-  doc.setDrawColor(...SLATE);
-  doc.setLineWidth(0.3);
-  const outline = bodyOutlinePoints(bodyType, view).map(
-    ([x, y]) => [toX(x), toY(y)] as [number, number],
-  );
-  strokePolygon(doc, outline, "S");
-  if (view === "left" || view === "right") {
-    const [fx, rx] = profileWheelCentres(bodyType, view);
-    const wr = 20 * ((toX(vbW) - toX(0)) / vbW);
-    doc.setFillColor(210, 210, 212);
-    doc.circle(toX(fx), toY(150), wr, "F");
-    doc.circle(toX(rx), toY(150), wr, "F");
+  const dataUrl = await fetchPublicAssetDataUrl(SEDAN_IMAGE_SRC[view]);
+  if (!dataUrl) return; // box + label still drawn by the caller; just no art if the fetch failed
+  try {
+    doc.addImage(dataUrl, "JPEG", toX(0), toY(0), toX(vbW) - toX(0), toY(vbH) - toY(0));
+  } catch {
+    // corrupt/unsupported image data — omit rather than fail the whole report
   }
 }
 
@@ -1346,7 +1313,6 @@ async function drawVehicleOutline(
  *  since both renderers scale the same normalized numbers. */
 async function drawDiagramView(
   doc: jsPDF,
-  bodyType: BodyType,
   view: DamageMarkerView,
   markers: readonly DamageMarker[],
   bx: number,
@@ -1354,7 +1320,7 @@ async function drawDiagramView(
   bw: number,
   bh: number,
 ) {
-  const { vbW, vbH, toX, toY } = diagramTransform(bodyType, view, bx, by, bw, bh);
+  const { vbW, vbH, toX, toY } = diagramTransform(view, bx, by, bw, bh);
 
   doc.setDrawColor(...RULE);
   doc.setLineWidth(0.2);
@@ -1365,7 +1331,7 @@ async function drawDiagramView(
   doc.setTextColor(...MUTED);
   doc.text(view.toUpperCase(), bx, by - 1.5);
 
-  await drawVehicleOutline(doc, bodyType, view, toX, toY, vbW, vbH);
+  await drawVehicleOutline(doc, view, toX, toY, vbW, vbH);
 
   for (const m of markers) {
     if (m.view !== view) continue;
@@ -1636,34 +1602,15 @@ export async function generateInspectionReportPDF(
   const gridGap = 4;
   const bigW = (CW - gridGap) / 2;
   const bigH = bigW * (180 / 400);
-  await drawDiagramView(doc, v.bodyType, "left", inspection.damageMarkers, ML, y, bigW, bigH);
-  await drawDiagramView(
-    doc,
-    v.bodyType,
-    "right",
-    inspection.damageMarkers,
-    ML + bigW + gridGap,
-    y,
-    bigW,
-    bigH,
-  );
+  await drawDiagramView(doc, "left", inspection.damageMarkers, ML, y, bigW, bigH);
+  await drawDiagramView(doc, "right", inspection.damageMarkers, ML + bigW + gridGap, y, bigW, bigH);
   y += bigH + 10;
   const smallW = (CW - gridGap * 2) / 3;
   const smallHFrontRear = smallW * (180 / 260);
   const smallHTop = smallW * (200 / 400);
+  await drawDiagramView(doc, "front", inspection.damageMarkers, ML, y, smallW, smallHFrontRear);
   await drawDiagramView(
     doc,
-    v.bodyType,
-    "front",
-    inspection.damageMarkers,
-    ML,
-    y,
-    smallW,
-    smallHFrontRear,
-  );
-  await drawDiagramView(
-    doc,
-    v.bodyType,
     "rear",
     inspection.damageMarkers,
     ML + smallW + gridGap,
@@ -1673,7 +1620,6 @@ export async function generateInspectionReportPDF(
   );
   await drawDiagramView(
     doc,
-    v.bodyType,
     "top",
     inspection.damageMarkers,
     ML + (smallW + gridGap) * 2,
@@ -2091,7 +2037,6 @@ function sheetDrawSeverityShape(
  *  shape-per-severity convention differs (see sheetDrawSeverityShape). */
 async function sheetDrawDiagramView(
   doc: jsPDF,
-  bodyType: BodyType,
   view: DamageMarkerView,
   markers: readonly DamageMarker[],
   bx: number,
@@ -2100,7 +2045,7 @@ async function sheetDrawDiagramView(
   bh: number,
   label: string,
 ) {
-  const { vbW, vbH, toX, toY } = diagramTransform(bodyType, view, bx, by, bw, bh);
+  const { vbW, vbH, toX, toY } = diagramTransform(view, bx, by, bw, bh);
 
   doc.setDrawColor(...RULE);
   doc.setLineWidth(0.2);
@@ -2110,7 +2055,7 @@ async function sheetDrawDiagramView(
   doc.setTextColor(...MUTED);
   doc.text(label, bx + 1, by + 3.5);
 
-  await drawVehicleOutline(doc, bodyType, view, toX, toY, vbW, vbH);
+  await drawVehicleOutline(doc, view, toX, toY, vbW, vbH);
 
   for (const m of markers) {
     if (m.view !== view) continue;
@@ -2345,7 +2290,6 @@ export async function generateInspectionSummarySheetPDF(
   const frW = (leftW - gap) / 2;
   await sheetDrawDiagramView(
     doc,
-    v.bodyType,
     "front",
     inspection.damageMarkers,
     SHEET_M,
@@ -2356,7 +2300,6 @@ export async function generateInspectionSummarySheetPDF(
   );
   await sheetDrawDiagramView(
     doc,
-    v.bodyType,
     "rear",
     inspection.damageMarkers,
     SHEET_M + frW + gap,
@@ -2372,7 +2315,6 @@ export async function generateInspectionSummarySheetPDF(
   const profileH = (diagH - frH - gap * 2) / 2;
   await sheetDrawDiagramView(
     doc,
-    v.bodyType,
     "left",
     inspection.damageMarkers,
     SHEET_M,
@@ -2383,7 +2325,6 @@ export async function generateInspectionSummarySheetPDF(
   );
   await sheetDrawDiagramView(
     doc,
-    v.bodyType,
     "right",
     inspection.damageMarkers,
     SHEET_M,
@@ -2394,7 +2335,6 @@ export async function generateInspectionSummarySheetPDF(
   );
   await sheetDrawDiagramView(
     doc,
-    v.bodyType,
     "top",
     inspection.damageMarkers,
     SHEET_M + leftW + gap,

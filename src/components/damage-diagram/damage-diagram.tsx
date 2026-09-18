@@ -27,7 +27,7 @@ import {
   type DamageMarker,
   type DamageMarkerView,
 } from "@/lib/inspection";
-import { VehicleSilhouette, viewBoxFor, panelLabel, SEDAN_IMAGE_VIEWBOX } from "./silhouettes";
+import { VehicleSilhouette, panelLabel, SEDAN_IMAGE_VIEWBOX } from "./silhouettes";
 import {
   MARKER_TYPE_COLOR,
   MARKER_TYPE_LABELS,
@@ -60,11 +60,10 @@ export function DamageDiagram({ bodyType, markers, onMarkersChange }: DamageDiag
     dragging: boolean;
   } | null>(null);
 
-  // Sedan's on-screen diagram is the real illustrator artwork now, sized to
-  // each PNG's own pixel dimensions rather than the shared vector viewBoxes
-  // other body types (and pdf.ts's sedan fallback) still use — see
-  // silhouette-data.ts's "Sedan real artwork" section.
-  const viewBox = bodyType === "sedan" ? SEDAN_IMAGE_VIEWBOX[view] : viewBoxFor(view);
+  // Every body type's on-screen diagram is the real illustrator artwork
+  // now, sized to each PNG's own pixel dimensions — see silhouette-data.ts's
+  // "Sedan real artwork" section.
+  const viewBox = SEDAN_IMAGE_VIEWBOX[view];
   const [, , vbW, vbH] = viewBox.split(" ").map(Number);
   const viewMarkers = markers.filter((m) => m.view === view);
   const selected = markers.find((m) => m.seq === selectedSeq) ?? null;
@@ -85,12 +84,10 @@ export function DamageDiagram({ bodyType, markers, onMarkersChange }: DamageDiag
     onMarkersChange(markers.map((m) => (m.seq === seq ? { ...m, ...patch } : m)));
   }
 
-  // Resolves the panel-* id (see silhouette-data.ts) under a tap, when the
-  // artwork for this body type is panel-segmented (sedan only, for now) —
+  // Resolves the panel-* id (see silhouette-data.ts) under a tap —
   // elementFromPoint finds the topmost hit-testable element there, since
   // panels render with fill="transparent" specifically to receive pointer
-  // events; other body types' single-blob outline carries no panel-* id, so
-  // this naturally resolves to undefined for them.
+  // events.
   function resolvePanelId(clientX: number, clientY: number): string | undefined {
     const el = document.elementFromPoint(clientX, clientY);
     const panelEl = el?.closest("[id^='panel-']");
@@ -228,14 +225,12 @@ export function DamageDiagram({ bodyType, markers, onMarkersChange }: DamageDiag
             const color = MARKER_TYPE_COLOR[m.type];
             const cx = m.x * vbW;
             const cy = m.y * vbH;
-            // Proportional to viewBox width, not a fixed unit count — sedan's
-            // real-artwork viewBoxes are ~6x larger in each dimension than
-            // the old vector ones (image pixel space vs. hand-picked small
-            // numbers), and a fixed r=13 would render as a barely-visible
-            // speck against that. 0.05 reproduces the old fixed r=13 exactly
-            // for the 260-wide front/rear viewBox other body types still use.
+            // Proportional to viewBox width, not a fixed unit count — the
+            // real-artwork viewBoxes are image pixel space, much larger than
+            // a hand-picked fixed unit count, so a fixed r=13 would render as
+            // a barely-visible speck against that.
             const r = vbW * 0.05;
-            const markerStrokeWidth = r * 0.15; // matches the old fixed 2 at r=13
+            const markerStrokeWidth = r * 0.15;
             return (
               <g
                 key={m.seq}
