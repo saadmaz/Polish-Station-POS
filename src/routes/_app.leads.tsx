@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import type { DateRange } from "react-day-picker";
 import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
@@ -75,6 +76,10 @@ import {
   MessageSquareText,
   Save,
   Megaphone,
+  Inbox,
+  Timer,
+  Zap,
+  CalendarRange,
 } from "lucide-react";
 import type {
   Lead,
@@ -87,7 +92,7 @@ import type {
   VehicleBodyType,
 } from "@/lib/db";
 import { LOST_REASONS } from "@/lib/db";
-import { formatDate, formatDateTime, formatRelativeAge } from "@/lib/date-format";
+import { formatDate, formatShortDate, formatDateTime, formatRelativeAge } from "@/lib/date-format";
 import { formatCurrency } from "@/lib/currency";
 import {
   isLegalLeadTransition,
@@ -1847,6 +1852,77 @@ function SkeletonRows() {
   );
 }
 
+// ─── Date range filter (Received / Requested) ──────────────────────────────
+// Replaces a pair of raw native `<input type="date">` fields with one compact
+// popover trigger, reusing the same Popover + CalendarPicker combo the New
+// Lead dialog already uses for its single-date field -- consistent look,
+// and range mode reads far better than two bare mm/dd/yyyy boxes side by side.
+function DateRangeFilter({
+  label,
+  from,
+  to,
+  onChange,
+}: {
+  label: string;
+  from: string;
+  to: string;
+  onChange: (from: string | undefined, to: string | undefined) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const hasValue = Boolean(from || to);
+  const range: DateRange | undefined = hasValue
+    ? {
+        from: from ? new Date(`${from}T00:00:00`) : undefined,
+        to: to ? new Date(`${to}T00:00:00`) : undefined,
+      }
+    : undefined;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium",
+            hasValue
+              ? "border-primary/40 bg-primary/5 text-primary"
+              : "border-input text-muted-foreground hover:bg-accent",
+          )}
+        >
+          <CalendarRange className="h-3.5 w-3.5" />
+          {hasValue
+            ? `${label}: ${from ? formatShortDate(from) : "…"} – ${to ? formatShortDate(to) : "…"}`
+            : label}
+          {hasValue && (
+            <span
+              role="button"
+              tabIndex={-1}
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange(undefined, undefined);
+              }}
+              className="-mr-0.5 ml-0.5 rounded-full p-0.5 hover:bg-primary/10"
+              aria-label={`Clear ${label.toLowerCase()} date filter`}
+            >
+              <XCircle className="h-3.5 w-3.5" />
+            </span>
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-0" align="start">
+        <CalendarPicker
+          mode="range"
+          numberOfMonths={2}
+          selected={range}
+          onSelect={(r) =>
+            onChange(r?.from ? toLocalYMD(r.from) : undefined, r?.to ? toLocalYMD(r.to) : undefined)
+          }
+        />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function Leads() {
   const {
     leads,
@@ -2206,27 +2282,42 @@ function Leads() {
         <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <button
             onClick={() => setSearchParam("status", ["new"])}
-            className="rounded-xl border border-border bg-card p-4 text-left shadow-card hover:border-primary/40"
+            className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 text-left shadow-card transition-colors hover:border-primary/40 hover:shadow-elevated"
           >
-            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Unactioned
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Inbox className="h-5 w-5" />
             </div>
-            <div className="mt-1 text-2xl font-bold">{newCount}</div>
+            <div className="min-w-0">
+              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Unactioned
+              </div>
+              <div className="mt-0.5 text-2xl font-bold tabular-nums">{newCount}</div>
+            </div>
           </button>
-          <div className="rounded-xl border border-border bg-card p-4 shadow-card">
-            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Oldest waiting
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 shadow-card">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-warning/10 text-warning">
+              <Timer className="h-5 w-5" />
             </div>
-            <div className="mt-1 text-2xl font-bold">
-              {oldestNew ? formatRelativeAge(oldestNew.createdAt, now) : "—"}
+            <div className="min-w-0">
+              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Oldest waiting
+              </div>
+              <div className="mt-0.5 text-2xl font-bold tabular-nums">
+                {oldestNew ? formatRelativeAge(oldestNew.createdAt, now) : "—"}
+              </div>
             </div>
           </div>
-          <div className="rounded-xl border border-border bg-card p-4 shadow-card">
-            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Median first response · 7d
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-4 shadow-card">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-success/10 text-success">
+              <Zap className="h-5 w-5" />
             </div>
-            <div className="mt-1 text-2xl font-bold">
-              {medianResponseMinutes === null ? "—" : formatMinutes(medianResponseMinutes)}
+            <div className="min-w-0">
+              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Median first response · 7d
+              </div>
+              <div className="mt-0.5 text-2xl font-bold tabular-nums">
+                {medianResponseMinutes === null ? "—" : formatMinutes(medianResponseMinutes)}
+              </div>
             </div>
           </div>
         </div>
@@ -2243,34 +2334,57 @@ function Leads() {
                   onChange={(e) => setSearchInput(e.target.value)}
                 />
               </div>
-              <select
-                className="min-h-9 rounded-md border border-input bg-background px-3 py-1.5 text-sm"
-                value={typeFilter}
-                onChange={(e) =>
-                  setSearchParam(
-                    "type",
-                    e.target.value === "All" ? undefined : (e.target.value as LeadType),
-                  )
-                }
-              >
-                <option value="All">All Types</option>
-                <option value="contact">Contact</option>
-                <option value="booking">Booking Request</option>
-              </select>
-              <select
-                className="min-h-9 rounded-md border border-input bg-background px-3 py-1.5 text-sm"
-                value={sourceFilter}
-                onChange={(e) =>
-                  setSearchParam("source", e.target.value === "All" ? undefined : e.target.value)
-                }
-              >
-                <option value="All">All Sources</option>
-                {sourceOptions.map((s) => (
-                  <option key={s} value={s}>
-                    {sourceLabel(s)}
-                  </option>
-                ))}
-              </select>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className={cn(
+                      BUTTON,
+                      typeFilter !== "All" && "border-primary/40 bg-primary/5 text-primary",
+                    )}
+                  >
+                    {typeFilter === "All" ? "All Types" : TYPE_LABEL[typeFilter]}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuLabel>Type</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={typeFilter}
+                    onValueChange={(v) =>
+                      setSearchParam("type", v === "All" ? undefined : (v as LeadType))
+                    }
+                  >
+                    <DropdownMenuRadioItem value="All">All Types</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="contact">Contact</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="booking">Booking Request</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className={cn(
+                      BUTTON,
+                      sourceFilter !== "All" && "border-primary/40 bg-primary/5 text-primary",
+                    )}
+                  >
+                    {sourceFilter === "All" ? "All Sources" : sourceLabel(sourceFilter)}
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuLabel>Source</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={sourceFilter}
+                    onValueChange={(v) => setSearchParam("source", v === "All" ? undefined : v)}
+                  >
+                    <DropdownMenuRadioItem value="All">All Sources</DropdownMenuRadioItem>
+                    {sourceOptions.map((s) => (
+                      <DropdownMenuRadioItem key={s} value={s}>
+                        {sourceLabel(s)}
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button className={BUTTON}>
@@ -2357,39 +2471,29 @@ function Leads() {
               ))}
             </ToggleGroup>
 
-            <div className="flex flex-wrap items-center gap-3 text-xs">
-              <div className="flex items-center gap-1.5">
-                <span className="text-muted-foreground">Received</span>
-                <input
-                  type="date"
-                  value={receivedFrom}
-                  onChange={(e) => setSearchParam("receivedFrom", e.target.value || undefined)}
-                  className="rounded-md border border-input bg-background px-2 py-1"
-                />
-                <span className="text-muted-foreground">–</span>
-                <input
-                  type="date"
-                  value={receivedTo}
-                  onChange={(e) => setSearchParam("receivedTo", e.target.value || undefined)}
-                  className="rounded-md border border-input bg-background px-2 py-1"
-                />
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-muted-foreground">Requested</span>
-                <input
-                  type="date"
-                  value={requestedFrom}
-                  onChange={(e) => setSearchParam("requestedFrom", e.target.value || undefined)}
-                  className="rounded-md border border-input bg-background px-2 py-1"
-                />
-                <span className="text-muted-foreground">–</span>
-                <input
-                  type="date"
-                  value={requestedTo}
-                  onChange={(e) => setSearchParam("requestedTo", e.target.value || undefined)}
-                  className="rounded-md border border-input bg-background px-2 py-1"
-                />
-              </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <DateRangeFilter
+                label="Received"
+                from={receivedFrom}
+                to={receivedTo}
+                onChange={(from, to) =>
+                  navigate({
+                    search: (prev) => ({ ...prev, receivedFrom: from, receivedTo: to }),
+                    replace: true,
+                  })
+                }
+              />
+              <DateRangeFilter
+                label="Requested"
+                from={requestedFrom}
+                to={requestedTo}
+                onChange={(from, to) =>
+                  navigate({
+                    search: (prev) => ({ ...prev, requestedFrom: from, requestedTo: to }),
+                    replace: true,
+                  })
+                }
+              />
             </div>
           </div>
 
@@ -2423,12 +2527,15 @@ function Leads() {
                   />
                 ))}
                 {filtered.length === 0 && (
-                  <div className="py-10 text-center text-sm text-muted-foreground">
+                  <div className="py-14 text-center text-sm text-muted-foreground">
+                    <Inbox className="mx-auto mb-2 h-8 w-8 text-muted-foreground/40" />
                     {filterableLeads.length === 0 ? (
-                      "No leads yet"
+                      <div className="font-medium text-foreground">No leads yet</div>
                     ) : (
                       <div className="space-y-2">
-                        <div>No leads match your filters</div>
+                        <div className="font-medium text-foreground">
+                          No leads match your filters
+                        </div>
                         <button onClick={clearFilters} className={BUTTON}>
                           Clear filters
                         </button>
@@ -2526,12 +2633,15 @@ function Leads() {
                     ))}
                     {filtered.length === 0 && (
                       <tr>
-                        <td colSpan={9} className="text-center py-10 text-muted-foreground">
+                        <td colSpan={9} className="py-14 text-center text-muted-foreground">
+                          <Inbox className="mx-auto mb-2 h-8 w-8 text-muted-foreground/40" />
                           {filterableLeads.length === 0 ? (
-                            "No leads yet"
+                            <div className="font-medium text-foreground">No leads yet</div>
                           ) : (
                             <div className="space-y-2">
-                              <div>No leads match your filters</div>
+                              <div className="font-medium text-foreground">
+                                No leads match your filters
+                              </div>
                               <button onClick={clearFilters} className={BUTTON}>
                                 Clear filters
                               </button>
