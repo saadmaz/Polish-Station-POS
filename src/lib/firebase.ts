@@ -9,13 +9,22 @@ import {
 } from "firebase/firestore";
 import { connectStorageEmulator, getStorage } from "firebase/storage";
 
+// import.meta.env is Vite's own injection (dev server / real build) --
+// always present there, so this fallback never changes app behavior. It's
+// only undefined when this module gets pulled in transitively (e.g.
+// pdf.ts's exports) by a plain Node/tsx script outside Vite entirely, which
+// still needs a real firebaseConfig to construct the same client SDK object
+// -- process.env is already populated by `dotenv/config` in every such
+// script (see scripts/regenerate-inspection-report.ts).
+const env = import.meta.env ?? (process.env as Record<string, string | undefined>);
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: env.VITE_FIREBASE_API_KEY,
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: env.VITE_FIREBASE_APP_ID,
 };
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
@@ -58,7 +67,7 @@ export const storage = getStorage(app);
 // Playwright tests can exercise the app (login, bookings, staff mgmt)
 // without writing test data into the live production Firestore project,
 // which is otherwise the *only* backend this app can ever talk to locally.
-if (import.meta.env.VITE_USE_FIREBASE_EMULATOR === "true" && typeof window !== "undefined") {
+if (env.VITE_USE_FIREBASE_EMULATOR === "true" && typeof window !== "undefined") {
   const g = globalThis as unknown as { __psEmulatorConnected?: boolean };
   if (!g.__psEmulatorConnected) {
     g.__psEmulatorConnected = true;

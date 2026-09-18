@@ -1,4 +1,13 @@
-import jsPDF from "jspdf";
+// Named import, not the default export: jsPDF ships a "node" conditional
+// export (dist/jspdf.node.min.js) distinct from the browser build Vite
+// bundles, and a plain `import jsPDF from "jspdf"` default binding resolves
+// inconsistently between the two under Node's CJS/ESM interop (a script
+// running under tsx got a `jsPDF is not a constructor` TypeError from this
+// exact line -- see scripts/regenerate-inspection-report.ts, which imports
+// buildInspectionReportDoc below and so pulls this file in under plain
+// Node). The named `jsPDF` export is identical to `default` in both builds
+// and doesn't have that ambiguity.
+import { jsPDF } from "jspdf";
 import { ref as storageRef, uploadBytes, getDownloadURL, getBytes } from "firebase/storage";
 import type { Invoice, InvoiceLine, PurchaseOrder } from "./db";
 import { getPayments, getAmountRefunded, getBusinessInfo } from "./db";
@@ -1439,18 +1448,23 @@ export interface InspectionReportResult {
 }
 
 /**
- * Builds the inspection report PDF and uploads it to
- * `jobs/{jobId}/documents/inspection-{inspectionId}-v{version}.pdf` in
- * Storage, never overwriting an earlier version. Takes only the Inspection
+ * Builds the inspection report PDF (all layout, no Storage/Firestore I/O
+ * beyond read-only photo fetches) and returns the finished jsPDF doc plus
+ * the version number it was built for. Split out from
+ * generateInspectionReportPDF() below so a script running under the Admin
+ * SDK (which can't use the client `storage`/uploadBytes/getDownloadURL this
+ * file otherwise imports) can produce byte-identical output without
+ * duplicating ~300 lines of layout code — see
+ * scripts/regenerate-inspection-report.ts. Takes only the Inspection
  * itself: unlike the job card, every field this needs (vehicle/customer
  * snapshot, inspector attribution) already lives on the document, no Job/
  * staff-list lookup required. No signature/remote-ack section any more
  * (operator-requested, 2026-09-18 — see inspection.ts) — a version built for
  * an inspection signed before that change simply won't have one to redraw.
  */
-export async function generateInspectionReportPDF(
+export async function buildInspectionReportDoc(
   inspection: Inspection,
-): Promise<InspectionReportResult> {
+): Promise<{ doc: jsPDF; version: number }> {
   const version = (inspection.documents?.report?.version ?? 0) + 1;
 
   const photoNumbers = new Map<string, number>(inspection.photos.map((p, i) => [p.id, i + 1]));
@@ -1848,7 +1862,20 @@ export async function generateInspectionReportPDF(
     doc.text(`Page ${p} of ${totalPages}`, MR, FOOTER_Y, { align: "right" });
   }
 
-  // ── Persist: upload, never overwriting an earlier version ──────────────────
+  return { doc, version };
+}
+
+/**
+ * Builds the inspection report PDF (via buildInspectionReportDoc above) and
+ * uploads it to `jobs/{jobId}/documents/inspection-{inspectionId}-v{version}.pdf`
+ * in Storage, never overwriting an earlier version. Browser-only (uses the
+ * client `storage`/uploadBytes/getDownloadURL) — see buildInspectionReportDoc's
+ * own comment for the Admin-SDK equivalent.
+ */
+export async function generateInspectionReportPDF(
+  inspection: Inspection,
+): Promise<InspectionReportResult> {
+  const { doc, version } = await buildInspectionReportDoc(inspection);
   const storagePath = `jobs/${inspection.jobId}/documents/inspection-${inspection.id}-v${version}.pdf`;
   const blob = doc.output("blob");
   const fileRef = storageRef(storage, storagePath);
