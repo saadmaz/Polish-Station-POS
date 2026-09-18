@@ -156,7 +156,7 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
       // block or revert completing the inspection itself.
       let withReport = next;
       try {
-        const result = await generateInspectionReportPDF(next);
+        const result = await generateInspectionReportPDF(next, job);
         withReport = {
           ...next,
           documents: {

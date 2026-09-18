@@ -1385,6 +1385,11 @@ async function drawDiagramView(
 interface ReportTableColumn {
   label: string;
   width: number;
+  /** Right-aligns both the header label and every cell in this column
+   *  against its right edge (width - 2mm inset, matching the column's own
+   *  left inset) — for a price/amount column, so it reads like every other
+   *  invoice-style table in this file instead of ragging left. */
+  align?: "right";
 }
 
 /** Small hand-rolled table — no jspdf-autotable dependency, same DIY
@@ -1395,17 +1400,26 @@ function drawTable(
   y: number,
   columns: ReportTableColumn[],
   rows: { cells: string[]; highlight?: boolean }[],
+  rowH = 7,
 ): number {
-  const rowH = 7;
+  const headerFontSize = rowH >= 7 ? 7 : 6;
+  const cellFontSize = rowH >= 7 ? 7.5 : 6.5;
+  const textBaseline = rowH - (rowH >= 7 ? 2.3 : 1.8);
   function header(yy: number): number {
     doc.setFillColor(...CHARCOAL);
     doc.rect(ML, yy, CW, rowH, "F");
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(7);
+    doc.setFontSize(headerFontSize);
     doc.setTextColor(...WHITE);
     let cx = ML + 2;
     for (const col of columns) {
-      doc.text(col.label.toUpperCase(), cx, yy + rowH - 2.3);
+      if (col.align === "right") {
+        doc.text(col.label.toUpperCase(), cx + col.width - 4, yy + textBaseline, {
+          align: "right",
+        });
+      } else {
+        doc.text(col.label.toUpperCase(), cx, yy + textBaseline);
+      }
       cx += col.width;
     }
     return yy + rowH;
@@ -1426,19 +1440,23 @@ function drawTable(
     );
     doc.rect(ML, y, CW, rowH, "F");
     doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.5);
+    doc.setFontSize(cellFontSize);
     doc.setTextColor(...CHARCOAL);
     let cx = ML + 2;
     row.cells.forEach((cell, ci) => {
       const col = columns[ci];
       const lines = doc.splitTextToSize(cell, col.width - 4);
-      doc.text(lines[0] ?? "", cx, y + rowH - 2.3);
+      if (col.align === "right") {
+        doc.text(lines[0] ?? "", cx + col.width - 4, y + textBaseline, { align: "right" });
+      } else {
+        doc.text(lines[0] ?? "", cx, y + textBaseline);
+      }
       cx += col.width;
     });
     y += rowH;
   });
   rule(doc, y + 1);
-  return y + 7;
+  return y + (rowH >= 7 ? 7 : 5);
 }
 
 export interface InspectionReportResult {
@@ -1455,15 +1473,27 @@ export interface InspectionReportResult {
  * SDK (which can't use the client `storage`/uploadBytes/getDownloadURL this
  * file otherwise imports) can produce byte-identical output without
  * duplicating ~300 lines of layout code — see
- * scripts/regenerate-inspection-report.ts. Takes only the Inspection
- * itself: unlike the job card, every field this needs (vehicle/customer
- * snapshot, inspector attribution) already lives on the document, no Job/
- * staff-list lookup required. No signature/remote-ack section any more
- * (operator-requested, 2026-09-18 — see inspection.ts) — a version built for
- * an inspection signed before that change simply won't have one to redraw.
+ * scripts/regenerate-inspection-report.ts.
+ *
+ * Redesigned 2026-09-19 (operator request) to a fixed 4-section shape aimed
+ * at fitting one page (two at worst): Customer & Vehicle -> Vehicle
+ * Inspection (diagram + marked points) -> Quote -> footer. Everything the
+ * previous version also printed (paint history, interior condition, systems
+ * check, inventory, customer priority/scope) is intentionally dropped from
+ * this document — still fully captured on the Inspection record itself and
+ * visible in the app, just not in this printout, which now exists to be a
+ * short customer-facing summary rather than the full internal record. No
+ * signature/remote-ack section either (operator-requested, 2026-09-18 — see
+ * inspection.ts); a version built for an inspection signed before that
+ * change simply won't have one to redraw.
+ *
+ * Takes `job` alongside the Inspection purely for the Quote section — price
+ * lives on Job (job.services / the legacy single serviceName+price), not on
+ * Inspection at all.
  */
 export async function buildInspectionReportDoc(
   inspection: Inspection,
+  job: Pick<Job, "services" | "serviceName" | "price" | "estimate">,
 ): Promise<{ doc: jsPDF; version: number }> {
   const version = (inspection.documents?.report?.version ?? 0) + 1;
 
@@ -1515,7 +1545,12 @@ export async function buildInspectionReportDoc(
 
   y = 52;
 
-  // ── 2. Customer + vehicle ───────────────────────────────────────────────
+  // ── A. Customer & Vehicle — one compact card (name/status, contact/
+  // vehicle/VIN on one line, then a 5-up mileage/fuel/warning-lights/starts/
+  // keys strip) rather than the two separate sections this used to be split
+  // across. No black section-title bar here on purpose — it's the report's
+  // lede, not a numbered section, so it reads as a header sub-block instead
+  // of another chapter. ─────────────────────────────────────────────────────
   const v = inspection.vehicleSnapshot;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
@@ -1523,72 +1558,62 @@ export async function buildInspectionReportDoc(
   doc.text(inspection.customerSnapshot.name, ML, y);
   const statusBadge = inspection.status.toUpperCase().replace(/_/g, " ");
   badge(doc, statusBadge, MR - doc.getTextWidth(statusBadge) - 8, y - 3.5, CHARCOAL);
-  y += 5.5;
+  y += 6;
+
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(...SLATE);
-  doc.text(`Contact:  ${inspection.customerSnapshot.phone || "—"}`, ML, y);
-  y += 4.5;
   const vehicleLine = [v.year, v.make, v.model].filter(Boolean).join(" ");
-  doc.text(`Vehicle:  ${vehicleLine}  ·  ${v.plate}  ·  ${v.colour}  ·  ${v.bodyType}`, ML, y);
-  y += 4.5;
-  if (inspection.vin) {
-    doc.text(`VIN:  ${inspection.vin}`, ML, y);
-    y += 4.5;
-  }
-  y += 3;
-  rule(doc, y);
+  const summaryLine = [
+    inspection.customerSnapshot.phone || "—",
+    [vehicleLine, v.plate, v.colour, v.bodyType].filter(Boolean).join(" · "),
+    inspection.vin ? `VIN ${inspection.vin}` : null,
+  ]
+    .filter(Boolean)
+    .join("    ·    ");
+  doc.text(summaryLine, ML, y);
   y += 8;
 
-  // ── 3. Intake baseline ───────────────────────────────────────────────────
-  y = sectionTitle(doc, y, "Intake Baseline");
-  const clusterUrl = photoDataUrls.get(inspection.odometerPhotoId) ?? null;
-  const baselineTextX = clusterUrl ? ML + 45 : ML;
-  const baselineTextW = clusterUrl ? CW - 45 : CW;
-  if (clusterUrl) {
-    try {
-      doc.addImage(clusterUrl, "JPEG", ML, y, 40, 30);
-    } catch {
-      // corrupt/unsupported image data — omit rather than fail the whole report
-    }
-  }
-  const baselineRows: [string, string][] = [
-    ["Odometer", `${inspection.odometer} km`],
-    ["Fuel level", FUEL_LABELS_PDF[inspection.fuelLevel] ?? inspection.fuelLevel],
+  const baseline: [string, string][] = [
+    ["Mileage", `${inspection.odometer} km`],
+    ["Fuel Level", FUEL_LABELS_PDF[inspection.fuelLevel] ?? inspection.fuelLevel],
     [
-      "Warning lights",
-      inspection.warningLights.length ? inspection.warningLights.join(", ") : "none",
+      "Warning Lights",
+      inspection.warningLights.length ? inspection.warningLights.join(", ") : "None",
     ],
-    ["Starts normally", inspection.startsNormally ? "Yes" : "No"],
-    ["Keys handed over", String(inspection.keysHandedOver)],
+    ["Starts Normally", inspection.startsNormally ? "Yes" : "No"],
+    ["Keys Handed Over", String(inspection.keysHandedOver)],
   ];
-  let by = y;
-  for (const [label, value] of baselineRows) {
-    jobField(doc, baselineTextX, by + 4, baselineTextW, label, value);
-    by += 9;
-  }
-  y = Math.max(y + 32, by) + 2;
+  const baselineColW = CW / baseline.length;
+  baseline.forEach(([label, value], i) => {
+    jobField(doc, ML + i * baselineColW, y + 4, baselineColW - 4, label, value);
+  });
+  y += 13;
+
   if (inspection.knownIssues) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7);
     doc.setTextColor(...MUTED);
     doc.text("CUSTOMER-DECLARED ISSUES", ML, y);
-    y += 4.5;
+    y += 4.2;
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
     doc.setTextColor(...SLATE);
     const lines = doc.splitTextToSize(inspection.knownIssues, CW);
     doc.text(lines, ML, y);
-    y += lines.length * 4.2 + 3;
+    y += lines.length * 4.2 + 2;
   }
-  y += 4;
+  y += 3;
+  rule(doc, y);
+  y += 8;
 
-  // ── 4. Diagram grid — one row, all 5 views, kept compact since the damage
-  // table right below already lists every marker in full text detail; this
-  // is a quick visual reference, not the report's primary record (used to
-  // be a 2-row grid, roughly 3x this tall — cut for length, per operator
-  // request 2026-09-18 to keep the whole report to 1-2 pages). ────────────
-  y = sectionTitle(doc, y, "Damage Diagram");
+  // ── B. Vehicle Inspection — the diagram (all 5 views, one compact row)
+  // plus a terse legend of the numbered points marked on it. Paint history/
+  // interior condition/systems/inventory/customer priority all used to live
+  // in their own sections after this one; all dropped now (see this
+  // function's header comment) so this stays the report's one visual/data
+  // section instead of a long scroll of mostly-empty ones. ─────────────────
+  y = sectionTitle(doc, y, "Vehicle Inspection");
   y = ensureSpace(doc, y, 32);
   const gridGap = 3;
   const cellW = (CW - gridGap * 4) / 5;
@@ -1600,7 +1625,7 @@ export async function buildInspectionReportDoc(
     rear: cellW * (180 / 260),
     top: cellW * (200 / 400),
   };
-  const rowH = Math.max(...diagramViews.map((v) => cellH[v]));
+  const diagramRowH = Math.max(...diagramViews.map((dv) => cellH[dv]));
   for (let i = 0; i < diagramViews.length; i++) {
     const view = diagramViews[i];
     await drawDiagramView(
@@ -1613,10 +1638,8 @@ export async function buildInspectionReportDoc(
       cellH[view],
     );
   }
-  y += rowH + 10;
+  y += diagramRowH + 8;
 
-  // ── 5. Damage table ──────────────────────────────────────────────────────
-  y = sectionTitle(doc, y, "Damage Detail");
   if (inspection.damageMarkers.length > 0) {
     const sorted = [...inspection.damageMarkers].sort((a, b) => a.seq - b.seq);
     y = drawTable(
@@ -1627,8 +1650,7 @@ export async function buildInspectionReportDoc(
         { label: "View", width: 16 },
         { label: "Type", width: 26 },
         { label: "Severity", width: 20 },
-        { label: "Note", width: CW - 8 - 16 - 26 - 20 - 24 },
-        { label: "Photo", width: 24 },
+        { label: "Note", width: CW - 8 - 16 - 26 - 20 },
       ],
       sorted.map((m) => ({
         cells: [
@@ -1637,9 +1659,9 @@ export async function buildInspectionReportDoc(
           MARKER_TYPE_LABELS_PDF[m.type],
           SEVERITY_LABELS_PDF[m.severity],
           m.note || "—",
-          m.photoIds[0] ? `#${photoNumbers.get(m.photoIds[0])}` : "—",
         ],
       })),
+      5,
     );
   } else {
     doc.setFont("helvetica", "italic");
@@ -1649,172 +1671,18 @@ export async function buildInspectionReportDoc(
     y += 8;
   }
 
-  // ── 6. Paint history & condition flags ──────────────────────────────────
-  y = sectionTitle(doc, y, "Paint History & Condition");
-  const ph = inspection.paintHistory;
-  const halfW = CW / 2;
-  const paintRows: [string, string][] = [
-    ["Existing coating", ph.existingCoating],
-    ["Coating age", ph.coatingAgeMonths != null ? `${ph.coatingAgeMonths} months` : "—"],
-    ["Prior correction", String(ph.priorCorrection)],
-    ["Resprayed panels", ph.resprayedPanels.length ? ph.resprayedPanels.join(", ") : "None"],
-    ["Wrap / PPF", ph.wrapOrPpf ? "Yes" : "No"],
-  ];
-  by = y;
-  paintRows.forEach(([l, val], i) => {
-    jobField(doc, i % 2 === 0 ? ML : ML + halfW, by + 4, halfW - 4, l, val);
-    if (i % 2 === 1) by += 9;
-  });
-  if (paintRows.length % 2 === 1) by += 9;
-  y = by + 2;
-  if (inspection.conditionFlags.length > 0) {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(7);
-    doc.setTextColor(...MUTED);
-    doc.text("CONDITION FLAGS", ML, y);
-    y += 4.5;
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...SLATE);
-    doc.text(inspection.conditionFlags.join(", ").replace(/_/g, " "), ML, y);
-    y += 6;
-  }
-  y += 3;
-
-  // ── 7. Interior condition ────────────────────────────────────────────────
-  y = sectionTitle(doc, y, "Interior Condition");
-  const ic = inspection.interiorCondition;
-  const interiorFlags =
-    [
-      ic.stains && "Stains",
-      ic.tears && "Tears",
-      ic.burns && "Burns",
-      ic.trimDamage && "Trim damage",
-      ic.headlinerStains && "Headliner stains",
-    ]
-      .filter(Boolean)
-      .join(", ") || "None noted";
-  by = y;
-  jobField(doc, ML, by + 4, halfW - 4, "Material", ic.material);
-  jobField(
-    doc,
-    ML + halfW,
-    by + 4,
-    halfW - 4,
-    "Odours",
-    ic.odours.length ? ic.odours.join(", ") : "None",
-  );
-  by += 9;
-  jobField(doc, ML, by + 4, CW, "Condition", interiorFlags);
-  y = by + 13;
-
-  // ── 8/9. Systems check & Inventory — one combined section, not two, when
-  // both are empty (the common case: neither is captured by the stepper
-  // today). A real table for either still gets its own full section, same
-  // as before; this only collapses the "Not recorded." fallback, which
-  // otherwise cost a full section-title bar each for zero information. ────
-  const hasSystems = inspection.systemsCheck.length > 0;
-  const hasInventory = inspection.inventoryItems.length > 0;
-  if (!hasSystems && !hasInventory) {
-    y = sectionTitle(doc, y, "Systems Check & Inventory");
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...MUTED);
-    doc.text("Not recorded.", ML, y);
-    y += 8;
-  } else {
-    y = sectionTitle(doc, y, "Systems Check");
-    if (hasSystems) {
-      y = drawTable(
-        doc,
-        y,
-        [
-          { label: "System", width: 55 },
-          { label: "State", width: 30 },
-          { label: "Note", width: CW - 85 },
-        ],
-        inspection.systemsCheck.map((s) => ({
-          cells: [s.key.replace(/_/g, " "), s.state.replace(/_/g, " "), s.note || "—"],
-          highlight: s.state === "faulty",
-        })),
-      );
-    } else {
-      doc.setFont("helvetica", "italic");
-      doc.setFontSize(8.5);
-      doc.setTextColor(...MUTED);
-      doc.text("Not recorded.", ML, y);
-      y += 8;
-    }
-
-    y = sectionTitle(doc, y, "Inventory");
-    if (hasInventory) {
-      y = drawTable(
-        doc,
-        y,
-        [
-          { label: "Item", width: 55 },
-          { label: "State", width: 30 },
-          { label: "Note", width: CW - 85 },
-        ],
-        inspection.inventoryItems.map((it) => ({
-          cells: [it.key.replace(/_/g, " "), it.state, it.note || "—"],
-        })),
-      );
-    } else {
-      doc.setFont("helvetica", "italic");
-      doc.setFontSize(8.5);
-      doc.setTextColor(...MUTED);
-      doc.text("Not recorded.", ML, y);
-      y += 8;
-    }
-  }
-
-  // ── 10. Customer priority & scope — printed prominently, not buried.
-  // Skipped entirely when there's nothing in either field: an empty amber
-  // box showing "—" is prominent for no reason on a report meant to stay
-  // short. ──────────────────────────────────────────────────────────────
-  if (inspection.customerPriority || inspection.scopeExclusions) {
-    y = ensureSpace(doc, y, 30);
-    const priorityLines = doc.splitTextToSize(inspection.customerPriority || "—", CW - 8);
-    const scopeLines = inspection.scopeExclusions
-      ? doc.splitTextToSize(`Excluded: ${inspection.scopeExclusions}`, CW - 8)
-      : [];
-    const boxH =
-      10 + priorityLines.length * 4.2 + scopeLines.length * 4.2 + (scopeLines.length ? 3 : 0);
-    doc.setFillColor(254, 252, 232);
-    doc.setDrawColor(...AMBER);
-    doc.setLineWidth(0.4);
-    doc.roundedRect(ML, y, CW, boxH, 1.5, 1.5, "FD");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(8);
-    doc.setTextColor(...AMBER);
-    doc.text("CUSTOMER PRIORITY", ML + 4, y + 6);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(...CHARCOAL);
-    doc.text(priorityLines, ML + 4, y + 11);
-    if (scopeLines.length) {
-      doc.setFontSize(8);
-      doc.setTextColor(...SLATE);
-      doc.text(scopeLines, ML + 4, y + 11 + priorityLines.length * 4.2 + 3);
-    }
-    y += boxH + 8;
-  }
-
-  // ── 11. Photo appendix — every photo referenced above appears here full
-  // size, captioned, with a generated (never manually entered) number.
-  // Skipped entirely (no section title either) when there are no photos —
-  // photo capture is off store-wide right now (PHOTO_CAPTURE_ENABLED in
-  // inspection.ts), so this is the common case, and an empty section bar for
-  // it is pure wasted length on a report that's meant to stay short. ────────
+  // Photos, when there are any (photo capture is off store-wide right now —
+  // PHOTO_CAPTURE_ENABLED in inspection.ts — so this is normally skipped
+  // entirely rather than printing an empty appendix). Folded into this same
+  // section, not a separate one, since it's still "the pics."
   if (inspection.photos.length > 0) {
-    y = sectionTitle(doc, y, "Photo Appendix");
-    const THUMB = 42;
+    y += 2;
+    const THUMB = 30;
     const THUMB_GAP = 4;
     const perRow = Math.max(1, Math.floor((CW + THUMB_GAP) / (THUMB + THUMB_GAP)));
     let col = 0;
     for (const photo of inspection.photos) {
-      if (col === 0) y = ensureSpace(doc, y, THUMB + 10);
+      if (col === 0) y = ensureSpace(doc, y, THUMB + 8);
       const cellX = ML + col * (THUMB + THUMB_GAP);
       const url = photoDataUrls.get(photo.id);
       doc.setDrawColor(...RULE);
@@ -1829,22 +1697,49 @@ export async function buildInspectionReportDoc(
       doc.setFont("helvetica", "normal");
       doc.setFontSize(6);
       doc.setTextColor(...MUTED);
-      doc.text(
-        `#${photoNumbers.get(photo.id)} · ${formatDateTimeInColombo(photo.capturedAt)}`,
-        cellX,
-        y + THUMB + 3.5,
-        {
-          maxWidth: THUMB,
-        },
-      );
+      doc.text(`#${photoNumbers.get(photo.id)}`, cellX, y + THUMB + 3, { maxWidth: THUMB });
       col++;
       if (col >= perRow) {
         col = 0;
-        y += THUMB + 10;
+        y += THUMB + 8;
       }
     }
-    if (col !== 0) y += THUMB + 10;
-    y += 4;
+    if (col !== 0) y += THUMB + 8;
+  }
+  y += 6;
+
+  // ── C. Quote — the service(s) and price this inspection feeds into.
+  // Lives on Job, not Inspection, so it's passed in separately (see this
+  // function's header comment). Falls back to Job's legacy single
+  // serviceName/price when `services` is absent (an inspection signed
+  // before the multi-service intake change, 2026-09-18). ───────────────────
+  y = sectionTitle(doc, y, "Quote");
+  const quoteLines =
+    job.services && job.services.length > 0
+      ? job.services
+      : [{ name: job.serviceName || "—", price: job.price }];
+  y = drawTable(
+    doc,
+    y,
+    [
+      { label: "Service", width: CW - 40 },
+      { label: "Price", width: 40, align: "right" },
+    ],
+    quoteLines.map((line) => ({ cells: [line.name, fmt(line.price)] })),
+    6,
+  );
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.setTextColor(...CHARCOAL);
+  doc.text("TOTAL", ML, y + 5);
+  doc.text(fmt(job.price), RCOL, y + 5, { align: "right" });
+  y += 10;
+  if (job.estimate?.isProvisional) {
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(7.5);
+    doc.setTextColor(...AMBER);
+    doc.text("Provisional — subject to confirmation.", ML, y);
+    y += 5;
   }
 
   // ── Footer + page numbers, stamped on every page after layout is final ──
@@ -1874,8 +1769,9 @@ export async function buildInspectionReportDoc(
  */
 export async function generateInspectionReportPDF(
   inspection: Inspection,
+  job: Pick<Job, "services" | "serviceName" | "price" | "estimate">,
 ): Promise<InspectionReportResult> {
-  const { doc, version } = await buildInspectionReportDoc(inspection);
+  const { doc, version } = await buildInspectionReportDoc(inspection, job);
   const storagePath = `jobs/${inspection.jobId}/documents/inspection-${inspection.id}-v${version}.pdf`;
   const blob = doc.output("blob");
   const fileRef = storageRef(storage, storagePath);

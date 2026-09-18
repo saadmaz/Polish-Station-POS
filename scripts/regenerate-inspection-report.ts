@@ -5,6 +5,7 @@ import { getStorage } from "firebase-admin/storage";
 import { randomUUID } from "node:crypto";
 import { buildInspectionReportDoc } from "../src/lib/pdf";
 import { latestNonSupersededInspection, type Inspection } from "../src/lib/inspection";
+import type { Job } from "../src/lib/job";
 import { requireEmulatorOrExplicitProduction } from "./_require-emulator";
 
 // One-off: re-renders an already-signed inspection's report PDF with the
@@ -61,7 +62,14 @@ async function main() {
     })`,
   );
 
-  const { doc, version } = await buildInspectionReportDoc(inspection);
+  const jobSnap = await adminDb.collection("jobs").doc(jobId).get();
+  if (!jobSnap.exists) {
+    console.error(`Job ${jobId} not found -- the Quote section needs it for service/price`);
+    process.exit(1);
+  }
+  const job = jobSnap.data() as Job;
+
+  const { doc, version } = await buildInspectionReportDoc(inspection, job);
   console.log(`Built report v${version}, ${doc.getNumberOfPages()} page(s)`);
 
   const storagePath = `jobs/${inspection.jobId}/documents/inspection-${inspection.id}-v${version}.pdf`;
