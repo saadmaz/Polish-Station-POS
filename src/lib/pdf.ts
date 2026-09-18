@@ -1453,10 +1453,14 @@ async function drawDiagramView(
     if (m.view !== view) continue;
     const cx = toX(m.x * vbW);
     const cy = toY(m.y * vbH);
-    const r = 2.6;
+    // Shrunk from the original 2.6 (operator request, 2026-09-19): that size
+    // was tuned for the old, much larger diagram boxes (the single compact
+    // row this report uses now is roughly half the width), so it read as
+    // oversized against the smaller artwork.
+    const r = 1.8;
     doc.setFillColor(...RED);
     doc.setDrawColor(...WHITE);
-    doc.setLineWidth(0.3);
+    doc.setLineWidth(0.25);
     // Shape-coded by severity, same as the screen — the report may be
     // printed in greyscale, so colour alone can't carry this.
     if (m.severity === "minor") {
@@ -1484,9 +1488,9 @@ async function drawDiagramView(
       );
     }
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(4.5);
+    doc.setFontSize(3.2);
     doc.setTextColor(...WHITE);
-    doc.text(String(m.seq), cx, cy + 1, { align: "center" });
+    doc.text(String(m.seq), cx, cy + 0.7, { align: "center" });
   }
 }
 
