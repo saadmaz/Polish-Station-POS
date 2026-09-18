@@ -1487,10 +1487,17 @@ async function drawDiagramView(
         "FD",
       );
     }
+    // Properly cap-height-centred on the baseline, not a guessed fixed
+    // offset — jsPDF's y coordinate is the text baseline, so a plain "cy"
+    // (or a rough constant like the "+1" this used before shrinking the
+    // marker) sits visibly low inside a small circle. Same CAP_HEIGHT_RATIO
+    // conversion badge() above already uses for the identical problem.
+    const markerFontSize = 3.2;
+    const markerCapH = markerFontSize * CAP_HEIGHT_RATIO * 0.3528;
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(3.2);
+    doc.setFontSize(markerFontSize);
     doc.setTextColor(...WHITE);
-    doc.text(String(m.seq), cx, cy + 0.7, { align: "center" });
+    doc.text(String(m.seq), cx, cy + markerCapH / 2, { align: "center" });
   }
 }
 
