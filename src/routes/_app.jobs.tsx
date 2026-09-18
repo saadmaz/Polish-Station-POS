@@ -175,6 +175,19 @@ function JobDetailPanel({ job }: { job: Job }) {
             Estimate
           </h4>
           <div className="text-sm space-y-0.5">
+            {job.services && job.services.length > 1 && (
+              <ul className="mb-1.5 space-y-0.5 text-xs">
+                {job.services.map((s, i) => (
+                  <li
+                    key={i}
+                    className="flex items-center justify-between gap-2 text-muted-foreground"
+                  >
+                    <span className="truncate">{s.name}</span>
+                    <span className="shrink-0 font-mono">{formatCurrency(s.price)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
             <div className="font-mono font-semibold">{formatCurrency(job.price)}</div>
             {job.estimate?.isProvisional && (
               <div className="text-[11px] font-medium text-warning">

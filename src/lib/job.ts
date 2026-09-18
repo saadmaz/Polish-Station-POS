@@ -34,6 +34,15 @@ export interface Job {
   category: ServiceCategory;
   durationMin: number;
   price: number;
+  // The real itemized breakdown behind serviceName/price above -- intake
+  // (JobSheet) lets staff type any number of ad hoc service+price lines, not
+  // just pick one catalog entry, since not every job (an inspection referral,
+  // a custom request) maps to a single catalog service. serviceName/category/
+  // durationMin/price are still always derived from this array on save (see
+  // job-sheet.tsx's deriveServiceFields) so every existing reader of those
+  // fields (POS, invoices, reports, the dashboard) keeps working unchanged.
+  // Optional/absent on every job created before this existed.
+  services?: { name: string; price: number }[];
   date: string; // YYYY-MM-DD business date — the job's own date, not necessarily the booking's
   time: string; // HH:MM
   tech: string;

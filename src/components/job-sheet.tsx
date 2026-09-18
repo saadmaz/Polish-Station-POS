@@ -22,10 +22,10 @@ import {
 } from "@/components/ui/sheet";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
-import { Search, Loader2, CheckCircle2, AlertCircle, Calendar } from "lucide-react";
+import { Search, Loader2, CheckCircle2, AlertCircle, Calendar, Plus, X } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import type { Job } from "@/lib/job";
-import type { Lead } from "@/lib/db";
+import type { Lead, Service } from "@/lib/db";
 import { reconcileServiceIds } from "@/lib/lead";
 
 // Local Y-M-D, not d.toISOString().slice(0, 10): that converts to UTC first,
@@ -84,8 +84,7 @@ const EMPTY = {
   bodyType: "sedan" as (typeof BODY_TYPES)[number]["value"],
   mileage: "",
   vin: "",
-  serviceId: "",
-  price: 0,
+  services: [{ name: "", price: 0 }] as { name: string; price: number }[],
   date: today,
   time: "09:00",
   bay: "",
@@ -117,6 +116,40 @@ async function decodeVIN(vin: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+// ─── Multi-service intake ───────────────────────────────────────────────────
+// A job doesn't always map to one catalog service -- an inspection referral,
+// a custom request, or several distinct jobs done in one visit all need a
+// typed name and its own price rather than being forced to pick a single
+// fixed-catalog item. Job's flat serviceId/serviceName/category/durationMin/
+// price fields still get derived from this list on every save (same
+// best-effort catalog-match-for-category, fallback-to-Exterior, sum-the-rest
+// convention src/lib/job-linking.ts's matchServiceInfo already uses for POS
+// walk-in sales) so every existing reader of those fields keeps working
+// unchanged; the real itemized list lives in the new `services` array.
+const FALLBACK_CATEGORY: Service["category"] = "Exterior";
+
+function deriveServiceFields(
+  rows: { name: string; price: number }[],
+  catalog: Service[],
+): Pick<Job, "services" | "serviceId" | "serviceName" | "category" | "durationMin" | "price"> {
+  const cleaned = rows.map((r) => ({ name: r.name.trim(), price: r.price })).filter((r) => r.name);
+  const first = cleaned[0];
+  const matchedFirst = first ? catalog.find((s) => s.name === first.name) : undefined;
+  const durationMin = cleaned.reduce(
+    (sum, r) => sum + (catalog.find((s) => s.name === r.name)?.durationMin ?? 0),
+    0,
+  );
+  return {
+    services: cleaned,
+    serviceId: matchedFirst?.id ?? "",
+    serviceName:
+      cleaned.length > 1 ? `${first.name} +${cleaned.length - 1} more` : (first?.name ?? ""),
+    category: matchedFirst?.category ?? FALLBACK_CATEGORY,
+    durationMin,
+    price: cleaned.reduce((sum, r) => sum + r.price, 0),
+  };
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -154,8 +187,13 @@ export function JobSheet({ open, onOpenChange, editing, convertLead, onCreated }
         bodyType: editing.vehicle?.bodyType ?? "sedan",
         mileage: editing.vehicle?.mileage != null ? String(editing.vehicle.mileage) : "",
         vin: editing.vehicle?.vin ?? "",
-        serviceId: editing.serviceId,
-        price: editing.price,
+        // Older jobs (created before per-line services existed) fall back to
+        // a single row rebuilt from the flat serviceName/price they already
+        // have, so editing one doesn't silently lose its price.
+        services:
+          editing.services && editing.services.length > 0
+            ? editing.services
+            : [{ name: editing.serviceName, price: editing.price }],
         date: editing.date,
         time: editing.time,
         bay: editing.bay,
@@ -177,8 +215,7 @@ export function JobSheet({ open, onOpenChange, editing, convertLead, onCreated }
         name: lead.name,
         phone: lead.phone ?? "",
         vehicleDescription: lead.vehicle ?? "",
-        serviceId: matchedService?.id ?? "",
-        price: matchedService?.price ?? 0,
+        services: [{ name: matchedService?.name ?? "", price: matchedService?.price ?? 0 }],
         notes: lead.notes ?? "",
       });
     } else {
@@ -265,10 +302,27 @@ export function JobSheet({ open, onOpenChange, editing, convertLead, onCreated }
     setLookupSuggestion(null);
   }
 
-  function handleServiceChange(serviceId: string) {
-    set("serviceId", serviceId);
+  function updateServiceRow(index: number, patch: Partial<{ name: string; price: number }>) {
+    setForm((f) => ({
+      ...f,
+      services: f.services.map((row, i) => (i === index ? { ...row, ...patch } : row)),
+    }));
+  }
+
+  // Picking a catalog entry just prefills that row's name/price -- both stay
+  // freely editable afterward, since the whole point is not forcing an exact
+  // catalog match.
+  function quickFillFromCatalog(index: number, serviceId: string) {
     const svc = services.find((s) => s.id === serviceId);
-    if (svc) set("price", svc.price);
+    if (svc) updateServiceRow(index, { name: svc.name, price: svc.price });
+  }
+
+  function addServiceRow() {
+    setForm((f) => ({ ...f, services: [...f.services, { name: "", price: 0 }] }));
+  }
+
+  function removeServiceRow(index: number) {
+    setForm((f) => ({ ...f, services: f.services.filter((_, i) => i !== index) }));
   }
 
   function toggleTechnician(staffId: string) {
@@ -282,9 +336,9 @@ export function JobSheet({ open, onOpenChange, editing, convertLead, onCreated }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.name.trim() || !form.serviceId || !form.date || !form.time) return;
-    const svc = services.find((s) => s.id === form.serviceId);
-    if (!svc) return;
+    const hasService = form.services.some((r) => r.name.trim());
+    if (!form.name.trim() || !hasService || !form.date || !form.time) return;
+    const derived = deriveServiceFields(form.services, services);
 
     const customer = customers.find(
       (c) =>
@@ -316,11 +370,7 @@ export function JobSheet({ open, onOpenChange, editing, convertLead, onCreated }
         mileage: form.mileage.trim() ? Number(form.mileage) : null,
         vin: form.vin.trim(),
       },
-      serviceId: svc.id,
-      serviceName: svc.name,
-      category: svc.category,
-      durationMin: svc.durationMin,
-      price: form.price,
+      ...derived,
       date: form.date,
       time: form.time,
       tech: technicianNames.join(", "),
@@ -353,7 +403,7 @@ export function JobSheet({ open, onOpenChange, editing, convertLead, onCreated }
             estimate: { isProvisional: true, quoteVersion: 1 },
           });
           toast.success("Job created", {
-            description: `${form.name}: ${svc.name} on ${form.date} at ${form.time}`,
+            description: `${form.name}: ${derived.serviceName} on ${form.date} at ${form.time}`,
           });
         } catch (err) {
           const name = err instanceof Error ? err.name : "";
@@ -374,7 +424,7 @@ export function JobSheet({ open, onOpenChange, editing, convertLead, onCreated }
           estimate: { isProvisional: true, quoteVersion: 1 },
         });
         toast.success("Job created", {
-          description: `${form.name}: ${svc.name} on ${form.date} at ${form.time}`,
+          description: `${form.name}: ${derived.serviceName} on ${form.date} at ${form.time}`,
         });
         setForm(EMPTY);
         onOpenChange(false);
@@ -545,32 +595,63 @@ export function JobSheet({ open, onOpenChange, editing, convertLead, onCreated }
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">Service *</label>
-            <select
-              required
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              value={form.serviceId}
-              onChange={(e) => handleServiceChange(e.target.value)}
-            >
-              <option value="">Select a service…</option>
-              {services.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name} · {formatCurrency(s.price)} ({s.durationMin}m)
-                </option>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">Services *</label>
+              <span className="font-mono text-xs font-semibold text-muted-foreground">
+                Total {formatCurrency(form.services.reduce((sum, r) => sum + (r.price || 0), 0))}
+              </span>
+            </div>
+            <div className="space-y-2">
+              {form.services.map((row, i) => (
+                <div key={i} className="flex items-start gap-1.5">
+                  <div className="flex-1 space-y-1">
+                    <input
+                      required={i === 0}
+                      placeholder="Type a service, or pick from catalog below…"
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                      value={row.name}
+                      onChange={(e) => updateServiceRow(i, { name: e.target.value })}
+                    />
+                    <select
+                      className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      value=""
+                      onChange={(e) => e.target.value && quickFillFromCatalog(i, e.target.value)}
+                    >
+                      <option value="">Quick-fill from catalog…</option>
+                      {services.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} · {formatCurrency(s.price)} ({s.durationMin}m)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="Price"
+                    className="w-28 shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+                    value={row.price}
+                    onChange={(e) => updateServiceRow(i, { price: Number(e.target.value) })}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeServiceRow(i)}
+                    disabled={form.services.length === 1}
+                    aria-label="Remove service"
+                    className="mt-1 shrink-0 rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-primary disabled:opacity-30"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               ))}
-            </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Estimated Price (LKR) *</label>
-            <input
-              required
-              type="number"
-              min={0}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
-              value={form.price}
-              onChange={(e) => set("price", Number(e.target.value))}
-            />
+            </div>
+            <button
+              type="button"
+              onClick={addServiceRow}
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add another service
+            </button>
             <p className="text-[11px] text-muted-foreground">
               Printed on the job card as provisional until confirmed.
             </p>
