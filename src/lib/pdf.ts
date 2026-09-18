@@ -1164,8 +1164,11 @@ async function fetchDataUrl(path: string, mime: string): Promise<string | null> 
 // re-encoding as JPEG (no transparency to preserve, and these are line art
 // on a flat background — JPEG compresses that far smaller than PNG at a
 // quality no one will see the difference at), is what actually fixes it.
-const SEDAN_PDF_IMAGE_MAX_DIM = 700;
-const SEDAN_PDF_IMAGE_JPEG_QUALITY = 0.85;
+// Exported so a Node-side AssetFetcher (scripts/regenerate-inspection-report.ts)
+// can match the browser path's output size/quality exactly, instead of a
+// second hand-copied pair of magic numbers silently drifting out of sync.
+export const SEDAN_PDF_IMAGE_MAX_DIM = 700;
+export const SEDAN_PDF_IMAGE_JPEG_QUALITY = 0.85;
 
 async function downscaleImageDataUrl(
   dataUrl: string,
@@ -1193,6 +1196,23 @@ async function downscaleImageDataUrl(
   return canvas.toDataURL("image/jpeg", quality);
 }
 
+/** Browser-only: fetch(path) resolves relative to window.location, and
+ *  downscaling goes through <canvas>. A script running under plain Node
+ *  (e.g. scripts/regenerate-inspection-report.ts, which imports
+ *  buildInspectionReportDoc directly) has neither — both silently failed
+ *  closed the first time this ran outside a browser (caught below,
+ *  drawVehicleOutline treats a null return as "just draw the box, no art"),
+ *  which is why a script-generated report's diagram boxes came back
+ *  completely empty. That script supplies its own Node-side implementation
+ *  instead (see buildInspectionReportDoc's `fetchAsset` param below) —
+ *  deliberately NOT added here as an environment branch: this file is
+ *  reachable from server-rendered routes (_app.jobs.tsx etc. import it),
+ *  and this repo's SSR/client bundles go through Rolldown (vite.config.ts),
+ *  which statically resolves string-literal dynamic imports — a literal
+ *  `import("sharp")` in this file risks the bundler trying to inline a
+ *  native binary addon into a chunk it can't actually run from. Keeping any
+ *  such import out of this file entirely, and injecting it instead, is what
+ *  avoids that risk regardless of whether it would have actually triggered. */
 async function fetchPublicAssetDataUrl(path: string): Promise<string | null> {
   try {
     const res = await fetch(path);
@@ -1292,6 +1312,13 @@ function diagramTransform(
   return { vbW, vbH, toX: (x) => offX + x * s, toY: (y) => offY + y * s };
 }
 
+/** Matches fetchPublicAssetDataUrl's own signature — the browser
+ *  implementation is the default everywhere; buildInspectionReportDoc's
+ *  `fetchAsset` param (see its own comment) is the only way a caller ever
+ *  overrides it, e.g. scripts/regenerate-inspection-report.ts supplying a
+ *  Node/sharp-backed one. */
+type AssetFetcher = (path: string) => Promise<string | null>;
+
 /** Draws the vehicle artwork into a diagram box already scaled to (toX,
  *  toY) — shared by both the multi-page report (drawDiagramView) and the
  *  single-page sheet (sheetDrawDiagramView), since each needs to draw this
@@ -1304,8 +1331,9 @@ async function drawVehicleOutline(
   toY: (y: number) => number,
   vbW: number,
   vbH: number,
+  fetchAsset: AssetFetcher = fetchPublicAssetDataUrl,
 ) {
-  const dataUrl = await fetchPublicAssetDataUrl(SEDAN_IMAGE_SRC[view]);
+  const dataUrl = await fetchAsset(SEDAN_IMAGE_SRC[view]);
   if (!dataUrl) return; // box + label still drawn by the caller; just no art if the fetch failed
   try {
     doc.addImage(dataUrl, "JPEG", toX(0), toY(0), toX(vbW) - toX(0), toY(vbH) - toY(0));
@@ -1327,6 +1355,7 @@ async function drawDiagramView(
   by: number,
   bw: number,
   bh: number,
+  fetchAsset?: AssetFetcher,
 ) {
   const { vbW, vbH, toX, toY } = diagramTransform(view, bx, by, bw, bh);
 
@@ -1339,7 +1368,7 @@ async function drawDiagramView(
   doc.setTextColor(...MUTED);
   doc.text(view.toUpperCase(), bx, by - 1.5);
 
-  await drawVehicleOutline(doc, view, toX, toY, vbW, vbH);
+  await drawVehicleOutline(doc, view, toX, toY, vbW, vbH, fetchAsset);
 
   for (const m of markers) {
     if (m.view !== view) continue;
@@ -1490,10 +1519,21 @@ export interface InspectionReportResult {
  * Takes `job` alongside the Inspection purely for the Quote section — price
  * lives on Job (job.services / the legacy single serviceName+price), not on
  * Inspection at all.
+ *
+ * `fetchAsset` overrides how the diagram's commissioned artwork PNGs get
+ * loaded — defaults to the browser implementation (relative fetch +
+ * <canvas> downscale). A script running under Node has neither; rather than
+ * branch on environment inside this file (see fetchPublicAssetDataUrl's own
+ * comment on why not — the short version: this file is reachable from
+ * server-rendered routes, and a literal `import("sharp")` here risks this
+ * repo's Rolldown-based bundler trying to inline a native binary addon),
+ * scripts/regenerate-inspection-report.ts supplies its own Node/sharp-backed
+ * fetcher through this param instead.
  */
 export async function buildInspectionReportDoc(
   inspection: Inspection,
   job: Pick<Job, "services" | "serviceName" | "price" | "estimate">,
+  fetchAsset?: AssetFetcher,
 ): Promise<{ doc: jsPDF; version: number }> {
   const version = (inspection.documents?.report?.version ?? 0) + 1;
 
@@ -1636,6 +1676,7 @@ export async function buildInspectionReportDoc(
       y,
       cellW,
       cellH[view],
+      fetchAsset,
     );
   }
   y += diagramRowH + 8;

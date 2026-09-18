@@ -3,10 +3,44 @@ import { initializeApp, getApps, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 import { randomUUID } from "node:crypto";
-import { buildInspectionReportDoc } from "../src/lib/pdf";
+import { readFile } from "node:fs/promises";
+import sharp from "sharp";
+import {
+  buildInspectionReportDoc,
+  SEDAN_PDF_IMAGE_MAX_DIM,
+  SEDAN_PDF_IMAGE_JPEG_QUALITY,
+} from "../src/lib/pdf";
 import { latestNonSupersededInspection, type Inspection } from "../src/lib/inspection";
 import type { Job } from "../src/lib/job";
 import { requireEmulatorOrExplicitProduction } from "./_require-emulator";
+
+// The diagram's commissioned artwork PNGs are fetched via a relative
+// fetch(path) + <canvas> downscale in the browser (pdf.ts's
+// fetchPublicAssetDataUrl) -- neither exists under plain Node, so this
+// script supplies its own equivalent instead of pdf.ts branching on
+// environment internally (see buildInspectionReportDoc's `fetchAsset`
+// param comment for why: this file is only ever run directly via tsx, never
+// bundled by Vite, so a `sharp` import here carries none of the
+// native-binary-in-a-bundle risk it would inside pdf.ts itself). Reads the
+// exact same file straight off public/ and matches the browser path's
+// output as closely as possible: same max dimension, same JPEG quality,
+// same white-background flatten (these PNGs have transparency; JPEG
+// doesn't, and a black default fill would look wrong under the line art).
+async function fetchAssetFromDisk(path: string): Promise<string | null> {
+  try {
+    const fileUrl = new URL(`../public${path}`, import.meta.url);
+    const bytes = await readFile(fileUrl);
+    const jpeg = await sharp(bytes)
+      .resize(SEDAN_PDF_IMAGE_MAX_DIM, SEDAN_PDF_IMAGE_MAX_DIM, { fit: "inside" })
+      .flatten({ background: "#ffffff" })
+      .jpeg({ quality: Math.round(SEDAN_PDF_IMAGE_JPEG_QUALITY * 100) })
+      .toBuffer();
+    return `data:image/jpeg;base64,${jpeg.toString("base64")}`;
+  } catch (err) {
+    console.warn(`Couldn't load/resize ${path}:`, err);
+    return null;
+  }
+}
 
 // One-off: re-renders an already-signed inspection's report PDF with the
 // current pdf.ts layout (e.g. after a layout change like the 2026-09-18
@@ -69,7 +103,7 @@ async function main() {
   }
   const job = jobSnap.data() as Job;
 
-  const { doc, version } = await buildInspectionReportDoc(inspection, job);
+  const { doc, version } = await buildInspectionReportDoc(inspection, job, fetchAssetFromDisk);
   console.log(`Built report v${version}, ${doc.getNumberOfPages()} page(s)`);
 
   const storagePath = `jobs/${inspection.jobId}/documents/inspection-${inspection.id}-v${version}.pdf`;
