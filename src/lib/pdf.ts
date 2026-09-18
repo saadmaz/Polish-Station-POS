@@ -1569,38 +1569,37 @@ export async function generateInspectionReportPDF(
   }
   y += 4;
 
-  // ── 4. Diagram grid ──────────────────────────────────────────────────────
+  // ── 4. Diagram grid — one row, all 5 views, kept compact since the damage
+  // table right below already lists every marker in full text detail; this
+  // is a quick visual reference, not the report's primary record (used to
+  // be a 2-row grid, roughly 3x this tall — cut for length, per operator
+  // request 2026-09-18 to keep the whole report to 1-2 pages). ────────────
   y = sectionTitle(doc, y, "Damage Diagram");
-  y = ensureSpace(doc, y, 60);
-  const gridGap = 4;
-  const bigW = (CW - gridGap) / 2;
-  const bigH = bigW * (180 / 400);
-  await drawDiagramView(doc, "left", inspection.damageMarkers, ML, y, bigW, bigH);
-  await drawDiagramView(doc, "right", inspection.damageMarkers, ML + bigW + gridGap, y, bigW, bigH);
-  y += bigH + 10;
-  const smallW = (CW - gridGap * 2) / 3;
-  const smallHFrontRear = smallW * (180 / 260);
-  const smallHTop = smallW * (200 / 400);
-  await drawDiagramView(doc, "front", inspection.damageMarkers, ML, y, smallW, smallHFrontRear);
-  await drawDiagramView(
-    doc,
-    "rear",
-    inspection.damageMarkers,
-    ML + smallW + gridGap,
-    y,
-    smallW,
-    smallHFrontRear,
-  );
-  await drawDiagramView(
-    doc,
-    "top",
-    inspection.damageMarkers,
-    ML + (smallW + gridGap) * 2,
-    y,
-    smallW,
-    smallHTop,
-  );
-  y += Math.max(smallHFrontRear, smallHTop) + 10;
+  y = ensureSpace(doc, y, 32);
+  const gridGap = 3;
+  const cellW = (CW - gridGap * 4) / 5;
+  const diagramViews: DamageMarkerView[] = ["left", "right", "front", "rear", "top"];
+  const cellH: Record<DamageMarkerView, number> = {
+    left: cellW * (180 / 400),
+    right: cellW * (180 / 400),
+    front: cellW * (180 / 260),
+    rear: cellW * (180 / 260),
+    top: cellW * (200 / 400),
+  };
+  const rowH = Math.max(...diagramViews.map((v) => cellH[v]));
+  for (let i = 0; i < diagramViews.length; i++) {
+    const view = diagramViews[i];
+    await drawDiagramView(
+      doc,
+      view,
+      inspection.damageMarkers,
+      ML + i * (cellW + gridGap),
+      y,
+      cellW,
+      cellH[view],
+    );
+  }
+  y += rowH + 10;
 
   // ── 5. Damage table ──────────────────────────────────────────────────────
   y = sectionTitle(doc, y, "Damage Detail");
@@ -1695,119 +1694,144 @@ export async function generateInspectionReportPDF(
   jobField(doc, ML, by + 4, CW, "Condition", interiorFlags);
   y = by + 13;
 
-  // ── 8. Systems check ─────────────────────────────────────────────────────
-  y = sectionTitle(doc, y, "Systems Check");
-  if (inspection.systemsCheck.length > 0) {
-    y = drawTable(
-      doc,
-      y,
-      [
-        { label: "System", width: 55 },
-        { label: "State", width: 30 },
-        { label: "Note", width: CW - 85 },
-      ],
-      inspection.systemsCheck.map((s) => ({
-        cells: [s.key.replace(/_/g, " "), s.state.replace(/_/g, " "), s.note || "—"],
-        highlight: s.state === "faulty",
-      })),
-    );
-  } else {
+  // ── 8/9. Systems check & Inventory — one combined section, not two, when
+  // both are empty (the common case: neither is captured by the stepper
+  // today). A real table for either still gets its own full section, same
+  // as before; this only collapses the "Not recorded." fallback, which
+  // otherwise cost a full section-title bar each for zero information. ────
+  const hasSystems = inspection.systemsCheck.length > 0;
+  const hasInventory = inspection.inventoryItems.length > 0;
+  if (!hasSystems && !hasInventory) {
+    y = sectionTitle(doc, y, "Systems Check & Inventory");
     doc.setFont("helvetica", "italic");
     doc.setFontSize(8.5);
     doc.setTextColor(...MUTED);
     doc.text("Not recorded.", ML, y);
     y += 8;
-  }
-
-  // ── 9. Inventory ──────────────────────────────────────────────────────────
-  y = sectionTitle(doc, y, "Inventory");
-  if (inspection.inventoryItems.length > 0) {
-    y = drawTable(
-      doc,
-      y,
-      [
-        { label: "Item", width: 55 },
-        { label: "State", width: 30 },
-        { label: "Note", width: CW - 85 },
-      ],
-      inspection.inventoryItems.map((it) => ({
-        cells: [it.key.replace(/_/g, " "), it.state, it.note || "—"],
-      })),
-    );
   } else {
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(8.5);
-    doc.setTextColor(...MUTED);
-    doc.text("Not recorded.", ML, y);
-    y += 8;
+    y = sectionTitle(doc, y, "Systems Check");
+    if (hasSystems) {
+      y = drawTable(
+        doc,
+        y,
+        [
+          { label: "System", width: 55 },
+          { label: "State", width: 30 },
+          { label: "Note", width: CW - 85 },
+        ],
+        inspection.systemsCheck.map((s) => ({
+          cells: [s.key.replace(/_/g, " "), s.state.replace(/_/g, " "), s.note || "—"],
+          highlight: s.state === "faulty",
+        })),
+      );
+    } else {
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(8.5);
+      doc.setTextColor(...MUTED);
+      doc.text("Not recorded.", ML, y);
+      y += 8;
+    }
+
+    y = sectionTitle(doc, y, "Inventory");
+    if (hasInventory) {
+      y = drawTable(
+        doc,
+        y,
+        [
+          { label: "Item", width: 55 },
+          { label: "State", width: 30 },
+          { label: "Note", width: CW - 85 },
+        ],
+        inspection.inventoryItems.map((it) => ({
+          cells: [it.key.replace(/_/g, " "), it.state, it.note || "—"],
+        })),
+      );
+    } else {
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(8.5);
+      doc.setTextColor(...MUTED);
+      doc.text("Not recorded.", ML, y);
+      y += 8;
+    }
   }
 
-  // ── 10. Customer priority & scope — printed prominently, not buried ─────
-  y = ensureSpace(doc, y, 30);
-  const priorityLines = doc.splitTextToSize(inspection.customerPriority || "—", CW - 8);
-  const scopeLines = inspection.scopeExclusions
-    ? doc.splitTextToSize(`Excluded: ${inspection.scopeExclusions}`, CW - 8)
-    : [];
-  const boxH =
-    10 + priorityLines.length * 4.2 + scopeLines.length * 4.2 + (scopeLines.length ? 3 : 0);
-  doc.setFillColor(254, 252, 232);
-  doc.setDrawColor(...AMBER);
-  doc.setLineWidth(0.4);
-  doc.roundedRect(ML, y, CW, boxH, 1.5, 1.5, "FD");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(8);
-  doc.setTextColor(...AMBER);
-  doc.text("CUSTOMER PRIORITY", ML + 4, y + 6);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(...CHARCOAL);
-  doc.text(priorityLines, ML + 4, y + 11);
-  if (scopeLines.length) {
+  // ── 10. Customer priority & scope — printed prominently, not buried.
+  // Skipped entirely when there's nothing in either field: an empty amber
+  // box showing "—" is prominent for no reason on a report meant to stay
+  // short. ──────────────────────────────────────────────────────────────
+  if (inspection.customerPriority || inspection.scopeExclusions) {
+    y = ensureSpace(doc, y, 30);
+    const priorityLines = doc.splitTextToSize(inspection.customerPriority || "—", CW - 8);
+    const scopeLines = inspection.scopeExclusions
+      ? doc.splitTextToSize(`Excluded: ${inspection.scopeExclusions}`, CW - 8)
+      : [];
+    const boxH =
+      10 + priorityLines.length * 4.2 + scopeLines.length * 4.2 + (scopeLines.length ? 3 : 0);
+    doc.setFillColor(254, 252, 232);
+    doc.setDrawColor(...AMBER);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(ML, y, CW, boxH, 1.5, 1.5, "FD");
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(8);
-    doc.setTextColor(...SLATE);
-    doc.text(scopeLines, ML + 4, y + 11 + priorityLines.length * 4.2 + 3);
+    doc.setTextColor(...AMBER);
+    doc.text("CUSTOMER PRIORITY", ML + 4, y + 6);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.setTextColor(...CHARCOAL);
+    doc.text(priorityLines, ML + 4, y + 11);
+    if (scopeLines.length) {
+      doc.setFontSize(8);
+      doc.setTextColor(...SLATE);
+      doc.text(scopeLines, ML + 4, y + 11 + priorityLines.length * 4.2 + 3);
+    }
+    y += boxH + 8;
   }
-  y += boxH + 8;
 
   // ── 11. Photo appendix — every photo referenced above appears here full
-  // size, captioned, with a generated (never manually entered) number. ────
-  y = sectionTitle(doc, y, "Photo Appendix");
-  const THUMB = 42;
-  const THUMB_GAP = 4;
-  const perRow = Math.max(1, Math.floor((CW + THUMB_GAP) / (THUMB + THUMB_GAP)));
-  let col = 0;
-  for (const photo of inspection.photos) {
-    if (col === 0) y = ensureSpace(doc, y, THUMB + 10);
-    const cellX = ML + col * (THUMB + THUMB_GAP);
-    const url = photoDataUrls.get(photo.id);
-    doc.setDrawColor(...RULE);
-    doc.rect(cellX, y, THUMB, THUMB);
-    if (url) {
-      try {
-        doc.addImage(url, "JPEG", cellX, y, THUMB, THUMB);
-      } catch {
-        // corrupt/unsupported image data — leave the empty frame
+  // size, captioned, with a generated (never manually entered) number.
+  // Skipped entirely (no section title either) when there are no photos —
+  // photo capture is off store-wide right now (PHOTO_CAPTURE_ENABLED in
+  // inspection.ts), so this is the common case, and an empty section bar for
+  // it is pure wasted length on a report that's meant to stay short. ────────
+  if (inspection.photos.length > 0) {
+    y = sectionTitle(doc, y, "Photo Appendix");
+    const THUMB = 42;
+    const THUMB_GAP = 4;
+    const perRow = Math.max(1, Math.floor((CW + THUMB_GAP) / (THUMB + THUMB_GAP)));
+    let col = 0;
+    for (const photo of inspection.photos) {
+      if (col === 0) y = ensureSpace(doc, y, THUMB + 10);
+      const cellX = ML + col * (THUMB + THUMB_GAP);
+      const url = photoDataUrls.get(photo.id);
+      doc.setDrawColor(...RULE);
+      doc.rect(cellX, y, THUMB, THUMB);
+      if (url) {
+        try {
+          doc.addImage(url, "JPEG", cellX, y, THUMB, THUMB);
+        } catch {
+          // corrupt/unsupported image data — leave the empty frame
+        }
+      }
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(6);
+      doc.setTextColor(...MUTED);
+      doc.text(
+        `#${photoNumbers.get(photo.id)} · ${formatDateTimeInColombo(photo.capturedAt)}`,
+        cellX,
+        y + THUMB + 3.5,
+        {
+          maxWidth: THUMB,
+        },
+      );
+      col++;
+      if (col >= perRow) {
+        col = 0;
+        y += THUMB + 10;
       }
     }
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(6);
-    doc.setTextColor(...MUTED);
-    doc.text(
-      `#${photoNumbers.get(photo.id)} · ${formatDateTimeInColombo(photo.capturedAt)}`,
-      cellX,
-      y + THUMB + 3.5,
-      {
-        maxWidth: THUMB,
-      },
-    );
-    col++;
-    if (col >= perRow) {
-      col = 0;
-      y += THUMB + 10;
-    }
+    if (col !== 0) y += THUMB + 10;
+    y += 4;
   }
-  if (col !== 0) y += THUMB + 10;
-  y += 4;
 
   // ── Footer + page numbers, stamped on every page after layout is final ──
   const totalPages = doc.getNumberOfPages();
