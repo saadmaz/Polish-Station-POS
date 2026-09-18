@@ -1624,7 +1624,7 @@ export interface InspectionReportResult {
  */
 export async function buildInspectionReportDoc(
   inspection: Inspection,
-  job: Pick<Job, "services" | "serviceName" | "price" | "estimate">,
+  job: Pick<Job, "services" | "serviceName" | "price">,
   fetchAsset?: AssetFetcher,
 ): Promise<{ doc: jsPDF; version: number }> {
   const version = (inspection.documents?.report?.version ?? 0) + 1;
@@ -1744,39 +1744,53 @@ export async function buildInspectionReportDoc(
   y += 8;
 
   // ── B. Vehicle Inspection — the diagram (Left/Right large on their own
-  // row, Front/Rear/Top smaller on the row below — operator-requested size
-  // back up, 2026-09-19, from the single compact row this briefly was; the
-  // page-count budget can afford it) plus a terse legend of the numbered
+  // row, Front/Rear/Top smaller on the row below). Scaled to ~78% of the
+  // full content width, centred, rather than full-bleed (operator request,
+  // 2026-09-19 — the full-width version pushed Quote onto a second page;
+  // this size still reads as "the big two-row grid", just small enough for
+  // everything to fit on one page) plus a terse legend of the numbered
   // points marked on it. Paint history/interior condition/systems/
   // inventory/customer priority all used to live in their own sections
   // after this one; all dropped now (see this function's header comment)
   // so this stays the report's one visual/data section instead of a long
   // scroll of mostly-empty ones. ────────────────────────────────────────
   y = sectionTitle(doc, y, "Vehicle Inspection");
-  y = ensureSpace(doc, y, 60);
+  y = ensureSpace(doc, y, 50);
   const diagramGap = 4;
-  const bigW = (CW - diagramGap) / 2;
+  const diagramScale = 0.78;
+  const diagramW = CW * diagramScale;
+  const diagramX0 = ML + (CW - diagramW) / 2;
+  const bigW = (diagramW - diagramGap) / 2;
   const bigH = bigW * (180 / 400);
-  await drawDiagramView(doc, "left", inspection.damageMarkers, ML, y, bigW, bigH, fetchAsset);
   await drawDiagramView(
     doc,
-    "right",
+    "left",
     inspection.damageMarkers,
-    ML + bigW + diagramGap,
+    diagramX0,
     y,
     bigW,
     bigH,
     fetchAsset,
   );
-  y += bigH + 10;
-  const smallW = (CW - diagramGap * 2) / 3;
+  await drawDiagramView(
+    doc,
+    "right",
+    inspection.damageMarkers,
+    diagramX0 + bigW + diagramGap,
+    y,
+    bigW,
+    bigH,
+    fetchAsset,
+  );
+  y += bigH + 8;
+  const smallW = (diagramW - diagramGap * 2) / 3;
   const smallHFrontRear = smallW * (180 / 260);
   const smallHTop = smallW * (200 / 400);
   await drawDiagramView(
     doc,
     "front",
     inspection.damageMarkers,
-    ML,
+    diagramX0,
     y,
     smallW,
     smallHFrontRear,
@@ -1786,7 +1800,7 @@ export async function buildInspectionReportDoc(
     doc,
     "rear",
     inspection.damageMarkers,
-    ML + smallW + diagramGap,
+    diagramX0 + smallW + diagramGap,
     y,
     smallW,
     smallHFrontRear,
@@ -1796,13 +1810,13 @@ export async function buildInspectionReportDoc(
     doc,
     "top",
     inspection.damageMarkers,
-    ML + (smallW + diagramGap) * 2,
+    diagramX0 + (smallW + diagramGap) * 2,
     y,
     smallW,
     smallHTop,
     fetchAsset,
   );
-  y += Math.max(smallHFrontRear, smallHTop) + 10;
+  y += Math.max(smallHFrontRear, smallHTop) + 8;
 
   if (inspection.damageMarkers.length > 0) {
     const sorted = [...inspection.damageMarkers].sort((a, b) => a.seq - b.seq);
@@ -1898,13 +1912,6 @@ export async function buildInspectionReportDoc(
   doc.text("TOTAL", ML, y + 5);
   doc.text(fmt(job.price), RCOL, y + 5, { align: "right" });
   y += 10;
-  if (job.estimate?.isProvisional) {
-    doc.setFont("helvetica", "italic");
-    doc.setFontSize(7.5);
-    doc.setTextColor(...AMBER);
-    doc.text("Provisional — subject to confirmation.", ML, y);
-    y += 5;
-  }
 
   // ── Footer + page numbers, stamped on every page after layout is final ──
   const totalPages = doc.getNumberOfPages();
@@ -1933,7 +1940,7 @@ export async function buildInspectionReportDoc(
  */
 export async function generateInspectionReportPDF(
   inspection: Inspection,
-  job: Pick<Job, "services" | "serviceName" | "price" | "estimate">,
+  job: Pick<Job, "services" | "serviceName" | "price">,
 ): Promise<InspectionReportResult> {
   const { doc, version } = await buildInspectionReportDoc(inspection, job);
   const storagePath = `jobs/${inspection.jobId}/documents/inspection-${inspection.id}-v${version}.pdf`;
