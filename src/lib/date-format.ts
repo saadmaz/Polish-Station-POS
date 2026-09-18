@@ -110,6 +110,11 @@ export function formatRelativeAge(value: string | Date, now: Date = new Date()):
   return `${days}d`;
 }
 
+/** "September 2026" -- a calendar month header (Bookings' Month view). */
+export function formatMonthLabel(value: string | Date): string {
+  return toDate(value).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+}
+
 /** "24 Aug – 30 Aug 2026" -- an inclusive week range (a calendar week
  *  header). Audit finding B4: Bookings' Week view kept a single-day
  *  header/subtitle instead of adopting this. */

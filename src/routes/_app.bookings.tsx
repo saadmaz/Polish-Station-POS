@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { formatCurrency } from "@/lib/currency";
-import { formatDateWithWeekday, formatWeekRange } from "@/lib/date-format";
+import { formatDateWithWeekday, formatWeekRange, formatMonthLabel } from "@/lib/date-format";
 import { todayBusinessDate, addBusinessDays } from "@/lib/business-day";
 import { layoutOverlaps } from "@/lib/calendar-layout";
 import { BookingSheet } from "@/components/booking-sheet";
@@ -42,6 +42,40 @@ const CAT_COLORS: Record<string, string> = {
 };
 
 const formatDate = formatDateWithWeekday;
+const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/** First-of-month for `businessDate`, `n` calendar months away. Anchored at
+ *  UTC noon and always landing on day 1 (never the original day-of-month) so
+ *  navigating from e.g. the 31st can't roll into the wrong month. */
+function shiftMonth(businessDate: string, n: number): string {
+  const d = new Date(`${businessDate}T12:00:00.000Z`);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, 1, 12))
+    .toISOString()
+    .slice(0, 10);
+}
+
+/** Monday-start calendar grid (5 or 6 full weeks) covering the month
+ *  `businessDate` falls in, padded with the trailing days of the prior/next
+ *  month so every row is a complete week — same UTC-noon anchoring as
+ *  addBusinessDays to avoid timezone drift. */
+function monthGridDates(businessDate: string): string[] {
+  const first = new Date(`${businessDate}T12:00:00.000Z`);
+  first.setUTCDate(1);
+  const offset = (first.getUTCDay() + 6) % 7; // days since Monday
+  const gridStart = new Date(first);
+  gridStart.setUTCDate(first.getUTCDate() - offset);
+  const daysInMonth = new Date(
+    Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0),
+  ).getUTCDate();
+  const totalCells = Math.ceil((offset + daysInMonth) / 7) * 7;
+  return Array.from({ length: totalCells }, (_, i) => {
+    const d = new Date(gridStart);
+    d.setUTCDate(gridStart.getUTCDate() + i);
+    return d.toISOString().slice(0, 10);
+  });
+}
+
+const MONTH_PREVIEW_LIMIT = 3;
 
 // ─── Booking detail popover ───────────────────────────────────────────────────
 
@@ -190,7 +224,7 @@ function BookingCard({
 function Bookings() {
   const { bookings, updateBooking, deleteBooking, checkinBooking, markDepositPaid, bays } =
     useStore();
-  const [view, setView] = useState<"day" | "week" | "list">("day");
+  const [view, setView] = useState<"day" | "week" | "month" | "list">("day");
   const [currentDate, setCurrentDate] = useState(todayBusinessDate());
   const [bookingOpen, setBookingOpen] = useState(false);
   const [activeCard, setActiveCard] = useState<string | null>(null);
@@ -229,6 +263,18 @@ function Bookings() {
   // actually need once `view === "week"`.
   const weekDatesSet = new Set(weekDates);
   const weekBookings = bookings.filter((b) => weekDatesSet.has(b.date));
+
+  // Month view. `monthDates` is the padded 5/6-week grid (for layout);
+  // `monthBookings`/the header count only look at the actual calendar month,
+  // not the padding days borrowed from the prior/next month.
+  const monthAnchor = new Date(`${currentDate}T12:00:00.000Z`);
+  const monthYear = monthAnchor.getUTCFullYear();
+  const monthIndex = monthAnchor.getUTCMonth();
+  const monthDates = monthGridDates(currentDate);
+  const monthBookings = bookings.filter((b) => {
+    const bd = new Date(`${b.date}T12:00:00.000Z`);
+    return bd.getUTCFullYear() === monthYear && bd.getUTCMonth() === monthIndex;
+  });
 
   function handleStatusChange(id: string, status: BookingStatus) {
     const b = bookings.find((x) => x.id === id);
@@ -403,12 +449,14 @@ function Bookings() {
           subtitle={
             view === "week"
               ? `${weekBookings.length} bookings for ${formatWeekRange(weekDates[0], weekDates[6])}`
-              : `${todayBookings.length} bookings for ${formatDate(currentDate)}`
+              : view === "month"
+                ? `${monthBookings.length} bookings for ${formatMonthLabel(currentDate)}`
+                : `${todayBookings.length} bookings for ${formatDate(currentDate)}`
           }
           actions={
             <>
               <div className="inline-flex rounded-md border border-input bg-background p-0.5 text-xs font-medium">
-                {(["day", "week", "list"] as const).map((v) => (
+                {(["day", "week", "month", "list"] as const).map((v) => (
                   <button
                     key={v}
                     onClick={() => setView(v)}
@@ -447,21 +495,47 @@ function Bookings() {
           <div className="flex items-center justify-between px-5 py-3 border-b border-border">
             <div className="flex items-center gap-3">
               <button
-                onClick={() => setCurrentDate((d) => addBusinessDays(d, view === "week" ? -7 : -1))}
+                onClick={() =>
+                  setCurrentDate((d) =>
+                    view === "week"
+                      ? addBusinessDays(d, -7)
+                      : view === "month"
+                        ? shiftMonth(d, -1)
+                        : addBusinessDays(d, -1),
+                  )
+                }
                 className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-                aria-label={view === "week" ? "Previous week" : "Previous day"}
+                aria-label={
+                  view === "week"
+                    ? "Previous week"
+                    : view === "month"
+                      ? "Previous month"
+                      : "Previous day"
+                }
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
               <div className="font-display font-bold">
                 {view === "week"
                   ? formatWeekRange(weekDates[0], weekDates[6])
-                  : formatDate(currentDate)}
+                  : view === "month"
+                    ? formatMonthLabel(currentDate)
+                    : formatDate(currentDate)}
               </div>
               <button
-                onClick={() => setCurrentDate((d) => addBusinessDays(d, view === "week" ? 7 : 1))}
+                onClick={() =>
+                  setCurrentDate((d) =>
+                    view === "week"
+                      ? addBusinessDays(d, 7)
+                      : view === "month"
+                        ? shiftMonth(d, 1)
+                        : addBusinessDays(d, 1),
+                  )
+                }
                 className="rounded p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-                aria-label={view === "week" ? "Next week" : "Next day"}
+                aria-label={
+                  view === "week" ? "Next week" : view === "month" ? "Next month" : "Next day"
+                }
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
@@ -475,12 +549,99 @@ function Bookings() {
             <div className="text-xs text-muted-foreground">
               {view === "week"
                 ? `${weekBookings.length} bookings this week`
-                : `${todayBookings.length} bookings today`}
+                : view === "month"
+                  ? `${monthBookings.length} bookings this month`
+                  : `${todayBookings.length} bookings today`}
             </div>
           </div>
 
           {/* Day view */}
           {view === "day" && <DayGrid date={currentDate} />}
+
+          {/* Month view */}
+          {view === "month" && (
+            <div>
+              <div className="grid grid-cols-7 border-b border-border bg-muted/40">
+                {WEEKDAY_LABELS.map((d) => (
+                  <div
+                    key={d}
+                    className="px-2 py-2 text-center text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
+                  >
+                    {d}
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7">
+                {monthDates.map((date, i) => {
+                  const dayBookings = bookings
+                    .filter((b) => b.date === date)
+                    .sort((a, b) => a.time.localeCompare(b.time));
+                  const isCurrentMonth =
+                    new Date(`${date}T12:00:00.000Z`).getUTCMonth() === monthIndex;
+                  const isToday = date === todayBusinessDate();
+                  const isLastCol = (i + 1) % 7 === 0;
+                  const isLastRow = i >= monthDates.length - 7;
+                  const visible = dayBookings.slice(0, MONTH_PREVIEW_LIMIT);
+                  const overflow = dayBookings.length - visible.length;
+                  return (
+                    <div
+                      key={date}
+                      className={cn(
+                        "min-h-[112px] border-border p-1.5 cursor-pointer hover:bg-muted/30",
+                        !isLastCol && "border-r",
+                        !isLastRow && "border-b",
+                        !isCurrentMonth && "bg-muted/20",
+                      )}
+                      onClick={() => {
+                        setCurrentDate(date);
+                        setView("day");
+                      }}
+                    >
+                      <div
+                        className={cn(
+                          "mb-1 flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold",
+                          isToday
+                            ? "bg-primary text-primary-foreground"
+                            : isCurrentMonth
+                              ? "text-foreground"
+                              : "text-muted-foreground/50",
+                        )}
+                      >
+                        {Number(date.slice(8, 10))}
+                      </div>
+                      <div className="space-y-0.5">
+                        {visible.map((b) => (
+                          <div
+                            key={b.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCurrentDate(date);
+                              setView("day");
+                              setActiveCard(b.id);
+                            }}
+                            title={`${b.time} · ${b.customerName} · ${b.serviceName}`}
+                            className={cn(
+                              "truncate rounded border-l-[3px] bg-card px-1 py-0.5 text-[10px] font-medium hover:shadow-card",
+                              b.status === "Cancelled" && "opacity-40",
+                            )}
+                            style={{ borderLeftColor: CAT_COLORS[b.category] ?? "var(--primary)" }}
+                          >
+                            <span className="font-mono text-muted-foreground">{b.time}</span>{" "}
+                            {b.customerName}
+                          </div>
+                        ))}
+                        {overflow > 0 && (
+                          <div className="px-1 text-[10px] font-medium text-muted-foreground">
+                            +{overflow} more
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Week view */}
           {view === "week" && (
