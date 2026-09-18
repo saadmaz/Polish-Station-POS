@@ -1279,6 +1279,85 @@ function strokePolygon(doc: jsPDF, points: [number, number][], style: "S" | "F" 
   doc.lines(deltas, x0, y0, [1, 1], style, true);
 }
 
+// ─── Baseline field icons (Customer & Vehicle strip) ───────────────────────
+// Small vector-drawn glyphs, not embedded images — plain line art (stroke
+// only, no fill except a couple of small accent dots), matching the same
+// minimal, technical-drawing look the damage-diagram artwork already has,
+// rather than a mismatched icon-font style. Each is drawn centred on (cx,cy)
+// within roughly a 2*r box.
+type BaselineIconKind = "mileage" | "fuel" | "warning" | "starts" | "keys";
+
+function drawBaselineIcon(doc: jsPDF, kind: BaselineIconKind, cx: number, cy: number, r: number) {
+  doc.setDrawColor(...SLATE);
+  doc.setLineWidth(0.35);
+  switch (kind) {
+    case "mileage": {
+      // Speedometer: dial + a needle pointing up-right (a stand-in for "a
+      // reading", not a literal odometer digit display) + centre hub.
+      doc.circle(cx, cy, r, "S");
+      const angle = (-50 * Math.PI) / 180;
+      doc.line(cx, cy, cx + r * 0.75 * Math.cos(angle), cy + r * 0.75 * Math.sin(angle));
+      doc.setFillColor(...SLATE);
+      doc.circle(cx, cy, 0.5, "F");
+      break;
+    }
+    case "fuel": {
+      // Fuel pump silhouette: tank body, nozzle, handle — the universal
+      // filling-station glyph, not a gauge (which would read too similar to
+      // the mileage icon right next to it).
+      const bodyW = r * 1.1;
+      const bodyH = r * 1.7;
+      const bodyX = cx - bodyW / 2 - r * 0.25;
+      const bodyY = cy - bodyH / 2;
+      doc.roundedRect(bodyX, bodyY, bodyW, bodyH, 0.6, 0.6, "S");
+      doc.line(bodyX + 1, cy, bodyX + bodyW - 1, cy);
+      const nozzleX = bodyX + bodyW;
+      doc.line(nozzleX, bodyY + 1, nozzleX + r * 0.7, bodyY - r * 0.3);
+      doc.rect(nozzleX + r * 0.6, bodyY - r * 0.75, r * 0.5, r * 0.4, "S");
+      break;
+    }
+    case "warning": {
+      // Same triangle+exclamation glyph the damage-severity markers use for
+      // "moderate" (drawDiagramView above) — one warning-symbol convention
+      // across the whole report, not two.
+      strokePolygon(
+        doc,
+        [
+          [cx, cy - r],
+          [cx + r * 0.95, cy + r * 0.7],
+          [cx - r * 0.95, cy + r * 0.7],
+        ],
+        "S",
+      );
+      doc.setLineWidth(0.5);
+      doc.line(cx, cy - r * 0.15, cx, cy + r * 0.25);
+      doc.setFillColor(...SLATE);
+      doc.circle(cx, cy + r * 0.5, 0.4, "F");
+      break;
+    }
+    case "starts": {
+      // Check-in-circle.
+      doc.circle(cx, cy, r, "S");
+      doc.setLineWidth(0.6);
+      doc.line(cx - r * 0.45, cy, cx - r * 0.1, cy + r * 0.35);
+      doc.line(cx - r * 0.1, cy + r * 0.35, cx + r * 0.5, cy - r * 0.35);
+      break;
+    }
+    case "keys": {
+      // Key silhouette: ring (bow) + shaft + two teeth.
+      const headR = r * 0.42;
+      const headCx = cx - r * 0.4;
+      doc.circle(headCx, cy, headR, "S");
+      const shaftStartX = headCx + headR;
+      const shaftEndX = cx + r * 0.7;
+      doc.line(shaftStartX, cy, shaftEndX, cy);
+      doc.line(shaftEndX, cy, shaftEndX, cy + r * 0.4);
+      doc.line(shaftEndX - r * 0.3, cy, shaftEndX - r * 0.3, cy + r * 0.28);
+      break;
+    }
+  }
+}
+
 function sedanImageViewBoxSize(view: DamageMarkerView): [number, number] {
   const [, , w, h] = SEDAN_IMAGE_VIEWBOX[view].split(" ").map(Number);
   return [w, h];
@@ -1581,7 +1660,6 @@ export async function buildInspectionReportDoc(
     align: "right",
   });
   doc.text(`Inspector:  ${inspection.inspectedByName}`, MR, 34, { align: "right" });
-  doc.text(`Version:  ${version}`, MR, 39, { align: "right" });
 
   y = 52;
 
@@ -1614,21 +1692,26 @@ export async function buildInspectionReportDoc(
   doc.text(summaryLine, ML, y);
   y += 8;
 
-  const baseline: [string, string][] = [
-    ["Mileage", `${inspection.odometer} km`],
-    ["Fuel Level", FUEL_LABELS_PDF[inspection.fuelLevel] ?? inspection.fuelLevel],
+  const baseline: [BaselineIconKind, string, string][] = [
+    ["mileage", "Mileage", `${inspection.odometer} km`],
+    ["fuel", "Fuel Level", FUEL_LABELS_PDF[inspection.fuelLevel] ?? inspection.fuelLevel],
     [
+      "warning",
       "Warning Lights",
       inspection.warningLights.length ? inspection.warningLights.join(", ") : "None",
     ],
-    ["Starts Normally", inspection.startsNormally ? "Yes" : "No"],
-    ["Keys Handed Over", String(inspection.keysHandedOver)],
+    ["starts", "Starts Normally", inspection.startsNormally ? "Yes" : "No"],
+    ["keys", "Keys Handed Over", String(inspection.keysHandedOver)],
   ];
   const baselineColW = CW / baseline.length;
-  baseline.forEach(([label, value], i) => {
-    jobField(doc, ML + i * baselineColW, y + 4, baselineColW - 4, label, value);
+  const baselineIconR = 3;
+  const baselineIconCy = y + baselineIconR + 1;
+  baseline.forEach(([kind, label, value], i) => {
+    const colX = ML + i * baselineColW;
+    drawBaselineIcon(doc, kind, colX + baselineIconR + 1, baselineIconCy, baselineIconR);
+    jobField(doc, colX, baselineIconCy + baselineIconR + 6, baselineColW - 4, label, value);
   });
-  y += 13;
+  y = baselineIconCy + baselineIconR + 6 + 5 + 3;
 
   if (inspection.knownIssues) {
     doc.setFont("helvetica", "bold");
