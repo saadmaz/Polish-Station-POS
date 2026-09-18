@@ -381,6 +381,13 @@ export interface AddOnDiscussed {
   accepted: boolean;
 }
 
+// Historical only (operator-requested removal, 2026-09-18): sign-off no
+// longer captures either signature or a remote acknowledgment reply, and
+// Inspection.customerSignature/inspectorSignature/remoteAck are never set by
+// new code — inspection-sheet.tsx's single "Complete Inspection" action
+// reaches "signed" without any of them. Kept here (types + the Inspection
+// fields below, still nullable) only so existing signed inspections from
+// before this change keep reading back correctly.
 export interface CustomerSignature {
   storagePath: string; // PNG, jobs/{jobId}/inspections/{inspectionId}/customer-signature.png
   signerName: string;
@@ -439,8 +446,15 @@ export interface InspectionCustomerSnapshot {
 export type InspectionStatus = "draft" | "pending_acknowledgment" | "signed" | "superseded";
 
 export const LEGAL_INSPECTION_TRANSITIONS: Record<InspectionStatus, readonly InspectionStatus[]> = {
-  draft: ["pending_acknowledgment", "signed"], // pending_acknowledgment = Path B, signed = Path A (customer present)
-  pending_acknowledgment: ["signed"], // only after remoteAck is recorded
+  // Operator-requested (2026-09-18): sign-off no longer captures a customer
+  // or inspector signature, so "draft" only ever goes straight to "signed"
+  // now -- a staff member completing the inspection, not anyone signing it.
+  // "pending_acknowledgment" (the old WhatsApp-remote-acknowledgment detour,
+  // "Path B") is no longer reachable from a new draft; it stays a valid
+  // status/transition target only so any inspection that was already sitting
+  // there before this change can still be resolved rather than stuck.
+  draft: ["signed"],
+  pending_acknowledgment: ["signed"],
   // The only way out of "signed" — never a generic edit, only ever performed
   // by createSupersedingInspection()'s write, alongside creating the new doc
   // that supersedes this one. See assertCanSupersede().
@@ -495,15 +509,6 @@ export function assertCanSupersede(status: InspectionStatus): void {
     throw new InspectionNotSignedError(status);
   }
 }
-
-// Placeholder — flagged, not final. Per the spec: draft detailing-specific
-// disclaimer text covering valuables/possessions, acknowledgment of
-// pre-existing defects recorded above, authorisation for the listed work,
-// and scope exclusions. Must be reviewed by someone qualified before this
-// ships as the real wording a customer's signature is binding them to.
-// Shared verbatim between the sign-off UI (inspection-sheet.tsx) and the
-// PDF report (pdf.ts) — one wording, not two copies to keep in sync by hand.
-export const INSPECTION_DISCLAIMER_TEXT = `By signing below, I acknowledge that: the defects, condition notes, and damage markers recorded in this inspection reflect the vehicle's state at intake and are not caused by the work about to be performed; I have been advised to remove valuables and personal items from the vehicle, and Polish Station does not monitor or accept liability for items left inside it; I authorise the service(s) noted on this job for the vehicle described above; and any item listed under "scope exclusions" is explicitly not included in this work.`;
 
 // Default threshold from the spec's Phase 4: work must not start on the
 // parent job while its inspection sits in "pending_acknowledgment" beyond

@@ -22,13 +22,16 @@ import {
 } from "./inspection";
 
 describe("the happy-path chains are legal", () => {
-  it("draft -> pending_acknowledgment -> signed (Path B)", () => {
-    expect(isLegalInspectionTransition("draft", "pending_acknowledgment")).toBe(true);
-    expect(isLegalInspectionTransition("pending_acknowledgment", "signed")).toBe(true);
+  it("draft -> signed directly (sign-off no longer captures a signature)", () => {
+    expect(isLegalInspectionTransition("draft", "signed")).toBe(true);
   });
 
-  it("draft -> signed directly (Path A, customer present)", () => {
-    expect(isLegalInspectionTransition("draft", "signed")).toBe(true);
+  it("draft -> pending_acknowledgment is no longer legal (the WhatsApp remote-ack detour was removed)", () => {
+    expect(isLegalInspectionTransition("draft", "pending_acknowledgment")).toBe(false);
+  });
+
+  it("pending_acknowledgment -> signed stays legal, so any inspection already there can still be resolved", () => {
+    expect(isLegalInspectionTransition("pending_acknowledgment", "signed")).toBe(true);
   });
 
   it("signed -> superseded (the one sanctioned move out of an immutable doc)", () => {

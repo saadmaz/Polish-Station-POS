@@ -71,9 +71,14 @@ service cloud.firestore {
     // job.ts's LEGAL_TRANSITIONS vs. the jobEvents rule. "signed" -> "superseded"
     // is the one transition out of an otherwise-immutable document, and is
     // only ever driven by createSupersedingInspection()'s write.
+    // "pending_acknowledgment" is no longer reachable from "draft"
+    // (operator-requested, 2026-09-18: sign-off dropped the WhatsApp remote-
+    // acknowledgment detour along with both signatures) — it stays a legal
+    // status/transition only so any inspection already sitting there from
+    // before this change can still be resolved.
     function legalInspectionTransitions() {
       return {
-        "draft":                  ["pending_acknowledgment", "signed"],
+        "draft":                  ["signed"],
         "pending_acknowledgment": ["signed"],
         "signed":                 ["superseded"],
         "superseded":             [],
@@ -84,22 +89,18 @@ service cloud.firestore {
     // verify per-marker or per-slot photo coverage directly (see
     // src/lib/inspection.ts's comment on Inspection.photoRequirementsMet for
     // why that's a client-computed field instead) — but everything else the
-    // acceptance criteria require IS checked here: the two-path sign-off
-    // (inspector signature always required to reach "signed"; customer
-    // signature required on Path A, a received remote acknowledgment on Path
-    // B), immutability of identification/attribution fields, and full
-    // immutability of a "signed" document except the one sanctioned move to
-    // "superseded".
+    // acceptance criteria require IS checked here: immutability of
+    // identification/attribution fields, and full immutability of a "signed"
+    // document except the one sanctioned move to "superseded". No signature/
+    // remote-ack requirement gates "signed" any more (operator-requested,
+    // 2026-09-18) — reaching it now only needs photoRequirementsMet, same as
+    // "pending_acknowledgment" already did.
     function isLegalInspectionUpdate() {
       let before = resource.data.status;
       let after = request.resource.data;
       return (before == after.status || after.status in legalInspectionTransitions()[before])
         && (after.status != "pending_acknowledgment" || after.photoRequirementsMet == true)
         && (after.status != "signed" || after.photoRequirementsMet == true)
-        && (after.status != "signed" || after.inspectorSignature != null)
-        && (after.status != "signed" || !after.inspectedWithCustomer || after.customerSignature != null)
-        && (after.status != "signed" || after.inspectedWithCustomer
-            || (after.remoteAck != null && after.remoteAck.replyReceivedAt != null))
         && (before != "signed" ||
             (after.status == "superseded"
              && request.resource.data.diff(resource.data).affectedKeys()

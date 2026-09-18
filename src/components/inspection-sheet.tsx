@@ -4,29 +4,24 @@
 // component exists in this codebase) and job-sheet.tsx's Sheet/form
 // conventions.
 //
-// Photo capture (the guided per-slot photos, damage-marker evidence photos,
-// remote-ack screenshots) is temporarily disabled store-wide — see
-// PHOTO_CAPTURE_ENABLED in inspection.ts for why and how to bring it back.
-// This file only asks the non-photo questions: odometer/fuel/warning
-// lights, the damage diagram (markers, no linked photos), and sign-off.
+// Photo capture (the guided per-slot photos, damage-marker evidence photos)
+// is temporarily disabled store-wide — see PHOTO_CAPTURE_ENABLED in
+// inspection.ts for why and how to bring it back. This file only asks the
+// non-photo questions: odometer/fuel/warning lights, the damage diagram
+// (markers, no linked photos), and sign-off.
+//
+// Sign-off (operator-requested, 2026-09-18) no longer captures a customer or
+// inspector signature, or waits on a WhatsApp acknowledgment reply — see
+// inspection.ts's LEGAL_INSPECTION_TRANSITIONS comment. Completing an
+// inspection is now one staff action that moves it straight to "signed".
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useAuth } from "@/lib/auth";
 import { useStore } from "@/lib/store";
-import { uploadSignaturePng } from "@/lib/inspection-photos";
-import { buildWALink } from "@/lib/notifications";
 import { formatDateTime } from "@/lib/date-format";
-import { generateInspectionReportPDF, blobToDataUrl } from "@/lib/pdf";
+import { generateInspectionReportPDF } from "@/lib/pdf";
 import { DamageDiagram } from "@/components/damage-diagram/damage-diagram";
 import {
-  SignaturePad,
-  SignaturePadClearButton,
-  type SignaturePadHandle,
-} from "@/components/signature-pad";
-import {
   FUEL_LEVELS,
-  INSPECTION_DISCLAIMER_TEXT,
-  PENDING_ACKNOWLEDGMENT_THRESHOLD_MS,
   WARNING_LIGHTS,
   type DamageMarker,
   type FuelLevel,
@@ -41,7 +36,7 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { Check, ShieldAlert, FileText } from "lucide-react";
+import { Check, FileText } from "lucide-react";
 
 type StepDef = { kind: "intake" } | { kind: "damage" } | { kind: "review" };
 
@@ -74,55 +69,29 @@ const FUEL_LEVEL_LABELS: Record<FuelLevel, string> = {
   F: "F",
 };
 
-function Disclaimer() {
-  return (
-    <div className="space-y-1 rounded-md border border-warning/40 bg-warning/10 px-3 py-2">
-      <p className="flex items-center gap-1 text-[11px] font-semibold text-warning-foreground">
-        <ShieldAlert className="h-3 w-3" />
-        Unreviewed placeholder — confirm wording with someone qualified before relying on it.
-      </p>
-      <p className="text-[11px] text-muted-foreground">{INSPECTION_DISCLAIMER_TEXT}</p>
-    </div>
-  );
-}
-
 export function InspectionSheet({ open, onOpenChange, job, inspection }: InspectionSheetProps) {
-  const { staff } = useAuth();
   const { updateInspection } = useStore();
   const [draft, setDraft] = useState(inspection);
   const [stepIndex, setStepIndex] = useState(0);
 
-  // Sign-off (Phase 4)
-  const [signerName, setSignerName] = useState("");
-  const [replyText, setReplyText] = useState("");
-  const [sendingAck, setSendingAck] = useState(false);
-  const [signing, setSigning] = useState(false);
-  const customerSigRef = useRef<SignaturePadHandle | null>(null);
-  const inspectorSigRef = useRef<SignaturePadHandle | null>(null);
-  // Guards handleSignPathA/handleAcknowledgeAndSign/handleSendForAcknowledgment
-  // against a second invocation racing the first. `signing`/`sendingAck`
-  // state alone doesn't do this: both handlers await at least one promise
-  // (toBlob(), a Storage upload) before their first setState call, so a
+  // Sign-off
+  const [completing, setCompleting] = useState(false);
+  // Guards handleCompleteInspection against a second invocation racing the
+  // first. `completing` state alone doesn't do this: the handler awaits at
+  // least one promise (the report PDF) before its first setState call, so a
   // second click landing in that window fires the handler again before
-  // React has re-rendered the button as disabled. Two concurrent sign-off
-  // attempts against the same draft then race each other's Storage upload
-  // and Firestore write — the loser gets rejected (storage.rules/
-  // firestore.rules both reject writes to the same doc once the other side
-  // has already moved it out of "draft"), surfacing as an inexplicable
-  // "couldn't complete sign-off" even though the visible signatures were
-  // fine and the first click actually went through. A plain ref (checked
-  // and set synchronously, before any await) closes that window; `signing`/
-  // `sendingAck` React state remains just for the button's own visual
-  // "…ing" label.
+  // React has re-rendered the button as disabled. Two concurrent completions
+  // against the same draft then race each other's Firestore write — the
+  // loser gets rejected (firestore.rules rejects a write to the same doc
+  // once the other side has already moved it out of "draft"), surfacing as
+  // an inexplicable "couldn't complete the inspection" even though the first
+  // click actually went through. A plain ref (checked and set synchronously,
+  // before any await) closes that window; `completing` React state remains
+  // just for the button's own visual "…ing" label.
   const actionInFlightRef = useRef(false);
 
   useEffect(() => {
-    if (open) {
-      setSignerName(inspection.customerSignature?.signerName ?? inspection.customerSnapshot.name);
-      setReplyText(inspection.remoteAck?.replyText ?? "");
-      setStepIndex(0);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (open) setStepIndex(0);
   }, [open, inspection.id]);
 
   // Separate from the effect above on purpose: this one re-syncs `draft`
@@ -138,9 +107,9 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
   // write then correctly got rejected by storage.rules/firestore.rules,
   // over and over, with no visible way out short of a manual reload.
   // Harmless when it's just this client's own write echoing back (same
-  // content either way); the one place this can't run is stepIndex/
-  // signerName/replyText, which are session-local UI state that a live
-  // update should never reset out from under whatever the user is doing.
+  // content either way); the one place this can't run is stepIndex, which is
+  // session-local UI state that a live update should never reset out from
+  // under whatever the user is doing.
   useEffect(() => {
     if (open) setDraft(inspection);
     // Deliberately keyed on updatedAt, not the `inspection` object itself —
@@ -164,177 +133,47 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
     persist({ ...draft, damageMarkers: markers });
   }
 
-  // ── Sign-off (Phase 4) ────────────────────────────────────────────────────
-
-  function setInspectedWithCustomer(value: boolean) {
-    persist({ ...draft, inspectedWithCustomer: value });
-  }
-
-  // Builds the report PDF from `next` (an in-memory Inspection that hasn't
-  // been persisted yet) and folds the result onto it — NOT a second write
-  // after persisting `next` on its own: once a write sets status to
-  // "signed", Firestore rules allow only the signed -> superseded
-  // transition on any later write, so a follow-up "attach the report"
-  // write would be rejected outright. Generating first and persisting once,
-  // with documents.report already included, is the only ordering that
-  // works for the two sign actions. Failure here is swallowed (logged +
-  // toasted) rather than thrown — a PDF that fails to render must never
-  // block or revert the sign-off/acknowledgment-request itself.
-  async function withGeneratedReport(
-    next: Inspection,
-    preloadedSignatures?: { customerSigDataUrl?: string | null; inspectorSigDataUrl?: string | null },
-  ): Promise<Inspection> {
-    try {
-      const result = await generateInspectionReportPDF(next, preloadedSignatures);
-      return {
-        ...next,
-        documents: {
-          ...next.documents,
-          report: { ...result, generatedAt: new Date().toISOString() },
-        },
-      };
-    } catch (err) {
-      console.error("[inspection] report PDF generation failed:", err);
-      toast.error("Sign-off saved, but the report PDF couldn't be generated");
-      return next;
-    }
-  }
-
-  // Path B, step 1: hands off to the customer via WhatsApp. Firestore rules
-  // require photoRequirementsMet before this transition is even accepted —
-  // always true while PHOTO_CAPTURE_ENABLED is off (see inspection.ts).
-  async function handleSendForAcknowledgment() {
+  // ── Sign-off ──────────────────────────────────────────────────────────────
+  // One staff action, no customer or inspector signature and no WhatsApp
+  // wait — moves "draft" straight to "signed". Firestore rules require
+  // photoRequirementsMet before this transition is accepted — always true
+  // while PHOTO_CAPTURE_ENABLED is off (see inspection.ts).
+  async function handleCompleteInspection() {
     if (actionInFlightRef.current) return;
-    if (!draft.customerSnapshot.phone) {
-      toast.error("No phone number on file for this customer");
-      return;
-    }
     actionInFlightRef.current = true;
-    setSendingAck(true);
+    setCompleting(true);
     try {
-      const sentAt = new Date().toISOString();
-      const next: Inspection = {
-        ...draft,
-        status: "pending_acknowledgment",
-        remoteAck: {
-          sentAt,
-          channel: "whatsapp",
-          replyText: null,
-          replyReceivedAt: null,
-          screenshotPath: null,
-        },
-      };
-      const withReport = await withGeneratedReport(next);
+      const next: Inspection = { ...draft, status: "signed" };
+      // Builds the report PDF from `next` (an in-memory Inspection that
+      // hasn't been persisted yet) and folds the result onto it — NOT a
+      // second write after persisting `next` on its own: once a write sets
+      // status to "signed", Firestore rules allow only the signed ->
+      // superseded transition on any later write, so a follow-up "attach
+      // the report" write would be rejected outright. Generating first and
+      // persisting once, with documents.report already included, is the
+      // only ordering that works. Failure here is swallowed (logged +
+      // toasted) rather than thrown — a PDF that fails to render must never
+      // block or revert completing the inspection itself.
+      let withReport = next;
+      try {
+        const result = await generateInspectionReportPDF(next);
+        withReport = {
+          ...next,
+          documents: {
+            ...next.documents,
+            report: { ...result, generatedAt: new Date().toISOString() },
+          },
+        };
+      } catch (err) {
+        console.error("[inspection] report PDF generation failed:", err);
+        toast.error("Inspection completed, but the report PDF couldn't be generated");
+      }
       persist(withReport);
-      const reportUrl = withReport.documents?.report?.url;
-      const message = reportUrl
-        ? `Hi ${draft.customerSnapshot.name}, please review your vehicle inspection for job ${job.id} here: ${reportUrl}\n\nReply to this message to confirm you've seen it.`
-        : `Hi ${draft.customerSnapshot.name}, please review your vehicle inspection for job ${job.id} and reply to this message to confirm you've seen it.`;
-      window.open(buildWALink(draft.customerSnapshot.phone, message), "_blank");
+      toast.success("Inspection completed");
+    } catch {
+      toast.error("Couldn't complete the inspection, please try again");
     } finally {
-      setSendingAck(false);
-      actionInFlightRef.current = false;
-    }
-  }
-
-  // Path A: both signatures captured in one action, straight to "signed".
-  async function handleSignPathA() {
-    if (actionInFlightRef.current) return;
-    actionInFlightRef.current = true;
-    try {
-      const customerBlob = await customerSigRef.current?.toBlob();
-      const inspectorBlob = await inspectorSigRef.current?.toBlob();
-      if (!customerBlob || !inspectorBlob || !signerName.trim() || !staff) {
-        toast.error("Both signatures and the customer's name are required");
-        return;
-      }
-      setSigning(true);
-      try {
-        const now = new Date().toISOString();
-        const [customerPath, inspectorPath, customerSigDataUrl, inspectorSigDataUrl] =
-          await Promise.all([
-            uploadSignaturePng(job.id, draft.id, "customer", customerBlob),
-            uploadSignaturePng(job.id, draft.id, "inspector", inspectorBlob),
-            blobToDataUrl(customerBlob),
-            blobToDataUrl(inspectorBlob),
-          ]);
-        const next: Inspection = {
-          ...draft,
-          inspectedWithCustomer: true,
-          customerSignature: {
-            storagePath: customerPath,
-            signerName: signerName.trim(),
-            signedAt: now,
-          },
-          inspectorSignature: {
-            storagePath: inspectorPath,
-            staffId: staff.id,
-            staffName: staff.name,
-            signedAt: now,
-          },
-          status: "signed",
-        };
-        const withReport = await withGeneratedReport(next, {
-          customerSigDataUrl,
-          inspectorSigDataUrl,
-        });
-        persist(withReport);
-        toast.success("Inspection signed");
-      } catch {
-        toast.error("Couldn't complete sign-off, please try again");
-      } finally {
-        setSigning(false);
-      }
-    } finally {
-      actionInFlightRef.current = false;
-    }
-  }
-
-  // Path B, step 2: the customer's reply plus the inspector's own signature,
-  // bundled into one action — this is the only point in Path B where
-  // inspectorSignature gets set, since "signed" is never reached before it.
-  async function handleAcknowledgeAndSign() {
-    if (actionInFlightRef.current) return;
-    actionInFlightRef.current = true;
-    try {
-      const inspectorBlob = await inspectorSigRef.current?.toBlob();
-      if (!inspectorBlob || !staff) {
-        toast.error("Inspector signature is required");
-        return;
-      }
-      if (!replyText.trim()) {
-        toast.error("Record the customer's reply text before signing");
-        return;
-      }
-      setSigning(true);
-      try {
-        const now = new Date().toISOString();
-        const [inspectorPath, inspectorSigDataUrl] = await Promise.all([
-          uploadSignaturePng(job.id, draft.id, "inspector", inspectorBlob),
-          blobToDataUrl(inspectorBlob),
-        ]);
-        const next: Inspection = {
-          ...draft,
-          remoteAck: draft.remoteAck
-            ? { ...draft.remoteAck, replyText: replyText.trim(), replyReceivedAt: now }
-            : draft.remoteAck,
-          inspectorSignature: {
-            storagePath: inspectorPath,
-            staffId: staff.id,
-            staffName: staff.name,
-            signedAt: now,
-          },
-          status: "signed",
-        };
-        const withReport = await withGeneratedReport(next, { inspectorSigDataUrl });
-        persist(withReport);
-        toast.success("Inspection signed");
-      } catch {
-        toast.error("Couldn't complete sign-off, please try again");
-      } finally {
-        setSigning(false);
-      }
-    } finally {
+      setCompleting(false);
       actionInFlightRef.current = false;
     }
   }
@@ -370,20 +209,8 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
           <div className="space-y-3 py-4 text-sm">
             <div className="flex items-center gap-2 rounded-md bg-success/10 border border-success/30 px-3 py-2 text-success">
               <Check className="h-4 w-4" />
-              Signed by {draft.inspectorSignature?.staffName ?? "—"} on{" "}
-              {draft.inspectorSignature ? formatDateTime(draft.inspectorSignature.signedAt) : "—"}
+              Completed by {draft.updatedByName || "—"} on {formatDateTime(draft.updatedAt)}
             </div>
-            {draft.customerSignature && (
-              <p className="text-muted-foreground">
-                Customer signature: {draft.customerSignature.signerName} ·{" "}
-                {formatDateTime(draft.customerSignature.signedAt)}
-              </p>
-            )}
-            {draft.remoteAck?.replyReceivedAt && (
-              <p className="text-muted-foreground">
-                Remote acknowledgment received {formatDateTime(draft.remoteAck.replyReceivedAt)}
-              </p>
-            )}
             {draft.documents?.report ? (
               <a
                 href={draft.documents.report.url}
@@ -396,10 +223,10 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
               </a>
             ) : (
               <p className="text-xs text-muted-foreground">
-                No report PDF was generated for this inspection — it's usually built
-                automatically right when sign-off completes, so this means that step failed at
-                the time (a toast would have said so). Once signed, it can't be regenerated from
-                here; a Manager can check the Storage/permissions setup.
+                No report PDF was generated for this inspection — it's usually built automatically
+                right when sign-off completes, so this means that step failed at the time (a toast
+                would have said so). Once signed, it can't be regenerated from here; a Manager can
+                check the Storage/permissions setup.
               </p>
             )}
           </div>
@@ -518,127 +345,18 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
             <div className="space-y-3">
               <div className="space-y-3 rounded-xl border border-border bg-card p-4">
                 <h3 className="text-sm font-semibold">Sign-off</h3>
-
-                {draft.status === "draft" && (
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">
-                      Was the customer present for this inspection?
-                    </label>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setInspectedWithCustomer(true)}
-                        className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-semibold ${
-                          draft.inspectedWithCustomer
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-input bg-background hover:bg-accent"
-                        }`}
-                      >
-                        Yes, present
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setInspectedWithCustomer(false)}
-                        className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-semibold ${
-                          !draft.inspectedWithCustomer
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-input bg-background hover:bg-accent"
-                        }`}
-                      >
-                        No, remote
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {draft.status === "draft" && draft.inspectedWithCustomer && (
-                  <div className="space-y-3">
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-medium">Customer name *</label>
-                      <input
-                        value={signerName}
-                        onChange={(e) => setSignerName(e.target.value)}
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-sm font-medium">Customer signature</label>
-                        <SignaturePadClearButton onClick={() => customerSigRef.current?.clear()} />
-                      </div>
-                      <SignaturePad onHandleReady={(h) => (customerSigRef.current = h)} />
-                    </div>
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-sm font-medium">Inspector signature</label>
-                        <SignaturePadClearButton onClick={() => inspectorSigRef.current?.clear()} />
-                      </div>
-                      <SignaturePad onHandleReady={(h) => (inspectorSigRef.current = h)} />
-                    </div>
-                    <Disclaimer />
-                    <button
-                      type="button"
-                      disabled={signing}
-                      onClick={() => void handleSignPathA()}
-                      className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90 disabled:opacity-60"
-                    >
-                      {signing ? "Signing…" : "Complete & Sign"}
-                    </button>
-                  </div>
-                )}
-
-                {draft.status === "draft" && draft.inspectedWithCustomer === false && (
-                  <div className="space-y-3">
-                    <p className="text-xs text-muted-foreground">
-                      Sends a WhatsApp message asking the customer to confirm they've reviewed the
-                      inspection. Work on this job can't start while this sits unanswered past{" "}
-                      {PENDING_ACKNOWLEDGMENT_THRESHOLD_MS / 3600000} hours.
-                    </p>
-                    <Disclaimer />
-                    <button
-                      type="button"
-                      disabled={sendingAck}
-                      onClick={() => void handleSendForAcknowledgment()}
-                      className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90 disabled:opacity-60"
-                    >
-                      {sendingAck ? "Sending…" : "Send for Acknowledgment"}
-                    </button>
-                  </div>
-                )}
-
-                {draft.status === "pending_acknowledgment" && (
-                  <div className="space-y-3">
-                    <p className="text-xs text-muted-foreground">
-                      Awaiting customer reply since{" "}
-                      {draft.remoteAck ? formatDateTime(draft.remoteAck.sentAt) : "—"}.
-                    </p>
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-medium">Customer's reply</label>
-                      <textarea
-                        rows={2}
-                        value={replyText}
-                        onChange={(e) => setReplyText(e.target.value)}
-                        placeholder="Paste or describe their reply…"
-                        className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-sm font-medium">Inspector signature</label>
-                        <SignaturePadClearButton onClick={() => inspectorSigRef.current?.clear()} />
-                      </div>
-                      <SignaturePad onHandleReady={(h) => (inspectorSigRef.current = h)} />
-                    </div>
-                    <button
-                      type="button"
-                      disabled={signing}
-                      onClick={() => void handleAcknowledgeAndSign()}
-                      className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90 disabled:opacity-60"
-                    >
-                      {signing ? "Signing…" : "Mark Acknowledged & Sign"}
-                    </button>
-                  </div>
-                )}
+                <p className="text-xs text-muted-foreground">
+                  No customer or inspector signature is collected — completing the inspection
+                  records it under your staff account and locks it.
+                </p>
+                <button
+                  type="button"
+                  disabled={completing}
+                  onClick={() => void handleCompleteInspection()}
+                  className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90 disabled:opacity-60"
+                >
+                  {completing ? "Completing…" : "Complete Inspection"}
+                </button>
               </div>
             </div>
           )}

@@ -8,7 +8,6 @@ import { LOGO_PNG_BASE64 } from "./logo-asset";
 import { storage } from "./firebase";
 import type { Job } from "./job";
 import {
-  INSPECTION_DISCLAIMER_TEXT,
   type DamageMarker,
   type DamageMarkerSeverity,
   type DamageMarkerType,
@@ -1442,26 +1441,15 @@ export interface InspectionReportResult {
 /**
  * Builds the inspection report PDF and uploads it to
  * `jobs/{jobId}/documents/inspection-{inspectionId}-v{version}.pdf` in
- * Storage, never overwriting an earlier version (Path B produces an
- * unsigned interim copy at "send for acknowledgment", signing produces the
- * version with real signatures — see Inspection.documents.report's header
- * comment in inspection.ts). Takes only the Inspection itself: unlike the
- * job card, every field this needs (vehicle/customer snapshot, inspector
- * attribution) already lives on the document, no Job/staff-list lookup
- * required.
+ * Storage, never overwriting an earlier version. Takes only the Inspection
+ * itself: unlike the job card, every field this needs (vehicle/customer
+ * snapshot, inspector attribution) already lives on the document, no Job/
+ * staff-list lookup required. No signature/remote-ack section any more
+ * (operator-requested, 2026-09-18 — see inspection.ts) — a version built for
+ * an inspection signed before that change simply won't have one to redraw.
  */
 export async function generateInspectionReportPDF(
   inspection: Inspection,
-  // Optional — a signature pad's toBlob() converted to a data URL right
-  // before upload, for a caller that already has it in memory this same
-  // sign-off action. Passing it here skips re-fetching those same bytes
-  // back from Storage (which needs the bucket's CORS config to allow this
-  // origin's XHR reads — uploads and the SDK's own internal calls don't hit
-  // that same wall, but this fetch does). Falls back to the Storage fetch
-  // when omitted, so a report generated later without the original blob in
-  // hand (there's no such caller today, but nothing stops one existing)
-  // still works exactly as before.
-  preloadedSignatures?: { customerSigDataUrl?: string | null; inspectorSigDataUrl?: string | null },
 ): Promise<InspectionReportResult> {
   const version = (inspection.documents?.report?.version ?? 0) + 1;
 
@@ -1477,21 +1465,6 @@ export async function generateInspectionReportPDF(
       ),
     ),
   );
-  const customerSigDataUrl =
-    preloadedSignatures?.customerSigDataUrl !== undefined
-      ? preloadedSignatures.customerSigDataUrl
-      : inspection.customerSignature
-        ? await fetchDataUrl(inspection.customerSignature.storagePath, "image/png")
-        : null;
-  const inspectorSigDataUrl =
-    preloadedSignatures?.inspectorSigDataUrl !== undefined
-      ? preloadedSignatures.inspectorSigDataUrl
-      : inspection.inspectorSignature
-        ? await fetchDataUrl(inspection.inspectorSignature.storagePath, "image/png")
-        : null;
-  const remoteAckScreenshotDataUrl = inspection.remoteAck?.screenshotPath
-    ? await fetchDataUrl(inspection.remoteAck.screenshotPath, "image/jpeg")
-    : null;
 
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
   let y = 0;
@@ -1835,100 +1808,6 @@ export async function generateInspectionReportPDF(
   }
   if (col !== 0) y += THUMB + 10;
   y += 4;
-
-  // ── 12. Signatures / remote acknowledgment, with timestamps ─────────────
-  y = sectionTitle(doc, y, "Sign-off");
-  y = ensureSpace(doc, y, 42);
-  const sigW = (CW - 8) / 2;
-  if (inspection.inspectedWithCustomer && inspection.customerSignature) {
-    if (customerSigDataUrl) {
-      try {
-        doc.addImage(customerSigDataUrl, "PNG", ML, y, sigW, 25);
-      } catch {
-        // skip
-      }
-    }
-    doc.setDrawColor(...RULE);
-    doc.line(ML, y + 27, ML + sigW, y + 27);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(7.5);
-    doc.setTextColor(...SLATE);
-    doc.text(
-      `${inspection.customerSignature.signerName} (customer) · ${formatDateTimeInColombo(inspection.customerSignature.signedAt)}`,
-      ML,
-      y + 31,
-    );
-  } else if (inspection.remoteAck) {
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(7);
-    doc.setTextColor(...MUTED);
-    doc.text("REMOTE ACKNOWLEDGMENT", ML, y);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(8);
-    doc.setTextColor(...SLATE);
-    doc.text(
-      `Sent ${formatDateTimeInColombo(inspection.remoteAck.sentAt)} via ${inspection.remoteAck.channel}`,
-      ML,
-      y + 5,
-    );
-    if (inspection.remoteAck.replyReceivedAt) {
-      doc.text(
-        `Reply received ${formatDateTimeInColombo(inspection.remoteAck.replyReceivedAt)}`,
-        ML,
-        y + 9.5,
-      );
-      if (inspection.remoteAck.replyText) {
-        const rlines = doc.splitTextToSize(`"${inspection.remoteAck.replyText}"`, sigW);
-        doc.text(rlines, ML, y + 14);
-      }
-    } else {
-      doc.setTextColor(...AMBER);
-      doc.text("Awaiting reply", ML, y + 9.5);
-    }
-    if (remoteAckScreenshotDataUrl) {
-      try {
-        doc.addImage(remoteAckScreenshotDataUrl, "JPEG", ML + sigW, y, sigW, 25);
-      } catch {
-        // skip
-      }
-    }
-  }
-  if (inspectorSigDataUrl) {
-    try {
-      doc.addImage(inspectorSigDataUrl, "PNG", ML + sigW + 8, y, sigW, 25);
-    } catch {
-      // skip
-    }
-  }
-  doc.setDrawColor(...RULE);
-  doc.line(ML + sigW + 8, y + 27, MR, y + 27);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(7.5);
-  doc.setTextColor(...SLATE);
-  if (inspection.inspectorSignature) {
-    doc.text(
-      `${inspection.inspectorSignature.staffName} (inspector) · ${formatDateTimeInColombo(inspection.inspectorSignature.signedAt)}`,
-      ML + sigW + 8,
-      y + 31,
-    );
-  }
-  y += 38;
-
-  // ── 13. Disclaimer ───────────────────────────────────────────────────────
-  y = ensureSpace(doc, y, 25);
-  const discLines = doc.splitTextToSize(INSPECTION_DISCLAIMER_TEXT, CW - 8);
-  const discH = 8 + discLines.length * 3.6;
-  doc.setDrawColor(...AMBER);
-  doc.setFillColor(255, 251, 235);
-  doc.roundedRect(ML, y, CW, discH, 1.5, 1.5, "FD");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(6.5);
-  doc.setTextColor(...AMBER);
-  doc.text("DISCLAIMER — UNREVIEWED PLACEHOLDER WORDING", ML + 4, y + 5);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(6.5);
-  doc.setTextColor(...SLATE);
-  doc.text(discLines, ML + 4, y + 9);
 
   // ── Footer + page numbers, stamped on every page after layout is final ──
   const totalPages = doc.getNumberOfPages();
