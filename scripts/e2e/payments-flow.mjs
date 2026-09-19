@@ -122,8 +122,11 @@ await check("Collect Payment completes the balance and marks invoice Paid", asyn
 
   await page.waitForSelector(':text-is("Paid")', { timeout: 10000 });
 
-  const doc = await adminDb.collection("invoices").doc(invoiceId).get();
-  const inv = doc.data();
+  // Same client-fires-without-awaiting pattern as refundInvoicePayment (see
+  // waitForInvoiceField's own comment) -- recordInvoicePayment's batch.commit()
+  // isn't awaited by the UI either, so poll rather than reading once right
+  // after the toast/on-screen status update.
+  const inv = await waitForInvoiceField(invoiceId, (d) => d?.status === "Paid");
   assert(inv.status === "Paid", `expected status Paid after collecting balance, got ${inv.status}`);
   assert(inv.payments.length === 2, "expected 2 payment records after Collect Payment");
 });

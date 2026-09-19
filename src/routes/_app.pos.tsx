@@ -71,7 +71,7 @@ interface ChargedExtra {
   plate: string;
 }
 
-const EMPTY_NEW_CUSTOMER = { name: "", phone: "", email: "", plate: "", model: "", address: "" };
+const EMPTY_NEW_CUSTOMER = { name: "", phone: "", email: "", model: "", address: "" };
 
 function POS() {
   const {
@@ -192,25 +192,23 @@ function POS() {
   }
 
   function handleCreateCustomer() {
-    if (!newCustomerForm.name.trim()) {
-      toast.error("Enter a name for the new customer");
-      return;
-    }
-    if (!newCustomerForm.plate.trim()) {
+    // The plate is asked for exactly once -- the top-level field, already
+    // required for the sale itself -- not a second time in this form. The
+    // new customer's vehicle is built from that same value.
+    if (!plate.trim()) {
       toast.error("Enter the vehicle's plate number");
       return;
     }
+    const plateValue = plate.trim().toUpperCase();
+    // Name is optional here -- the plate is what actually identifies a
+    // walk-in sale. Falls back to the plate itself so the customer record
+    // still has a real, traceable name rather than an empty string.
+    const name = newCustomerForm.name.trim() || plateValue;
     const c = addCustomer({
-      name: newCustomerForm.name.trim(),
+      name,
       phone: newCustomerForm.phone.trim(),
       email: newCustomerForm.email.trim(),
-      vehicles: [
-        {
-          plate: newCustomerForm.plate.trim().toUpperCase(),
-          model: newCustomerForm.model.trim(),
-          color: "",
-        },
-      ],
+      vehicles: [{ plate: plateValue, model: newCustomerForm.model.trim(), color: "" }],
       // Omit rather than write `address: undefined` -- Firestore's client
       // SDK throws on an explicit undefined field (see the checkout write
       // below, same precedent).
@@ -711,6 +709,29 @@ function POS() {
               <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Billed To
               </div>
+
+              <label className="no-print mb-3 block space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Vehicle Plate *
+                </span>
+                <input
+                  data-testid="plate-input"
+                  className="w-full max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm uppercase placeholder:text-muted-foreground placeholder:normal-case focus:outline-none focus:ring-2 focus:ring-ring"
+                  placeholder="e.g. CBA 2421"
+                  value={plate}
+                  onChange={(e) => setPlate(e.target.value)}
+                  autoFocus
+                />
+              </label>
+              {plate.trim() && (
+                <div className="no-print mb-3 text-xs text-muted-foreground">
+                  {formatDocumentLabel(
+                    plate.trim().toUpperCase(),
+                    "INV (number assigned on issue)",
+                  )}
+                </div>
+              )}
+
               {selectedCustomer ? (
                 <div className="flex items-start justify-between gap-2 rounded-md bg-muted/40 px-3 py-2.5">
                   <div>
@@ -807,7 +828,7 @@ function POS() {
                       <div className="grid grid-cols-2 gap-2">
                         <input
                           className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none"
-                          placeholder="Name *"
+                          placeholder="Name (optional)"
                           value={newCustomerForm.name}
                           onChange={(e) =>
                             setNewCustomerForm((f) => ({ ...f, name: e.target.value }))
@@ -827,14 +848,6 @@ function POS() {
                           value={newCustomerForm.email}
                           onChange={(e) =>
                             setNewCustomerForm((f) => ({ ...f, email: e.target.value }))
-                          }
-                        />
-                        <input
-                          className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none"
-                          placeholder="Vehicle plate *"
-                          value={newCustomerForm.plate}
-                          onChange={(e) =>
-                            setNewCustomerForm((f) => ({ ...f, plate: e.target.value }))
                           }
                         />
                         <input
@@ -878,27 +891,6 @@ function POS() {
               {!selectedCustomer && manualCustomer && (
                 <div className="mt-2 text-xs text-muted-foreground">
                   Billing as <strong>{manualCustomer}</strong> (no customer record saved)
-                </div>
-              )}
-
-              <label className="no-print mt-3 block space-y-1">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Vehicle Plate *
-                </span>
-                <input
-                  data-testid="plate-input"
-                  className="w-full max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm uppercase placeholder:text-muted-foreground placeholder:normal-case focus:outline-none focus:ring-2 focus:ring-ring"
-                  placeholder="e.g. CBA 2421"
-                  value={plate}
-                  onChange={(e) => setPlate(e.target.value)}
-                />
-              </label>
-              {plate.trim() && (
-                <div className="mt-1 text-xs text-muted-foreground">
-                  {formatDocumentLabel(
-                    plate.trim().toUpperCase(),
-                    "INV (number assigned on issue)",
-                  )}
                 </div>
               )}
             </div>
