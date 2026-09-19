@@ -81,7 +81,7 @@ export function ExpenseModal({ open, onClose }: ExpenseModalProps) {
             className={cn(
               "flex-1 flex items-center justify-center gap-2 rounded-md py-2 text-sm font-medium transition-colors",
               type === "DEPOSIT"
-                ? "bg-success text-white shadow-sm"
+                ? "bg-success text-success-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -153,7 +153,7 @@ export function ExpenseModal({ open, onClose }: ExpenseModalProps) {
             type="submit"
             disabled={saving || !amount}
             className={cn(
-              "w-full rounded-md py-2.5 text-sm font-medium text-white transition-colors shadow-sm",
+              "w-full rounded-md py-2.5 text-sm font-medium text-primary-foreground transition-colors shadow-sm",
               type === "EXPENSE" ? "bg-primary hover:bg-primary/90" : "bg-success hover:bg-success/90",
               (!amount || saving) && "opacity-50 cursor-not-allowed",
             )}

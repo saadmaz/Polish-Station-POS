@@ -457,7 +457,7 @@ function ReceivePanel({
         <button
           type="button"
           onClick={confirm}
-          className="flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700"
+          className="flex items-center gap-1.5 rounded-md bg-success px-3 py-1.5 text-sm font-medium text-success-foreground hover:bg-success/90"
         >
           <PackageCheck className="h-4 w-4" /> Confirm Receipt & Update Stock
         </button>
@@ -617,7 +617,7 @@ function POExpandedContent({ po }: { po: PurchaseOrder }) {
           {canReceive && (
             <button
               onClick={() => setReceiving(true)}
-              className="flex items-center gap-1.5 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700"
+              className="flex items-center gap-1.5 rounded-md bg-success px-3 py-1.5 text-sm font-medium text-success-foreground hover:bg-success/90"
             >
               <PackageCheck className="h-4 w-4" /> Receive Stock
             </button>

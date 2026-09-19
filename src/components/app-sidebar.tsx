@@ -101,7 +101,7 @@ function NavLinks({
             <div className="relative shrink-0">
               <Icon className="h-5 w-5" />
               {badge !== null && collapsed && (
-                <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-500 text-[8px] font-bold text-white">
+                <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-warning text-[8px] font-bold text-white">
                   {badge > 9 ? "9+" : badge}
                 </span>
               )}
@@ -110,7 +110,7 @@ function NavLinks({
               <>
                 <span className="truncate flex-1">{label}</span>
                 {badge !== null && (
-                  <span className="ml-auto rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  <span className="ml-auto rounded-full bg-warning px-1.5 py-0.5 text-[10px] font-bold text-white">
                     {badge}
                   </span>
                 )}

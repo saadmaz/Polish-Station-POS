@@ -1306,7 +1306,7 @@ function ViewedInvoice({
               target="_blank"
               rel="noopener noreferrer"
               onClick={onRecordReview}
-              className="flex w-full items-center justify-center gap-2 rounded-md bg-green-600 py-2.5 text-sm font-medium text-white hover:bg-green-700"
+              className="flex w-full items-center justify-center gap-2 rounded-md bg-success py-2.5 text-sm font-medium text-success-foreground hover:bg-success/90"
             >
               <MessageCircle className="h-4 w-4" /> Send Review Request via WhatsApp
             </a>

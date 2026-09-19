@@ -126,7 +126,7 @@ function ProgressBar({ step }: { step: Step }) {
                 <div
                   className={cn(
                     "h-0.5 flex-1 transition-colors",
-                    done || active ? "bg-red-500" : "bg-gray-200",
+                    done || active ? "bg-primary" : "bg-gray-200",
                   )}
                 />
               )}
@@ -135,10 +135,10 @@ function ProgressBar({ step }: { step: Step }) {
                   className={cn(
                     "flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-all",
                     done
-                      ? "bg-red-500 text-white"
+                      ? "bg-primary text-primary-foreground"
                       : active
-                        ? "bg-red-500 text-white ring-4 ring-red-100"
-                        : "bg-gray-100 text-gray-400",
+                        ? "bg-primary text-primary-foreground ring-4 ring-red-100"
+                        : "bg-gray-100 text-muted-foreground",
                   )}
                 >
                   {done ? <CheckCircle2 className="h-4 w-4" /> : num}
@@ -146,7 +146,7 @@ function ProgressBar({ step }: { step: Step }) {
                 <span
                   className={cn(
                     "mt-1 text-[10px] font-medium uppercase tracking-wide",
-                    active ? "text-red-500" : done ? "text-gray-500" : "text-gray-300",
+                    active ? "text-primary" : done ? "text-gray-500" : "text-muted-foreground",
                   )}
                 >
                   {label}
@@ -156,7 +156,7 @@ function ProgressBar({ step }: { step: Step }) {
                 <div
                   className={cn(
                     "h-0.5 flex-1 transition-colors",
-                    done ? "bg-red-500" : "bg-gray-200",
+                    done ? "bg-primary" : "bg-gray-200",
                   )}
                 />
               )}
@@ -202,7 +202,7 @@ function ServiceStep({
                 >
                   {s.category}
                 </span>
-                <span className="flex items-center gap-1 text-xs text-gray-400">
+                <span className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Clock className="h-3 w-3" />
                   {fmtDur(s.durationMin)}
                 </span>
@@ -210,7 +210,7 @@ function ServiceStep({
             </div>
             <div className="shrink-0 text-right">
               <div className="font-bold text-gray-900">{fmt(s.price)}</div>
-              <ChevronRight className="ml-auto mt-1 h-4 w-4 text-gray-300 group-hover:text-red-400 transition-colors" />
+              <ChevronRight className="ml-auto mt-1 h-4 w-4 text-muted-foreground group-hover:text-red-400 transition-colors" />
             </div>
           </button>
         ))}
@@ -227,7 +227,7 @@ function DateStep({ onSelect, onBack }: { onSelect: (d: string) => void; onBack:
     <div>
       <button
         onClick={onBack}
-        className="mb-4 flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600"
+        className="mb-4 flex items-center gap-1 text-sm text-muted-foreground hover:text-gray-600"
       >
         <ChevronLeft className="h-4 w-4" /> Back
       </button>
@@ -240,11 +240,11 @@ function DateStep({ onSelect, onBack }: { onSelect: (d: string) => void; onBack:
             onClick={() => onSelect(date)}
             className="flex flex-col items-center rounded-xl border border-gray-200 bg-white p-3 transition-all hover:border-red-300 hover:shadow-sm active:scale-95"
           >
-            <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
+            <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
               {dayName}
             </span>
             <span className="text-lg font-bold leading-tight text-gray-900">{dayNum}</span>
-            <span className="text-[10px] font-medium text-gray-400">{monthName}</span>
+            <span className="text-[10px] font-medium text-muted-foreground">{monthName}</span>
             {isToday && <span className="mt-0.5 text-[9px] font-semibold text-red-500">TODAY</span>}
           </button>
         ))}
@@ -294,7 +294,7 @@ function TimeStep({
     <div>
       <button
         onClick={onBack}
-        className="mb-4 flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600"
+        className="mb-4 flex items-center gap-1 text-sm text-muted-foreground hover:text-gray-600"
       >
         <ChevronLeft className="h-4 w-4" /> Back
       </button>
@@ -303,11 +303,11 @@ function TimeStep({
         Available slots on <strong>{displayDate}</strong>.
       </p>
       {slots.length === 0 ? (
-        <div className="rounded-xl border border-gray-200 bg-gray-50 p-8 text-center text-sm text-gray-400">
+        <div className="rounded-xl border border-gray-200 bg-gray-50 p-8 text-center text-sm text-muted-foreground">
           No available slots for this service on the selected date.
         </div>
       ) : fullSlots === null ? (
-        <div className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 p-8 text-sm text-gray-400">
+        <div className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 p-8 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" /> Checking availability…
         </div>
       ) : (
@@ -375,7 +375,7 @@ function DetailsStep({
     <div>
       <button
         onClick={onBack}
-        className="mb-4 flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600"
+        className="mb-4 flex items-center gap-1 text-sm text-muted-foreground hover:text-gray-600"
       >
         <ChevronLeft className="h-4 w-4" /> Back
       </button>
@@ -385,7 +385,7 @@ function DetailsStep({
       {/* Booking summary */}
       <div className="mb-6 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm">
         <div className="font-semibold text-red-700">{form.service?.name}</div>
-        <div className="text-red-400">
+        <div className="text-primary">
           {dateStr} &bull; {form.time && fmtTime(form.time)} &bull;{" "}
           {form.service && fmt(form.service.price)}
         </div>
@@ -394,7 +394,7 @@ function DetailsStep({
       <div className="space-y-4">
         <div>
           <label htmlFor="bk-name" className="mb-1.5 block text-sm font-medium text-gray-700">
-            Full Name <span className="text-red-500">*</span>
+            Full Name <span className="text-primary">*</span>
           </label>
           <input
             id="bk-name"
@@ -413,14 +413,14 @@ function DetailsStep({
             )}
           />
           {errors.name && (
-            <p id="bk-name-error" className="mt-1 text-xs text-red-500">
+            <p id="bk-name-error" className="mt-1 text-xs text-primary">
               {errors.name}
             </p>
           )}
         </div>
         <div>
           <label htmlFor="bk-phone" className="mb-1.5 block text-sm font-medium text-gray-700">
-            Phone Number <span className="text-red-500">*</span>
+            Phone Number <span className="text-primary">*</span>
           </label>
           <input
             id="bk-phone"
@@ -439,7 +439,7 @@ function DetailsStep({
             )}
           />
           {errors.phone && (
-            <p id="bk-phone-error" className="mt-1 text-xs text-red-500">
+            <p id="bk-phone-error" className="mt-1 text-xs text-primary">
               {errors.phone}
             </p>
           )}
@@ -501,12 +501,12 @@ function DetailsStep({
         onClick={() => {
           if (validate()) onSubmit();
         }}
-        className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-red-500 py-3 font-semibold text-white transition-all hover:bg-red-600 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-semibold text-primary-foreground transition-all hover:bg-primary/90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
       >
         {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
         {submitting ? "Booking…" : "Confirm Booking"}
       </button>
-      <p className="mt-3 text-center text-xs text-gray-400">
+      <p className="mt-3 text-center text-xs text-muted-foreground">
         Our team will confirm your appointment via WhatsApp or phone.
       </p>
     </div>
@@ -604,7 +604,7 @@ function ConfirmationStep({ bookingId, form }: { bookingId: string; form: FormSt
         Book Another Appointment
       </button>
 
-      <p className="mt-8 text-xs text-gray-300">Powered by Polish Station OS</p>
+      <p className="mt-8 text-xs text-muted-foreground">Powered by Polish Station OS</p>
     </div>
   );
 }
@@ -690,10 +690,10 @@ function BookPage() {
               className="h-9 w-9 shrink-0 object-contain"
             />
             <div className="leading-tight">
-              <div className="text-[10px] font-bold tracking-[0.18em] text-gray-400">POLISH</div>
+              <div className="text-[10px] font-bold tracking-[0.18em] text-muted-foreground">POLISH</div>
               <div className="-mt-0.5 text-sm font-bold text-gray-900">STATION</div>
             </div>
-            <span className="ml-auto text-xs text-gray-400">Online Booking</span>
+            <span className="ml-auto text-xs text-muted-foreground">Online Booking</span>
           </div>
         </header>
       )}
@@ -707,7 +707,7 @@ function BookPage() {
           </div>
         )}
         {step === 1 && !servicesError && !services && (
-          <div className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 p-8 text-sm text-gray-400">
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-gray-50 p-8 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading services…
           </div>
         )}

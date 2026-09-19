@@ -87,14 +87,23 @@ function withActionTimeout<T>(p: Promise<T>): Promise<T> {
   ]);
 }
 
+// Swatches 2-4 used to be literal copies of the (pre-2026-09-20) --info/
+// --success/--warning token values, which meant they inherited those
+// tokens' contrast failures as white-on-swatch avatar backgrounds
+// (3.87:1 / 3.02:1 / 2.04:1 — see UI_UX_AUDIT.md "Color Contrast"). Now
+// wired to the tokens themselves so future token adjustments propagate
+// here instead of silently drifting back out of sync.
+// Swatches 5-7 (magenta/blue-purple/teal) weren't part of that audit
+// finding but turned out to have the same white-on-swatch failure
+// (3.44:1 / 4.09:1 / 4.17:1) — darkened the same way, same hue/chroma.
 const PALETTE = [
   "oklch(0.55 0.21 27)",
-  "oklch(0.60 0.13 240)",
-  "oklch(0.65 0.16 145)",
-  "oklch(0.78 0.15 75)",
-  "oklch(0.65 0.14 320)",
-  "oklch(0.60 0.15 280)",
-  "oklch(0.55 0.15 190)",
+  "var(--info)",
+  "var(--success)",
+  "var(--warning)",
+  "oklch(0.58 0.14 320)",
+  "oklch(0.57 0.15 280)",
+  "oklch(0.53 0.15 190)",
   "oklch(0.50 0.18 30)",
 ];
 

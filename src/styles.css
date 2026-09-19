@@ -104,19 +104,25 @@
   --input: oklch(0.93 0.005 270);
   --ring: oklch(0.55 0.21 27);
 
-  /* Status tokens */
-  --success: oklch(0.65 0.16 145);
+  /* Status tokens
+     Darkened 2026-09-20 for WCAG 2.1 AA (4.5:1 normal text) — the original
+     values only passed as dark-text-on-solid-chip backgrounds; used as text
+     directly (StatusChip translucent variants, "Paid"/"Issued" stamps, plain
+     status copy) they ranged 2.04:1-3.87:1. Same hue/chroma, lightness only,
+     to stay in the same success/warning/info hue family. See
+     UI_UX_AUDIT.md "Color Contrast" for the full before/after. */
+  --success: oklch(0.47 0.16 145);
   --success-foreground: oklch(0.99 0 0);
-  --warning: oklch(0.78 0.15 75);
+  --warning: oklch(0.54 0.15 75);
   --warning-foreground: oklch(0.22 0.01 270);
-  --info: oklch(0.6 0.13 240);
+  --info: oklch(0.5 0.13 240);
   --info-foreground: oklch(0.99 0 0);
 
   --chart-1: oklch(0.55 0.21 27);
   --chart-2: oklch(0.24 0.008 270);
-  --chart-3: oklch(0.65 0.16 145);
-  --chart-4: oklch(0.78 0.15 75);
-  --chart-5: oklch(0.6 0.13 240);
+  --chart-3: oklch(0.47 0.16 145);
+  --chart-4: oklch(0.54 0.15 75);
+  --chart-5: oklch(0.5 0.13 240);
 
   /* Sidebar, charcoal surface with red accent */
   --sidebar: oklch(0.22 0.008 270);
@@ -156,6 +162,22 @@
   --border: oklch(1 0 0 / 8%);
   --input: oklch(1 0 0 / 12%);
   --ring: oklch(0.62 0.22 27);
+
+  /* Status tokens, added 2026-09-20: previously undefined here, so dark
+     mode silently inherited the light-mode values above — harmless while
+     .dark is unreachable (no toggle wires it up anywhere in src/), but the
+     2026-09-20 light-mode darkening would have made an eventual dark-mode
+     rollout read as near-illegible dark-on-dark. These are lighter
+     (same hue/chroma) so they read against the dark surface instead. */
+  --success: oklch(0.6 0.16 145);
+  --success-foreground: oklch(0.99 0 0);
+  --warning: oklch(0.62 0.15 75);
+  --warning-foreground: oklch(0.22 0.01 270);
+  --info: oklch(0.61 0.13 240);
+  --info-foreground: oklch(0.99 0 0);
+  --chart-3: oklch(0.6 0.16 145);
+  --chart-4: oklch(0.62 0.15 75);
+  --chart-5: oklch(0.61 0.13 240);
 }
 
 @layer base {
