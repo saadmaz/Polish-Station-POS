@@ -669,6 +669,42 @@ export function computeInvoice(inv: Invoice): ComputedInvoice {
   };
 }
 
+export interface DraftInvoiceInput {
+  lines: InvoiceLine[];
+  discount?: InvoiceDiscount;
+  coupon?: Coupon;
+  pointsToRedeem?: number;
+  tip: number;
+}
+
+export interface DraftInvoiceTotal {
+  subtotal: number;
+  discountAmount: number;
+  couponDiscount: number;
+  pointsValue: number;
+  tip: number;
+  total: number;
+}
+
+/**
+ * Same formula computeInvoice's discount/points math is built on, applied to
+ * a cart that hasn't been saved as an Invoice yet (so there's no stored
+ * subtotal/total to trust -- see computeInvoice's module comment on why it
+ * trusts stored fields instead of this kind of from-lines recomputation).
+ * The checkout screen calls this instead of inlining its own reduce, so
+ * there is exactly one place the subtotal-to-total formula is written.
+ */
+export function computeDraftInvoiceTotal(input: DraftInvoiceInput): DraftInvoiceTotal {
+  const subtotal = input.lines.reduce((s, l) => s + l.unitPrice * l.qty - l.discount, 0);
+  const discountAmount = calcInvoiceDiscount(input.discount, subtotal);
+  const couponDiscount = input.coupon ? calcCouponDiscount(input.coupon, subtotal) : 0;
+  const afterDiscounts = Math.max(0, subtotal - discountAmount - couponDiscount);
+  const tip = input.tip;
+  const pointsValue = calcPointsValue(input.pointsToRedeem ?? 0, afterDiscounts + tip);
+  const total = Math.max(0, afterDiscounts + tip - pointsValue);
+  return { subtotal, discountAmount, couponDiscount, pointsValue, tip, total };
+}
+
 export interface InventoryItem {
   id: string;
   name: string;

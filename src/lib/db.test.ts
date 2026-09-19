@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { sumPaymentsByMethod, computeInvoice, type Invoice, type PaymentRecord } from "./db";
+import {
+  sumPaymentsByMethod,
+  computeInvoice,
+  computeDraftInvoiceTotal,
+  type Invoice,
+  type PaymentRecord,
+  type Coupon,
+} from "./db";
 
 function invoiceWithMethod(id: string, total: number, method: Invoice["method"]): Invoice {
   return {
@@ -200,5 +207,72 @@ describe("computeInvoice", () => {
       baseInvoice({ status: "Refunded", total: 10000, payments: [payment(10000)] }),
     );
     expect(refunded.status).toBe("Refunded");
+  });
+});
+
+describe("computeDraftInvoiceTotal", () => {
+  const line = (unitPrice: number, qty = 1, discount = 0) => ({
+    name: "Service",
+    qty,
+    unitPrice,
+    discount,
+  });
+
+  it("totals a plain cart with no discount, coupon, tip, or points", () => {
+    const result = computeDraftInvoiceTotal({ lines: [line(10000)], tip: 0 });
+    expect(result).toEqual({
+      subtotal: 10000,
+      discountAmount: 0,
+      couponDiscount: 0,
+      pointsValue: 0,
+      tip: 0,
+      total: 10000,
+    });
+  });
+
+  it("stacks an invoice-level discount and a coupon before adding tip", () => {
+    const coupon: Coupon = {
+      id: "c1",
+      code: "SAVE10",
+      type: "percent",
+      value: 10,
+      active: true,
+      expiresAt: null,
+      maxRedemptions: null,
+      redeemedCount: 0,
+    } as Coupon;
+
+    const result = computeDraftInvoiceTotal({
+      lines: [line(10000)],
+      discount: { type: "fixed", value: 500 },
+      coupon,
+      tip: 300,
+    });
+
+    // subtotal 10000 - 500 (invoice discount) - 1000 (10% coupon) + 300 tip
+    expect(result.discountAmount).toBe(500);
+    expect(result.couponDiscount).toBe(1000);
+    expect(result.total).toBe(8800);
+  });
+
+  it("caps points redemption at what's left owed after discounts and tip", () => {
+    const result = computeDraftInvoiceTotal({
+      lines: [line(1000)],
+      tip: 0,
+      pointsToRedeem: 999999,
+    });
+
+    expect(result.pointsValue).toBe(1000);
+    expect(result.total).toBe(0);
+  });
+
+  it("never goes negative when discounts exceed the subtotal", () => {
+    const result = computeDraftInvoiceTotal({
+      lines: [line(1000)],
+      discount: { type: "fixed", value: 999999 },
+      tip: 0,
+    });
+
+    expect(result.total).toBe(0);
   });
 });
