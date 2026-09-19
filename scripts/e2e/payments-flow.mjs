@@ -3,11 +3,33 @@
 // Drives the full checkout → collect → refund cycle through the browser,
 // verifying both the UI and the underlying Firestore invoice document at
 // each step.
+//
+// Updated for the invoice-document POS rewrite (single-column document
+// layout; Recent Invoices moved into a Sheet drawer; the old <select> +
+// "Custom" button line-item control replaced by a combined search/custom
+// combobox; manual billing now behind a "Bill without saving a customer"
+// toggle instead of an always-visible field). Uses data-testid hooks added
+// alongside that rewrite rather than fragile text/structure selectors.
 import { chromium } from "playwright";
 import { BASE_URL, adminDb, check, assert, summarize, loginAs } from "./_shared.mjs";
 import { TEST_STAFF } from "../seed-emulator.mjs";
 
 console.log("Payments flow (split tender / partial collect / refund):");
+
+/** refundInvoicePayment (store.tsx) fires its batch.commit() without the UI
+ *  awaiting it -- the "refunded on" toast shows as soon as the client kicks
+ *  the write off, not once the emulator has actually applied it. Poll
+ *  briefly rather than reading once immediately after the toast. */
+async function waitForInvoiceField(id, predicate, timeoutMs = 5000) {
+  const start = Date.now();
+  let last;
+  while (Date.now() - start < timeoutMs) {
+    last = (await adminDb.collection("invoices").doc(id).get()).data();
+    if (predicate(last)) return last;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  return last;
+}
 
 const browser = await chromium.launch();
 const page = await (await browser.newContext()).newPage();
@@ -31,11 +53,14 @@ await check("POS page loads", async () => {
 });
 
 await check("manual billing: enter customer + custom line item", async () => {
-  await page.fill('input[placeholder="Or type customer name for manual billing…"]', customerName);
-  // Exact match: the top bar's "Search customers, bookings, invoices…"
-  // button contains "custom" as a substring and would match a loose
-  // has-text("Custom") selector.
-  await page.getByRole("button", { name: "Custom", exact: true }).click();
+  await page.getByTestId("manual-billing-toggle").click();
+  await page.getByTestId("manual-billing-input").fill(customerName);
+
+  await page.getByTestId("add-line-trigger").click();
+  const comboInput = page.locator('input[placeholder="Search services or type a custom line…"]');
+  await comboInput.fill("E2E Custom Service");
+  await page.getByTestId("add-custom-line").click();
+
   const row = page.locator("table tbody tr").first();
   await row.locator("input").nth(2).fill(String(unitPrice)); // unit price column
 });
@@ -43,23 +68,24 @@ await check("manual billing: enter customer + custom line item", async () => {
 let invoiceId;
 
 await check("split tender: partial Cash payment marks invoice Partially Paid", async () => {
-  const total = unitPrice; // subtotal, no tax, no tip
+  const total = unitPrice; // subtotal, no discount, no tip
   const partial = Math.round(total / 2);
 
-  await page.click('aside button:has-text("Cash")');
-  const amountInput = page.locator("aside input[type=number]").first();
-  await amountInput.fill(String(partial));
+  // TenderLineEditor's buttons render "+ Cash" (an icon plus the literal
+  // "+ " prefix), so this is a substring match, not :text-is().
+  const payment = page.getByTestId("checkout-payment");
+  await payment.locator('button:has-text("Cash")').click();
+  await payment.locator("input[type=number]").first().fill(String(partial));
 
-  await page.click('aside button:has-text("Collect LKR")');
+  await page.getByTestId("issue-invoice-button").click();
   await page.waitForSelector("text=Partial payment recorded", { timeout: 10000 });
 
-  await page.waitForSelector(`table:has-text("${customerName}")`, { timeout: 10000 });
-  const invoiceRow = page.locator("tr", { hasText: customerName }).first();
-  await invoiceRow.waitFor({ timeout: 10000 });
-  assert(
-    (await invoiceRow.locator("text=Partially Paid").count()) > 0,
-    "expected Partially Paid status chip on the new invoice row",
-  );
+  // The just-issued invoice flips the page into document (view) mode -- its
+  // own status stamp is the assertion, not a Recent Invoices row. The stamp
+  // is only visually uppercased via CSS (text-transform), so match the
+  // actual DOM text case-sensitively and exactly -- ":text-is()", not
+  // "text=", so "Paid" can't later false-match inside "Partially Paid".
+  await page.waitForSelector(':text-is("Partially Paid")', { timeout: 10000 });
 
   const snap = await adminDb.collection("invoices").where("customerName", "==", customerName).get();
   assert(snap.size === 1, `expected exactly 1 invoice for ${customerName}, found ${snap.size}`);
@@ -71,22 +97,17 @@ await check("split tender: partial Cash payment marks invoice Partially Paid", a
 });
 
 await check("Collect Payment completes the balance and marks invoice Paid", async () => {
-  const invoiceRow = page.locator("tr", { hasText: customerName }).first();
-  await invoiceRow.locator('button:has-text("Collect")').click();
-  await page.waitForSelector("text=Collect Payment", { timeout: 10000 });
+  // Collect from the document view's own action bar (still showing the
+  // invoice just issued above), not the drawer -- exercises the same
+  // store.recordInvoicePayment path either way.
+  await page.locator('button:has-text("Collect Payment")').click();
+  await page.waitForSelector("text=Collect Payment ·", { timeout: 10000 });
 
-  await page.click('.fixed button:has-text("Cash")');
+  await page.locator(".fixed").locator('button:has-text("Cash")').click();
   await page.click('button:has-text("Record Payment")');
   await page.waitForSelector("text=Payment recorded", { timeout: 10000 });
 
-  await page.waitForFunction(
-    (name) => {
-      const row = [...document.querySelectorAll("tr")].find((r) => r.textContent?.includes(name));
-      return row?.textContent?.includes("Paid") && !row.textContent?.includes("Partially");
-    },
-    customerName,
-    { timeout: 10000 },
-  );
+  await page.waitForSelector(':text-is("Paid")', { timeout: 10000 });
 
   const doc = await adminDb.collection("invoices").doc(invoiceId).get();
   const inv = doc.data();
@@ -99,15 +120,18 @@ await check("Refund updates invoice status and customer spend", async () => {
   const invBefore = before.data();
   const customerId = invBefore.customerId;
 
-  const invoiceRow = page.locator("tr", { hasText: customerName }).first();
-  await invoiceRow.locator('button:has-text("Refund")').click();
+  await page.locator('button:has-text("Refund")').first().click();
   await page.waitForSelector("text=Refund ·", { timeout: 10000 });
   await page.fill('input[placeholder*="unhappy"]', "E2E test refund");
   await page.click('button:has-text("Refund LKR")');
+  // A confirmation step guards the actual refund (audit finding P4 --
+  // irreversible money leaving the till) -- without confirming it, the
+  // AlertDialog's overlay is left open, blocking every click after it.
+  await page.waitForSelector("text=This cannot be undone", { timeout: 10000 });
+  await page.click('button:has-text("Confirm")');
   await page.waitForSelector("text=refunded on", { timeout: 10000 });
 
-  const after = await adminDb.collection("invoices").doc(invoiceId).get();
-  const invAfter = after.data();
+  const invAfter = await waitForInvoiceField(invoiceId, (d) => d?.status === "Refunded");
   assert(invAfter.status === "Refunded", `expected status Refunded, got ${invAfter.status}`);
   assert(invAfter.refunds?.length === 1, "expected exactly 1 refund record");
   assert(invAfter.refunds[0].amount === invBefore.total, "full refund should equal invoice total");
@@ -118,6 +142,17 @@ await check("Refund updates invoice status and customer spend", async () => {
     assert(custDoc.exists, "customer should still exist after refund");
     assert(custBefore.spend >= 0, "customer spend should never go negative");
   }
+});
+
+await check("Recent Invoices drawer shows the same invoice as Refunded", async () => {
+  await page.getByTestId("recent-invoices-trigger").click();
+  const drawer = page.getByTestId("recent-invoices-drawer");
+  await drawer.waitFor({ timeout: 10000 });
+  await drawer.getByText(customerName).waitFor({ timeout: 10000 });
+  assert(
+    (await drawer.locator(':text-is("Refunded")').count()) > 0,
+    "expected Refunded status in the drawer row",
+  );
 });
 
 await check("no unexpected console errors during the flow", async () => {

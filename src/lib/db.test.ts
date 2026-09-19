@@ -144,7 +144,12 @@ describe("computeInvoice", () => {
 
   it("marks Paid and clamps balance to 0 on a single over-tender", () => {
     const result = computeInvoice(
-      baseInvoice({ total: 5000, subtotal: 5000, lines: [{ name: "x", qty: 1, unitPrice: 5000, discount: 0 }], payments: [payment(6000)] }),
+      baseInvoice({
+        total: 5000,
+        subtotal: 5000,
+        lines: [{ name: "x", qty: 1, unitPrice: 5000, discount: 0 }],
+        payments: [payment(6000)],
+      }),
     );
 
     expect(result.amountPaid).toBe(6000);

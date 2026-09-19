@@ -5,12 +5,19 @@
 // document and the eventual print output can't structurally drift apart the
 // way a second, hand-copied layout would.
 import { useState } from "react";
-import { Plus, Trash2, Banknote, CreditCard, ArrowRightLeft } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/currency";
 import { formatDate, formatDateTime } from "@/lib/date-format";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import type {
   BusinessInfo,
   InvoiceLine,
@@ -233,6 +240,7 @@ export function AddLineCombobox({
       <PopoverTrigger asChild>
         <button
           type="button"
+          data-testid="add-line-trigger"
           className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
         >
           <Plus className="h-3.5 w-3.5" /> Add line
@@ -256,6 +264,7 @@ export function AddLineCombobox({
                 {query.trim() ? (
                   <button
                     type="button"
+                    data-testid="add-custom-line"
                     onClick={() => pick(() => onAddCustom(query.trim()))}
                     className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-accent"
                   >
@@ -286,7 +295,8 @@ export function AddLineCombobox({
                   onSelect={() => pick(() => onAddCustom(query.trim()))}
                   className="cursor-pointer text-muted-foreground"
                 >
-                  <Plus className="mr-2 h-3.5 w-3.5 shrink-0" /> Add "{query.trim()}" as a custom line
+                  <Plus className="mr-2 h-3.5 w-3.5 shrink-0" /> Add "{query.trim()}" as a custom
+                  line
                 </CommandItem>
               )}
             </CommandGroup>
@@ -324,7 +334,10 @@ export function LineItemsTable({
         <tbody className="divide-y divide-border">
           {lines.length === 0 && (
             <tr>
-              <td colSpan={editable ? 6 : 5} className="px-2 py-6 text-center text-sm text-muted-foreground">
+              <td
+                colSpan={editable ? 6 : 5}
+                className="px-2 py-6 text-center text-sm text-muted-foreground"
+              >
                 {editable ? "No lines yet — add a service or a custom line above" : "No line items"}
               </td>
             </tr>
@@ -408,116 +421,11 @@ export function LineItemsTable({
   );
 }
 
-// ─── Payments panel ─────────────────────────────────────────────────────
-
-export interface TenderLine {
-  key: number;
-  method: "Cash" | "Card" | "Transfer";
-  amount: number;
-  reference: string;
-}
-
-let tenderKeyCounter = 0;
-
-const METHOD_ICONS = { Cash: Banknote, Card: CreditCard, Transfer: ArrowRightLeft } as const;
-
-/** The tender-entry control: "+ Cash / + Card / + Transfer" buttons that
- *  each add an editable amount/reference row. Used both pre-save (the
- *  payments about to be recorded on Issue) and to collect more against an
- *  already-issued invoice. */
-export function TenderEditor({
-  lines,
-  onChange,
-  remaining,
-}: {
-  lines: TenderLine[];
-  onChange: (lines: TenderLine[]) => void;
-  remaining: number;
-}) {
-  const tendered = lines.reduce((s, l) => s + l.amount, 0);
-  const stillOwed = remaining - tendered;
-
-  function addLine(method: TenderLine["method"]) {
-    onChange([...lines, { key: ++tenderKeyCounter, method, amount: Math.max(0, stillOwed), reference: "" }]);
-  }
-  function updateLine(key: number, field: keyof Omit<TenderLine, "key">, value: string | number) {
-    onChange(lines.map((l) => (l.key === key ? { ...l, [field]: value } : l)));
-  }
-  function removeLine(key: number) {
-    onChange(lines.filter((l) => l.key !== key));
-  }
-
-  return (
-    <div>
-      <div className="grid grid-cols-3 gap-2">
-        {(["Cash", "Card", "Transfer"] as const).map((m) => {
-          const Icon = METHOD_ICONS[m];
-          return (
-            <button
-              key={m}
-              type="button"
-              onClick={() => addLine(m)}
-              className="flex min-h-11 flex-col items-center gap-1 rounded-md border border-input py-2.5 text-xs font-medium hover:bg-accent"
-            >
-              <Icon className="h-4 w-4" />+ {m}
-            </button>
-          );
-        })}
-      </div>
-      {lines.length > 0 && (
-        <div className="mt-3 space-y-2">
-          {lines.map((l) => (
-            <div key={l.key} className="flex flex-wrap items-center gap-2">
-              <select
-                value={l.method}
-                onChange={(e) => updateLine(l.key, "method", e.target.value)}
-                className="min-h-9 rounded-md border border-input bg-background px-2 py-1.5 text-xs focus:outline-none"
-              >
-                <option value="Cash">Cash</option>
-                <option value="Card">Card</option>
-                <option value="Transfer">Transfer</option>
-              </select>
-              <input
-                type="number"
-                min={0}
-                value={l.amount}
-                onChange={(e) => {
-                  const n = Number(e.target.value);
-                  updateLine(l.key, "amount", Number.isFinite(n) ? Math.max(0, n) : 0);
-                }}
-                className="min-h-9 w-28 flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-right font-mono text-sm tabular-nums focus:outline-none sm:flex-none"
-              />
-              <input
-                type="text"
-                placeholder="Ref (optional)"
-                value={l.reference}
-                onChange={(e) => updateLine(l.key, "reference", e.target.value)}
-                className="min-h-9 min-w-24 flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs focus:outline-none"
-              />
-              <button
-                type="button"
-                onClick={() => removeLine(l.key)}
-                aria-label="Remove payment line"
-                className="shrink-0 rounded-md p-2 text-muted-foreground hover:text-primary"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-      <div
-        className={cn(
-          "mt-3 flex justify-between rounded-md px-3 py-2 text-xs font-medium",
-          remaining > 0 && stillOwed <= 0 ? "bg-success/10 text-success" : "bg-muted/50",
-        )}
-      >
-        <span>Remaining to tender</span>
-        <span className="font-mono tabular-nums">{formatCurrency(Math.max(0, stillOwed))}</span>
-      </div>
-    </div>
-  );
-}
+// ─── Payments history ─────────────────────────────────────────────────────
+// The editable tender-entry control (+ Cash/+ Card/+ Transfer) already
+// exists as TenderLineEditor in payment-modal.tsx, shared today by the POS
+// checkout panel and the Collect Payment dialog -- reused as-is rather than
+// duplicated here.
 
 /** Read-only list of payments already recorded on a saved invoice, plus
  *  refunds if any -- the document's own record of what actually happened,
@@ -555,4 +463,3 @@ export function PaymentsHistory({
     </div>
   );
 }
-
