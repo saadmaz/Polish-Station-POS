@@ -19,11 +19,20 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
-import { formatDate } from "@/lib/date-format";
+import { formatDate, formatDateTime } from "@/lib/date-format";
 import type { Job, JobStatus } from "@/lib/job";
-import type { Lead } from "@/lib/db";
+import { formatDocumentLabel, type Lead } from "@/lib/db";
 import { latestNonSupersededInspection, type Inspection } from "@/lib/inspection";
-import { ClipboardCheck, Camera, CheckCircle2, Plus, Car, FileText } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { ClipboardCheck, Camera, CheckCircle2, Plus, Car, FileText, History } from "lucide-react";
+
+/** "CBA 2421 - INSPECTION 3" -- same plate-prefixed convention as invoices/
+ *  quotes (see db.ts's formatDocumentLabel). Falls back to the job ref for
+ *  an inspection created before Inspection.number existed. */
+function inspectionLabel(inspection: Inspection): string {
+  const n = inspection.number?.replace(/^INS-/, "") ?? inspection.jobRef;
+  return formatDocumentLabel(inspection.vehicleSnapshot.plate, `INSPECTION ${n}`);
+}
 
 export const Route = createFileRoute("/_app/inspection")({
   head: () => ({ meta: [{ title: "Inspection · Polish Station OS" }] }),
@@ -165,6 +174,37 @@ function InspectionJobCard({
   );
 }
 
+// A completed inspection's row, shared by the "fill the empty state" inline
+// list and the full All Reports drawer.
+function InspectionReportRow({ inspection }: { inspection: Inspection }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+      <div className="min-w-0">
+        <div className="font-mono text-xs text-muted-foreground">{inspectionLabel(inspection)}</div>
+        <div className="truncate text-sm font-medium">{inspection.customerSnapshot.name}</div>
+        <div className="truncate text-xs text-muted-foreground">
+          {[inspection.vehicleSnapshot.make, inspection.vehicleSnapshot.model]
+            .filter(Boolean)
+            .join(" ")}{" "}
+          · {formatDateTime(inspection.updatedAt)}
+        </div>
+      </div>
+      {inspection.documents?.report ? (
+        <a
+          href={inspection.documents.report.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
+        >
+          <FileText className="h-3.5 w-3.5" /> Report
+        </a>
+      ) : (
+        <span className="shrink-0 text-xs text-muted-foreground">No report file</span>
+      )}
+    </div>
+  );
+}
+
 function InspectionPage() {
   const { jobs, leads, inspections, startInspection } = useStore();
   // Only the id — never the Job/Inspection objects themselves. Those come
@@ -182,6 +222,7 @@ function InspectionPage() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [convertLead, setConvertLead] = useState<Lead | null>(null);
+  const [reportsOpen, setReportsOpen] = useState(false);
 
   const eligibleJobs = jobs
     .filter((j) => ELIGIBLE_STATUSES.includes(j.status))
@@ -189,6 +230,14 @@ function InspectionPage() {
 
   const sheetJob = sheetJobId ? (jobs.find((j) => j.id === sheetJobId) ?? null) : null;
   const sheetInspection = sheetJob ? latestNonSupersededInspection(inspections, sheetJob.id) : null;
+
+  // Every completed inspection, most recent first -- superseded ones excluded
+  // (an outdated re-inspection, not something anyone wants to browse to).
+  // Denormalized vehicleSnapshot/customerSnapshot on the Inspection itself
+  // means this needs no join back to Job.
+  const completedInspections = inspections
+    .filter((i) => i.status === "signed")
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
   async function handleStartOrContinue(job: Job) {
     const existing = latestNonSupersededInspection(inspections, job.id);
@@ -280,16 +329,43 @@ function InspectionPage() {
       <PageHeader
         title="Inspection"
         actions={
-          <button
-            type="button"
-            onClick={() => setPickerOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-red hover:bg-primary/90"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            New Inspection
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => setReportsOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
+            >
+              <History className="h-3.5 w-3.5" />
+              All Inspection Reports
+            </button>
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-red hover:bg-primary/90"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New Inspection
+            </button>
+          </>
         }
       />
+
+      <Sheet open={reportsOpen} onOpenChange={setReportsOpen}>
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
+          <SheetHeader>
+            <SheetTitle>All Inspection Reports</SheetTitle>
+          </SheetHeader>
+          <div className="mt-4 space-y-2">
+            {completedInspections.length === 0 ? (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                No completed inspections yet.
+              </div>
+            ) : (
+              completedInspections.map((i) => <InspectionReportRow key={i.id} inspection={i} />)
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <CommandDialog open={pickerOpen} onOpenChange={setPickerOpen}>
         <CommandInput
@@ -381,9 +457,32 @@ function InspectionPage() {
       )}
 
       {eligibleJobs.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-card py-16 text-center text-muted-foreground">
-          <ClipboardCheck className="h-8 w-8" />
-          <p className="text-sm">No vehicles currently checked in for inspection.</p>
+        <div className="space-y-6">
+          <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-card py-10 text-center text-muted-foreground">
+            <ClipboardCheck className="h-8 w-8" />
+            <p className="text-sm">No vehicles currently checked in for inspection.</p>
+          </div>
+          {completedInspections.length > 0 && (
+            <div>
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="font-display text-sm font-bold uppercase tracking-wider text-muted-foreground">
+                  Recent Inspection Reports
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setReportsOpen(true)}
+                  className="text-xs font-medium text-primary hover:underline"
+                >
+                  View all
+                </button>
+              </div>
+              <div className="space-y-2">
+                {completedInspections.slice(0, 6).map((i) => (
+                  <InspectionReportRow key={i.id} inspection={i} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <>
