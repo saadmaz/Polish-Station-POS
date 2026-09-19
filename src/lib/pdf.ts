@@ -10,7 +10,13 @@
 import { jsPDF } from "jspdf";
 import { ref as storageRef, uploadBytes, getDownloadURL, getBytes } from "firebase/storage";
 import type { Invoice, InvoiceLine, PurchaseOrder } from "./db";
-import { getPayments, getAmountRefunded, getBusinessInfo, computeInvoice } from "./db";
+import {
+  getPayments,
+  getAmountRefunded,
+  getBusinessInfo,
+  computeInvoice,
+  formatDocumentLabel,
+} from "./db";
 import { formatCurrency } from "./currency";
 import { formatDate, formatDateTimeInColombo } from "./date-format";
 import { LOGO_PNG_BASE64 } from "./logo-asset";
@@ -641,9 +647,13 @@ function buildDoc(opts: DocOptions): jsPDF {
 
 export function downloadInvoicePDF(invoice: Invoice) {
   const computed = computeInvoice(invoice);
+  // "CBA 2421 - INV 2091" -- the plate-prefixed label a person sees, built
+  // from the existing "INV-2091" id without changing its shape (that id is
+  // still the real Firestore document id everywhere else).
+  const label = formatDocumentLabel(invoice.plate, `INV ${invoice.id.replace(/^INV-/, "")}`);
   const doc = buildDoc({
     docType: "INVOICE",
-    docId: invoice.id,
+    docId: label,
     docDate: invoice.createdAt,
     customerName: invoice.customerName,
     phone: invoice.phone,
@@ -669,7 +679,7 @@ export function downloadInvoicePDF(invoice: Invoice) {
     notes: invoice.notes,
     terms: invoice.terms,
   });
-  doc.save(`${invoice.id}.pdf`);
+  doc.save(`${label}.pdf`);
 }
 
 export function downloadPOPDF(po: PurchaseOrder) {
@@ -1695,11 +1705,21 @@ export async function buildInspectionReportDoc(
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);
   doc.setTextColor(255, 220, 220);
-  doc.text(`Job:  ${inspection.jobRef}`, MR, 23, { align: "right" });
-  doc.text(`Inspected:  ${formatDateTimeInColombo(inspection.inspectedAt)}`, MR, 28.5, {
+  // "CBA 2421 - INSPECTION 5" -- display/filename only, built from the new
+  // Inspection.number (see the module note there); `id` itself, used for
+  // routing and the Storage path below, is untouched.
+  const label = inspection.number
+    ? formatDocumentLabel(
+        inspection.vehicleSnapshot.plate,
+        `INSPECTION ${inspection.number.replace(/^INS-/, "")}`,
+      )
+    : null;
+  if (label) doc.text(label, MR, 23, { align: "right" });
+  doc.text(`Job:  ${inspection.jobRef}`, MR, 28, { align: "right" });
+  doc.text(`Inspected:  ${formatDateTimeInColombo(inspection.inspectedAt)}`, MR, 33, {
     align: "right",
   });
-  doc.text(`Inspector:  ${inspection.inspectedByName}`, MR, 34, { align: "right" });
+  doc.text(`Inspector:  ${inspection.inspectedByName}`, MR, 38, { align: "right" });
 
   y = 52;
 

@@ -3,6 +3,7 @@ import {
   sumPaymentsByMethod,
   computeInvoice,
   computeDraftInvoiceTotal,
+  formatDocumentLabel,
   type Invoice,
   type PaymentRecord,
   type Coupon,
@@ -279,5 +280,17 @@ describe("computeDraftInvoiceTotal", () => {
     });
 
     expect(result.total).toBe(0);
+  });
+});
+
+describe("formatDocumentLabel", () => {
+  it("prefixes the plate ahead of the document label", () => {
+    expect(formatDocumentLabel("CBA 2421", "INV 2091")).toBe("CBA 2421 - INV 2091");
+  });
+
+  it("falls back to the bare label when there's no plate", () => {
+    expect(formatDocumentLabel(undefined, "INV 2091")).toBe("INV 2091");
+    expect(formatDocumentLabel(null, "INV 2091")).toBe("INV 2091");
+    expect(formatDocumentLabel("", "INV 2091")).toBe("INV 2091");
   });
 });

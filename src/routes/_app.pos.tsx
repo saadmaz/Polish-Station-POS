@@ -27,7 +27,7 @@ import {
   ChevronLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Invoice, InvoiceDiscount, Coupon } from "@/lib/db";
+import type { Invoice, InvoiceDiscount, Coupon, Customer } from "@/lib/db";
 import {
   getPayments,
   getAmountPaid,
@@ -37,9 +37,9 @@ import {
   isCouponValid,
   computeInvoice,
   computeDraftInvoiceTotal,
+  formatDocumentLabel,
 } from "@/lib/db";
 import { downloadInvoicePDF, downloadQuotationPDF } from "@/lib/pdf";
-import { newId } from "@/lib/db";
 import { buildWALink, fillTemplate } from "@/lib/notifications";
 import { TenderLineEditor, PaymentModal, type TenderLine } from "@/components/payment-modal";
 import {
@@ -72,6 +72,13 @@ interface ChargedExtra {
 
 const EMPTY_NEW_CUSTOMER = { name: "", phone: "", email: "", plate: "", model: "", address: "" };
 
+/** "CBA 2421 - INV 2091" -- the plate-prefixed label a person sees, built
+ *  from the existing "INV-2091" id without changing its shape (that id is
+ *  still the real Firestore document id everywhere else). */
+function invoiceLabel(inv: Invoice): string {
+  return formatDocumentLabel(inv.plate, `INV ${inv.id.replace(/^INV-/, "")}`);
+}
+
 function POS() {
   const {
     services,
@@ -83,6 +90,7 @@ function POS() {
     addCustomer,
     updateInvoice,
     voidInvoice,
+    nextQuoteNumber,
     notificationSettingsData,
     recordNotification,
   } = useStore();
@@ -94,6 +102,12 @@ function POS() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [manualBillingOpen, setManualBillingOpen] = useState(false);
   const [manualCustomer, setManualCustomer] = useState("");
+  // The vehicle being serviced on THIS invoice -- required before Issue.
+  // Independent of which vehicle (if any) is on the selected customer's
+  // record: pre-filled from their first vehicle on selection, but always
+  // editable, since the car in for service isn't always vehicles[0] and a
+  // walk-in/manual sale has no customer record to derive it from at all.
+  const [plate, setPlate] = useState("");
   const [newCustomerOpen, setNewCustomerOpen] = useState(false);
   const [newCustomerForm, setNewCustomerForm] = useState(EMPTY_NEW_CUSTOMER);
 
@@ -157,18 +171,30 @@ function POS() {
     customers.find((c) => c.name.toLowerCase() === customerName.toLowerCase())?.id ??
     null;
   const customerRecord = customers.find((c) => c.id === customerId);
+  // Which of the customer's vehicles this invoice is actually for -- the
+  // typed plate may not match vehicles[0] (multi-car customer, or a car not
+  // yet on file), so the model shown/stored follows whichever one matches.
+  const matchedVehicle = selectedCustomer?.vehicles.find(
+    (v) => v.plate.toUpperCase() === plate.trim().toUpperCase(),
+  );
 
-  function selectCustomer(id: string) {
-    setSelectedCustomerId(id);
+  // Takes the full Customer (not just an id) so the plate can be pre-filled
+  // from it directly -- looking it up from `customers` here instead would
+  // read a stale closure right after creating a brand-new customer, before
+  // the Firestore listener has necessarily caught it up.
+  function selectCustomer(c: Customer) {
+    setSelectedCustomerId(c.id);
     setCustomerSearch("");
     setManualCustomer("");
     setManualBillingOpen(false);
     setNewCustomerOpen(false);
+    setPlate(c.vehicles[0]?.plate ?? "");
   }
 
   function clearCustomer() {
     setSelectedCustomerId(null);
     setManualCustomer("");
+    setPlate("");
   }
 
   function handleCreateCustomer() {
@@ -176,25 +202,27 @@ function POS() {
       toast.error("Enter a name for the new customer");
       return;
     }
+    if (!newCustomerForm.plate.trim()) {
+      toast.error("Enter the vehicle's plate number");
+      return;
+    }
     const c = addCustomer({
       name: newCustomerForm.name.trim(),
       phone: newCustomerForm.phone.trim(),
       email: newCustomerForm.email.trim(),
-      vehicles: newCustomerForm.plate.trim()
-        ? [
-            {
-              plate: newCustomerForm.plate.trim().toUpperCase(),
-              model: newCustomerForm.model.trim(),
-              color: "",
-            },
-          ]
-        : [],
+      vehicles: [
+        {
+          plate: newCustomerForm.plate.trim().toUpperCase(),
+          model: newCustomerForm.model.trim(),
+          color: "",
+        },
+      ],
       // Omit rather than write `address: undefined` -- Firestore's client
       // SDK throws on an explicit undefined field (see the checkout write
       // below, same precedent).
       ...(newCustomerForm.address.trim() ? { address: newCustomerForm.address.trim() } : {}),
     });
-    selectCustomer(c.id);
+    selectCustomer(c);
     setNewCustomerForm(EMPTY_NEW_CUSTOMER);
     toast.success(`${c.name} added`);
   }
@@ -280,26 +308,36 @@ function POS() {
   });
   const tendered = tenderLines.reduce((s, l) => s + l.amount, 0);
 
-  function handleSaveQuote() {
+  async function handleSaveQuote() {
     if (lines.length === 0) {
       toast.error("Add at least one line item");
       return;
     }
-    const quoteId = newId("QUO");
+    if (!plate.trim()) {
+      toast.error("Enter the vehicle's plate number");
+      return;
+    }
+    const plateValue = plate.trim().toUpperCase();
+    const quoteNumber = await nextQuoteNumber();
+    const label = formatDocumentLabel(plateValue, `QUOTE ${quoteNumber.replace(/^QUO-/, "")}`);
     downloadQuotationPDF({
-      id: quoteId,
+      id: label,
       customerName: customerName || "Guest",
       phone: selectedCustomer?.phone,
-      plate: selectedCustomer?.vehicles[0]?.plate,
-      vehicleModel: selectedCustomer?.vehicles[0]?.model,
+      plate: plateValue,
+      vehicleModel: matchedVehicle?.model,
       lines: lines.map(({ key: _k, ...l }) => l),
     });
-    toast.success(`Quotation ${quoteId} downloaded`);
+    toast.success(`Quotation ${label} downloaded`);
   }
 
   async function handleIssue() {
     if (lines.length === 0) {
       toast.error("Add at least one line item");
+      return;
+    }
+    if (!plate.trim()) {
+      toast.error("Enter the vehicle's plate number");
       return;
     }
     const validTenders = tenderLines.filter((l) => l.amount > 0);
@@ -309,6 +347,7 @@ function POS() {
     }
     setIssuing(true);
     const now = new Date().toISOString();
+    const plateValue = plate.trim().toUpperCase();
     try {
       const inv = await addInvoice({
         customerId,
@@ -317,18 +356,14 @@ function POS() {
         subtotal: draft.subtotal,
         tip,
         total: draft.total,
+        plate: plateValue,
         ...(appliedDiscount ? { discount: appliedDiscount } : {}),
         ...(appliedCoupon
           ? { couponCode: appliedCoupon.code, couponDiscount: draft.couponDiscount }
           : {}),
         ...(pointsRedeemed > 0 ? { pointsRedeemed, pointsRedeemedValue: draft.pointsValue } : {}),
         ...(selectedCustomer?.phone ? { phone: selectedCustomer.phone } : {}),
-        ...(selectedCustomer?.vehicles[0]?.plate
-          ? { plate: selectedCustomer.vehicles[0].plate }
-          : {}),
-        ...(selectedCustomer?.vehicles[0]?.model
-          ? { vehicleModel: selectedCustomer.vehicles[0].model }
-          : {}),
+        ...(matchedVehicle?.model ? { vehicleModel: matchedVehicle.model } : {}),
         ...(selectedCustomer?.address ? { address: selectedCustomer.address } : {}),
         ...(notes.trim() ? { notes: notes.trim() } : {}),
         ...(terms.trim() ? { terms: terms.trim() } : {}),
@@ -344,7 +379,7 @@ function POS() {
       toast.success(
         inv.status === "Partially Paid" ? "Partial payment recorded" : "Invoice issued",
         {
-          description: `${inv.id} · ${formatCurrency(tendered)} · ${describePaymentMethods(inv)}`,
+          description: `${invoiceLabel(inv)} · ${formatCurrency(tendered)} · ${describePaymentMethods(inv)}`,
         },
       );
 
@@ -353,8 +388,8 @@ function POS() {
         invoiceId: inv.id,
         email: selectedCustomer?.email ?? "",
         customerId,
-        vehicleModel: selectedCustomer?.vehicles[0]?.model ?? "",
-        plate: selectedCustomer?.vehicles[0]?.plate ?? "",
+        vehicleModel: matchedVehicle?.model ?? "",
+        plate: plateValue,
       });
 
       // Reset the draft only on success -- a failed issue keeps the cart so
@@ -492,10 +527,13 @@ function POS() {
             title={row.canVoid ? undefined : "Money already collected, use Refund instead"}
             onClick={async () => {
               if (
-                await confirm({ title: `Void ${i.id}?`, description: "This cannot be undone." })
+                await confirm({
+                  title: `Void ${invoiceLabel(i)}?`,
+                  description: "This cannot be undone.",
+                })
               ) {
                 voidInvoice(i.id);
-                toast.success(`${i.id} voided`);
+                toast.success(`${invoiceLabel(i)} voided`);
               }
             }}
             className="rounded-md border border-input px-2.5 py-1.5 text-[11px] font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
@@ -585,7 +623,9 @@ function POS() {
                             onClick={() => viewRow(i)}
                             className="min-w-0 text-left hover:underline"
                           >
-                            <div className="font-mono text-xs text-muted-foreground">{i.id}</div>
+                            <div className="font-mono text-xs text-muted-foreground">
+                              {invoiceLabel(i)}
+                            </div>
                             <div className="font-medium truncate">{i.customerName}</div>
                           </button>
                           <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -647,13 +687,13 @@ function POS() {
             onVoid={async () => {
               if (
                 await confirm({
-                  title: `Void ${viewingInvoice.id}?`,
+                  title: `Void ${invoiceLabel(viewingInvoice)}?`,
                   description: "This cannot be undone.",
                 })
               ) {
                 voidInvoice(viewingInvoice.id);
                 setViewingInvoice({ ...viewingInvoice, status: "Void" });
-                toast.success(`${viewingInvoice.id} voided`);
+                toast.success(`${invoiceLabel(viewingInvoice)} voided`);
               }
             }}
             onSaveNotes={(n, t) => {
@@ -731,7 +771,7 @@ function POS() {
                       {filteredCustomers.map((c) => (
                         <button
                           key={c.id}
-                          onClick={() => selectCustomer(c.id)}
+                          onClick={() => selectCustomer(c)}
                           className="flex min-h-11 w-full items-center gap-3 rounded-lg border border-border px-3 py-2 text-left text-sm hover:bg-muted/40"
                         >
                           <div className="min-w-0 flex-1">
@@ -797,7 +837,7 @@ function POS() {
                         />
                         <input
                           className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none"
-                          placeholder="Vehicle plate"
+                          placeholder="Vehicle plate *"
                           value={newCustomerForm.plate}
                           onChange={(e) =>
                             setNewCustomerForm((f) => ({ ...f, plate: e.target.value }))
@@ -844,6 +884,27 @@ function POS() {
               {!selectedCustomer && manualCustomer && (
                 <div className="mt-2 text-xs text-muted-foreground">
                   Billing as <strong>{manualCustomer}</strong> (no customer record saved)
+                </div>
+              )}
+
+              <label className="no-print mt-3 block space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Vehicle Plate *
+                </span>
+                <input
+                  data-testid="plate-input"
+                  className="w-full max-w-xs rounded-md border border-input bg-background px-3 py-2 text-sm uppercase placeholder:text-muted-foreground placeholder:normal-case focus:outline-none focus:ring-2 focus:ring-ring"
+                  placeholder="e.g. CBA 2421"
+                  value={plate}
+                  onChange={(e) => setPlate(e.target.value)}
+                />
+              </label>
+              {plate.trim() && (
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {formatDocumentLabel(
+                    plate.trim().toUpperCase(),
+                    "INV (number assigned on issue)",
+                  )}
                 </div>
               )}
             </div>
@@ -1157,7 +1218,7 @@ function ViewedInvoice({
       <DocumentHeader
         business={businessInfo}
         docType="INVOICE"
-        docNumber={invoice.id}
+        docNumber={invoiceLabel(invoice)}
         issuedAt={invoice.createdAt}
         dueAt={invoice.dueAt}
         status={invoice.status}
