@@ -4,6 +4,7 @@ import {
   computeInvoice,
   computeDraftInvoiceTotal,
   formatDocumentLabel,
+  invoiceDocumentLabel,
   type Invoice,
   type PaymentRecord,
   type Coupon,
@@ -292,5 +293,24 @@ describe("formatDocumentLabel", () => {
     expect(formatDocumentLabel(undefined, "INV 2091")).toBe("INV 2091");
     expect(formatDocumentLabel(null, "INV 2091")).toBe("INV 2091");
     expect(formatDocumentLabel("", "INV 2091")).toBe("INV 2091");
+  });
+});
+
+describe("invoiceDocumentLabel", () => {
+  it('formats a normal "INV-" id as "<plate> - INV <number>"', () => {
+    expect(invoiceDocumentLabel({ id: "INV-2091", plate: "CBA 2421" })).toBe("CBA 2421 - INV 2091");
+  });
+
+  it("falls back to the bare INV label when there's no plate on file", () => {
+    expect(invoiceDocumentLabel({ id: "INV-2091" })).toBe("INV 2091");
+  });
+
+  // Real data: a handful of invoices created before this app's current id
+  // scheme carry an older id shape ("PS-0505", not "INV-####"). Naively
+  // prefixing "INV " onto that produced the nonsensical "INV PS-0505" --
+  // this is the regression that surfaced it.
+  it("uses a legacy non-INV- id as-is instead of double-labeling it", () => {
+    expect(invoiceDocumentLabel({ id: "PS-0505" })).toBe("PS-0505");
+    expect(invoiceDocumentLabel({ id: "PS-0505", plate: "CBA 2421" })).toBe("CBA 2421 - PS-0505");
   });
 });

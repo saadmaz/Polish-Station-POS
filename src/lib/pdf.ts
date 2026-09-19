@@ -16,6 +16,7 @@ import {
   getBusinessInfo,
   computeInvoice,
   formatDocumentLabel,
+  invoiceDocumentLabel,
 } from "./db";
 import { formatCurrency } from "./currency";
 import { formatDate, formatDateTimeInColombo } from "./date-format";
@@ -647,10 +648,7 @@ function buildDoc(opts: DocOptions): jsPDF {
 
 export function downloadInvoicePDF(invoice: Invoice) {
   const computed = computeInvoice(invoice);
-  // "CBA 2421 - INV 2091" -- the plate-prefixed label a person sees, built
-  // from the existing "INV-2091" id without changing its shape (that id is
-  // still the real Firestore document id everywhere else).
-  const label = formatDocumentLabel(invoice.plate, `INV ${invoice.id.replace(/^INV-/, "")}`);
+  const label = invoiceDocumentLabel(invoice);
   const doc = buildDoc({
     docType: "INVOICE",
     docId: label,

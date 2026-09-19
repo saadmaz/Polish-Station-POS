@@ -527,6 +527,20 @@ export function formatDocumentLabel(plate: string | undefined | null, label: str
   return plate ? `${plate} - ${label}` : label;
 }
 
+/**
+ * "CBA 2421 - INV 2091" for a normal invoice. A handful of invoices
+ * created before this app's current id scheme carry an older id shape
+ * (seen in live data: "PS-0505", not "INV-####") -- for those, `id` is
+ * already the whole human-readable label on its own, so it's used as-is
+ * rather than blindly prefixed with "INV " (which produced the nonsensical
+ * "INV PS-0505" this replaces). Same fallback as formatDocumentLabel when
+ * there's no plate on file.
+ */
+export function invoiceDocumentLabel(inv: Pick<Invoice, "id" | "plate">): string {
+  const label = inv.id.startsWith("INV-") ? `INV ${inv.id.slice(4)}` : inv.id;
+  return formatDocumentLabel(inv.plate, label);
+}
+
 export interface PaymentMethodTotals {
   cash: number;
   card: number;

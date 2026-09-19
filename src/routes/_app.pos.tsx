@@ -38,6 +38,7 @@ import {
   computeInvoice,
   computeDraftInvoiceTotal,
   formatDocumentLabel,
+  invoiceDocumentLabel,
 } from "@/lib/db";
 import { downloadInvoicePDF, downloadQuotationPDF } from "@/lib/pdf";
 import { buildWALink, fillTemplate } from "@/lib/notifications";
@@ -71,13 +72,6 @@ interface ChargedExtra {
 }
 
 const EMPTY_NEW_CUSTOMER = { name: "", phone: "", email: "", plate: "", model: "", address: "" };
-
-/** "CBA 2421 - INV 2091" -- the plate-prefixed label a person sees, built
- *  from the existing "INV-2091" id without changing its shape (that id is
- *  still the real Firestore document id everywhere else). */
-function invoiceLabel(inv: Invoice): string {
-  return formatDocumentLabel(inv.plate, `INV ${inv.id.replace(/^INV-/, "")}`);
-}
 
 function POS() {
   const {
@@ -379,7 +373,7 @@ function POS() {
       toast.success(
         inv.status === "Partially Paid" ? "Partial payment recorded" : "Invoice issued",
         {
-          description: `${invoiceLabel(inv)} · ${formatCurrency(tendered)} · ${describePaymentMethods(inv)}`,
+          description: `${invoiceDocumentLabel(inv)} · ${formatCurrency(tendered)} · ${describePaymentMethods(inv)}`,
         },
       );
 
@@ -528,12 +522,12 @@ function POS() {
             onClick={async () => {
               if (
                 await confirm({
-                  title: `Void ${invoiceLabel(i)}?`,
+                  title: `Void ${invoiceDocumentLabel(i)}?`,
                   description: "This cannot be undone.",
                 })
               ) {
                 voidInvoice(i.id);
-                toast.success(`${invoiceLabel(i)} voided`);
+                toast.success(`${invoiceDocumentLabel(i)} voided`);
               }
             }}
             className="rounded-md border border-input px-2.5 py-1.5 text-[11px] font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
@@ -624,7 +618,7 @@ function POS() {
                             className="min-w-0 text-left hover:underline"
                           >
                             <div className="font-mono text-xs text-muted-foreground">
-                              {invoiceLabel(i)}
+                              {invoiceDocumentLabel(i)}
                             </div>
                             <div className="font-medium truncate">{i.customerName}</div>
                           </button>
@@ -687,13 +681,13 @@ function POS() {
             onVoid={async () => {
               if (
                 await confirm({
-                  title: `Void ${invoiceLabel(viewingInvoice)}?`,
+                  title: `Void ${invoiceDocumentLabel(viewingInvoice)}?`,
                   description: "This cannot be undone.",
                 })
               ) {
                 voidInvoice(viewingInvoice.id);
                 setViewingInvoice({ ...viewingInvoice, status: "Void" });
-                toast.success(`${invoiceLabel(viewingInvoice)} voided`);
+                toast.success(`${invoiceDocumentLabel(viewingInvoice)} voided`);
               }
             }}
             onSaveNotes={(n, t) => {
@@ -1218,7 +1212,7 @@ function ViewedInvoice({
       <DocumentHeader
         business={businessInfo}
         docType="INVOICE"
-        docNumber={invoiceLabel(invoice)}
+        docNumber={invoiceDocumentLabel(invoice)}
         issuedAt={invoice.createdAt}
         dueAt={invoice.dueAt}
         status={invoice.status}
