@@ -514,6 +514,19 @@ export function describePaymentMethods(inv: Invoice): string {
   return methods.length > 0 ? methods.join(" + ") : inv.method;
 }
 
+/**
+ * The vehicle plate is the human-facing lead identifier for every
+ * document -- "CBA 2421 - INV 2091", not "INV-2091" alone. Display/filename
+ * only: the underlying id (Firestore doc id, the sequence a counter
+ * allocated) never changes shape, this just prefixes how a person sees it.
+ * Falls back to the bare label when there's no plate on file (documents
+ * issued before a plate was required, or -- store.tsx no longer allows this
+ * going forward -- the rare pre-existing invoice with none at all).
+ */
+export function formatDocumentLabel(plate: string | undefined | null, label: string): string {
+  return plate ? `${plate} - ${label}` : label;
+}
+
 export interface PaymentMethodTotals {
   cash: number;
   card: number;

@@ -39,6 +39,7 @@ page.on("console", (msg) => {
 });
 
 const customerName = `E2E Payments Customer ${Date.now()}`;
+const testPlate = `E2E ${Date.now() % 10000}`;
 const unitPrice = 10000;
 
 await check("login", async () => {
@@ -52,9 +53,12 @@ await check("POS page loads", async () => {
   await page.waitForSelector("text=POS / Checkout", { timeout: 15000 });
 });
 
-await check("manual billing: enter customer + custom line item", async () => {
+await check("manual billing: enter customer + plate + custom line item", async () => {
   await page.getByTestId("manual-billing-toggle").click();
   await page.getByTestId("manual-billing-input").fill(customerName);
+  // The vehicle plate is now required before Issue (going forward, every
+  // document is named "<plate> - <TYPE> <number>").
+  await page.getByTestId("plate-input").fill(testPlate);
 
   await page.getByTestId("add-line-trigger").click();
   const comboInput = page.locator('input[placeholder="Search services or type a custom line…"]');
@@ -94,6 +98,15 @@ await check("split tender: partial Cash payment marks invoice Partially Paid", a
   assert(inv.status === "Partially Paid", `expected status Partially Paid, got ${inv.status}`);
   assert(inv.payments?.length === 1, "expected exactly 1 payment record");
   assert(inv.payments[0].amount === partial, "payment amount should equal the tendered partial");
+  assert(
+    inv.plate === testPlate,
+    `expected plate ${testPlate} stored on the invoice, got ${inv.plate}`,
+  );
+});
+
+await check('document is labeled "<plate> - INV <number>", not the bare id', async () => {
+  const expectedLabel = `${testPlate} - INV ${invoiceId.replace(/^INV-/, "")}`;
+  await page.waitForSelector(`text=${expectedLabel}`, { timeout: 10000 });
 });
 
 await check("Collect Payment completes the balance and marks invoice Paid", async () => {

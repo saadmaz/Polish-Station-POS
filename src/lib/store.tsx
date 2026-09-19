@@ -314,6 +314,11 @@ interface Store {
   voidInvoice: (id: string) => void;
   recordInvoicePayment: (invoiceId: string, payments: Omit<PaymentRecord, "id">[]) => void;
   refundInvoicePayment: (invoiceId: string, refund: Omit<RefundRecord, "id">) => void;
+  // Quotes aren't persisted as documents (see handleSaveQuote), but still
+  // need a real, non-colliding sequential number for their plate-prefixed
+  // label/filename -- same counter mechanism as every persisted collection,
+  // just with nothing to scan for the local-fallback floor.
+  nextQuoteNumber: () => Promise<string>;
 
   // Expenses
   addExpense: (e: Omit<Expense, "id" | "createdAt">) => Expense;
@@ -1733,8 +1738,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const { vehicleSnapshot, customerSnapshot } = buildInspectionSnapshots(job);
     const actor = actorRef.current ?? { id: "", name: "" };
     const now = new Date().toISOString();
+    // Local-fallback scan needs an id shaped "INS-<n>" to find a max, which
+    // `id` (a random UUID) never is -- pass the numbered ones so it can
+    // still self-heal after an offline run, same idea as every other
+    // nextSeqId call site, and empty is a safe floor otherwise.
+    const numbered = S.current.inspections
+      .filter((i): i is Inspection & { number: string } => !!i.number)
+      .map((i) => ({ id: i.number }));
+    const number = await nextSeqId("inspections", "INS-", numbered, 1);
     const inspection: Inspection = {
       id: newId(),
+      number,
       jobId: job.id,
       jobRef: job.id, // job.id is already the human-readable "J-1001" ref, same intentional-redundancy precedent as Job.customerName vs. customerSnapshot.name
       vehicleSnapshot,
@@ -1906,6 +1920,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── Invoice mutations ──────────────────────────────────────────────────────
+  const nextQuoteNumber = useCallback(() => nextSeqId("quotes", "QUO-", [], 1), []);
+
   const addInvoice = useCallback(
     async (
       data: Omit<Invoice, "id" | "createdAt" | "method" | "status" | "payments"> & {
@@ -2403,6 +2419,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     voidInvoice,
     recordInvoicePayment,
     refundInvoicePayment,
+    nextQuoteNumber,
     addExpense,
     deleteExpense,
   };

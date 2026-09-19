@@ -538,6 +538,16 @@ export interface Inspection {
   id: string;
   jobId: string;
   jobRef: string; // denormalized "PS-0501" for display without a join back to Job
+  // Human-facing sequential number ("INS-1", "INS-2", ...), allocated the
+  // same way invoices/bookings/jobs/POs already are (store.tsx's
+  // nextSeqId). Separate from `id` (a random UUID, the real Firestore doc
+  // id used for routing and Storage paths) on purpose -- the plate-prefixed
+  // display label ("CBA 2421 - INSPECTION 1") is built from this, not from
+  // `id`, so nothing that already depends on `id`'s shape has to change.
+  // Optional only because inspections created before this field existed
+  // don't have one; those display without a number rather than needing a
+  // backfill.
+  number?: string;
 
   vehicleSnapshot: InspectionVehicleSnapshot;
   customerSnapshot: InspectionCustomerSnapshot;
