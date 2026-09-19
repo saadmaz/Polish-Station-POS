@@ -166,7 +166,7 @@ export function TotalsStack({
   balanceDue: number;
 }) {
   return (
-    <div className="space-y-2 border-t border-border pt-4">
+    <div className="invoice-totals space-y-2 border-t border-border pt-4">
       <TotalRow label="Subtotal" value={formatCurrency(subtotal)} />
       {discountAmount > 0 && (
         <TotalRow

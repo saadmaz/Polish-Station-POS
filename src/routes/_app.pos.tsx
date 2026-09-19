@@ -524,10 +524,27 @@ function POS() {
     <div className="p-4 pb-16 sm:p-6">
       <style>{`
         @media print {
+          @page { size: A4; margin: 15mm; }
+          html, body { background: #fff; }
           body * { visibility: hidden; }
           .invoice-print-area, .invoice-print-area * { visibility: visible; }
-          .invoice-print-area { position: absolute; inset: 0; width: 100%; box-shadow: none !important; border: none !important; }
+          .invoice-print-area {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            margin: 0;
+            padding: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+            border-radius: 0 !important;
+          }
           .no-print { display: none !important; }
+          /* Repeat the line-item header on every page, and never split a
+             row or the totals block across a page break. */
+          thead { display: table-header-group; }
+          tr { break-inside: avoid; }
+          .invoice-totals { break-inside: avoid; }
         }
       `}</style>
       {ConfirmDialog}
