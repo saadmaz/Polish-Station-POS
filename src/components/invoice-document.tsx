@@ -319,7 +319,109 @@ export function LineItemsTable({
   onRemoveLine?: (key: number) => void;
 }) {
   return (
-    <div className="overflow-x-auto">
+    <>
+      {/* Mobile: stacked cards. Forced off at print time (print:!hidden)
+          regardless of the viewport width the print engine reports, since
+          the print stylesheet in _app.pos.tsx depends on the <table>
+          structure (thead repeat, row break-avoidance). */}
+      <div className="divide-y divide-border md:hidden print:hidden!">
+        {lines.length === 0 && (
+          <div className="px-2 py-6 text-center text-sm text-muted-foreground">
+            {editable ? "No lines yet — add a service or a custom line above" : "No line items"}
+          </div>
+        )}
+        {lines.map((l) => (
+          <div key={l.key} className="p-3">
+            <div className="flex items-start justify-between gap-2">
+              {editable ? (
+                <input
+                  className="min-h-9 w-full min-w-0 bg-transparent text-sm font-medium focus:outline-none"
+                  value={l.name}
+                  onChange={(e) => onUpdateLine?.(l.key, "name", e.target.value)}
+                />
+              ) : (
+                <div className="text-sm font-medium">{l.name}</div>
+              )}
+              {editable && (
+                <button
+                  type="button"
+                  onClick={() => onRemoveLine?.(l.key)}
+                  aria-label={`Remove ${l.name || "line"}`}
+                  className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:text-primary"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Qty
+                </div>
+                {editable ? (
+                  <input
+                    type="number"
+                    min={1}
+                    className="mt-0.5 min-h-9 w-full rounded bg-muted px-2 py-1 text-right font-mono text-sm tabular-nums focus:outline-none"
+                    value={l.qty}
+                    onChange={(e) => onUpdateLine?.(l.key, "qty", Number(e.target.value))}
+                  />
+                ) : (
+                  <div className="mt-0.5 font-mono text-sm tabular-nums">{l.qty}</div>
+                )}
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Unit Price
+                </div>
+                {l.hideUnitPrice ? (
+                  <div className="mt-0.5 text-sm text-muted-foreground">—</div>
+                ) : editable ? (
+                  <input
+                    type="number"
+                    min={0}
+                    className="mt-0.5 min-h-9 w-full rounded bg-muted px-2 py-1 text-right font-mono text-sm tabular-nums focus:outline-none"
+                    value={l.unitPrice}
+                    onChange={(e) => onUpdateLine?.(l.key, "unitPrice", Number(e.target.value))}
+                  />
+                ) : (
+                  <div className="mt-0.5 font-mono text-sm tabular-nums">
+                    {formatCurrency(l.unitPrice)}
+                  </div>
+                )}
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Discount
+                </div>
+                {editable ? (
+                  <input
+                    type="number"
+                    min={0}
+                    className="mt-0.5 min-h-9 w-full rounded bg-muted px-2 py-1 text-right font-mono text-sm tabular-nums text-primary focus:outline-none"
+                    value={l.discount}
+                    onChange={(e) => onUpdateLine?.(l.key, "discount", Number(e.target.value))}
+                  />
+                ) : l.discount > 0 ? (
+                  <div className="mt-0.5 font-mono text-sm tabular-nums text-primary">
+                    − {formatCurrency(l.discount)}
+                  </div>
+                ) : (
+                  <div className="mt-0.5 text-sm text-muted-foreground">—</div>
+                )}
+              </div>
+            </div>
+            <div className="mt-2 text-right font-mono text-sm font-semibold tabular-nums">
+              {formatCurrency(l.unitPrice * l.qty - l.discount)}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tablet/desktop + print: table. print:!block guarantees this wins
+          over the mobile card block even if the print engine reports a
+          narrow virtual viewport width. */}
+      <div className="hidden overflow-x-auto md:block print:block!">
       <table className="w-full text-sm">
         <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
           <tr className="border-b border-border">
@@ -417,7 +519,8 @@ export function LineItemsTable({
           ))}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }
 

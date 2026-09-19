@@ -375,7 +375,63 @@ function Inventory() {
         </select>
       </div>
 
-      <div className="rounded-xl border border-border bg-card shadow-card overflow-x-auto">
+      <div className="rounded-xl border border-border bg-card shadow-card">
+        {/* Mobile: stacked cards */}
+        <div className="divide-y divide-border md:hidden">
+          {filtered.map((i) => {
+            const st = stockStatus(i.stock, i.reorder);
+            return (
+              <div key={i.id} className="p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{i.name}</div>
+                    <div className="font-mono text-xs text-muted-foreground truncate">
+                      {i.sku} · {i.category}
+                    </div>
+                  </div>
+                  <StatusChip variant={st.variant}>{st.label}</StatusChip>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                  <span className="font-mono font-semibold text-foreground">
+                    {i.stock} {i.unit}
+                  </span>
+                  <span>Reorder at {i.reorder}</span>
+                  <span className="font-mono">{formatCurrency(i.cost)}</span>
+                  {i.supplier && <span className="truncate">{i.supplier}</span>}
+                </div>
+                <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                  <AdjustWidget item={i} />
+                  {canManage && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setFormMode(i)}
+                        className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        title="Edit"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(i.id, i.name)}
+                        className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-primary"
+                        title="Delete"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {filtered.length === 0 && (
+            <div className="text-center py-10 text-muted-foreground">
+              {inventory.length === 0 ? "No inventory items yet" : "No items match your filter"}
+            </div>
+          )}
+        </div>
+
+        {/* Tablet/desktop: table */}
+        <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-sm">
           <thead className="bg-charcoal text-charcoal-foreground text-[11px] uppercase tracking-wider">
             <tr>
@@ -445,6 +501,7 @@ function Inventory() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

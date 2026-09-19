@@ -155,9 +155,68 @@ function CreatePOForm({
         </div>
       </div>
 
-      {/* Lines table */}
+      {/* Lines: mobile cards */}
       {lines.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-border">
+        <div className="divide-y divide-border rounded-lg border border-border md:hidden">
+          {lines.map((l, idx) => (
+            <div key={l.inventoryItemId} className="p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{l.itemName}</div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {l.sku} · {l.unit}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeLine(idx)}
+                  aria-label="Remove line"
+                  className="shrink-0 rounded p-1.5 text-muted-foreground hover:text-destructive"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Qty
+                  </div>
+                  <input
+                    type="number"
+                    min={1}
+                    className="mt-0.5 min-h-9 w-full rounded border border-input bg-background px-2 py-1.5 text-sm"
+                    value={l.qtyOrdered}
+                    onChange={(e) => updateLine(idx, "qtyOrdered", parseInt(e.target.value) || 1)}
+                  />
+                </div>
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    Unit Cost (LKR)
+                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    className="mt-0.5 min-h-9 w-full rounded border border-input bg-background px-2 py-1.5 text-sm"
+                    value={l.unitCost}
+                    onChange={(e) => updateLine(idx, "unitCost", parseFloat(e.target.value) || 0)}
+                  />
+                </div>
+              </div>
+              <div className="mt-2 text-right text-sm font-semibold">
+                {formatCurrency(l.unitCost * l.qtyOrdered)}
+              </div>
+            </div>
+          ))}
+          <div className="flex items-center justify-between bg-muted/30 p-3">
+            <span className="text-sm font-semibold">Order Total</span>
+            <span className="text-sm font-bold">{formatCurrency(total)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Lines: tablet/desktop table */}
+      {lines.length > 0 && (
+        <div className="hidden overflow-x-auto rounded-lg border border-border md:block">
           <table className="w-full text-sm">
             <thead className="bg-muted/50">
               <tr>
@@ -296,7 +355,46 @@ function ReceivePanel({
           Set all to ordered qty
         </button>
       </div>
-      <div className="overflow-x-auto">
+      {/* Mobile: stacked cards */}
+      <div className="divide-y divide-border rounded-lg border border-border md:hidden">
+        {po.lines.map((l) => {
+          const remaining = l.qtyOrdered - l.qtyReceived;
+          return (
+            <div key={l.inventoryItemId} className="p-3">
+              <div className="font-medium">{l.itemName}</div>
+              <div className="text-xs text-muted-foreground">{l.sku}</div>
+              <div className="mt-2 flex items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                <span>
+                  Ordered: <span className="font-medium text-foreground">{l.qtyOrdered}</span>{" "}
+                  {l.unit}
+                </span>
+                <span>Received: {l.qtyReceived}</span>
+              </div>
+              <div className="mt-2">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Receiving Now
+                </div>
+                <input
+                  type="number"
+                  min={0}
+                  max={remaining}
+                  className="mt-0.5 min-h-9 w-24 rounded border border-input bg-background px-2 py-1.5 text-center text-sm"
+                  value={received[l.inventoryItemId] ?? 0}
+                  onChange={(e) =>
+                    setReceived((r) => ({
+                      ...r,
+                      [l.inventoryItemId]: Math.min(remaining, parseInt(e.target.value) || 0),
+                    }))
+                  }
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Tablet/desktop: table */}
+      <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-muted/50">

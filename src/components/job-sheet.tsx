@@ -603,7 +603,7 @@ export function JobSheet({ open, onOpenChange, editing, convertLead, onCreated }
             </div>
             <div className="space-y-2">
               {form.services.map((row, i) => (
-                <div key={i} className="flex items-start gap-1.5">
+                <div key={i} className="flex flex-col gap-1.5 sm:flex-row sm:items-start">
                   <div className="flex-1 space-y-1">
                     <input
                       required={i === 0}
@@ -625,23 +625,25 @@ export function JobSheet({ open, onOpenChange, editing, convertLead, onCreated }
                       ))}
                     </select>
                   </div>
-                  <input
-                    type="number"
-                    min={0}
-                    placeholder="Price"
-                    className="w-28 shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
-                    value={row.price}
-                    onChange={(e) => updateServiceRow(i, { price: Number(e.target.value) })}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeServiceRow(i)}
-                    disabled={form.services.length === 1}
-                    aria-label="Remove service"
-                    className="mt-1 shrink-0 rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-primary disabled:opacity-30"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min={0}
+                      placeholder="Price"
+                      className="w-32 shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring sm:w-28"
+                      value={row.price}
+                      onChange={(e) => updateServiceRow(i, { price: Number(e.target.value) })}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeServiceRow(i)}
+                      disabled={form.services.length === 1}
+                      aria-label="Remove service"
+                      className="shrink-0 rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-primary disabled:opacity-30 sm:mt-1"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

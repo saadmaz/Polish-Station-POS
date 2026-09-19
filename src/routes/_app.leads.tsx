@@ -2324,8 +2324,8 @@ function Leads() {
 
         <div className="rounded-xl border border-border bg-card shadow-card">
           <div className="flex flex-col gap-3 p-4 border-b border-border">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <div className="flex flex-1 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="flex flex-1 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm sm:min-w-50">
                 <Search className="h-4 w-4 text-muted-foreground shrink-0" />
                 <input
                   className="flex-1 bg-transparent outline-none"

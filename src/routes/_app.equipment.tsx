@@ -348,7 +348,7 @@ function MaintenanceLogForm({
 
 // ─── Equipment Row ────────────────────────────────────────────────────────────
 
-function EquipmentRow({ eq }: { eq: Equipment }) {
+function useEquipmentRowState(eq: Equipment) {
   const {
     maintenanceLogsList,
     upsertEquipment,
@@ -366,7 +366,277 @@ function EquipmentRow({ eq }: { eq: Equipment }) {
     .sort((a, b) => b.date.localeCompare(a.date));
   const days = daysUntilService(eq);
   const svc = serviceStatus(days);
-  const SvcIcon = svc.icon;
+
+  return {
+    open,
+    setOpen,
+    editing,
+    setEditing,
+    logging,
+    setLogging,
+    confirm,
+    ConfirmDialog,
+    logs,
+    svc,
+    upsertEquipment,
+    deleteEquipment,
+    addMaintenanceLog,
+    deleteMaintenanceLog,
+  };
+}
+
+/** Maintenance history list + "Log Maintenance" form, shared by the mobile
+ *  card and desktop table expanded-detail views so the logic/handlers exist
+ *  in exactly one place — only the outer wrapper differs by caller. */
+function MaintenanceHistorySection({
+  eq,
+  logs,
+  logging,
+  setLogging,
+  confirm,
+  addMaintenanceLog,
+  deleteMaintenanceLog,
+}: {
+  eq: Equipment;
+  logs: MaintenanceLog[];
+  logging: boolean;
+  setLogging: (v: boolean) => void;
+  confirm: ReturnType<typeof useConfirm>["confirm"];
+  addMaintenanceLog: (log: Omit<MaintenanceLog, "id" | "createdAt">) => MaintenanceLog;
+  deleteMaintenanceLog: (id: string) => void;
+}) {
+  return (
+    <>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-sm font-semibold flex items-center gap-1.5">
+          <ClipboardList className="h-4 w-4" /> Maintenance History ({logs.length})
+        </p>
+        {!logging && (
+          <button
+            onClick={() => setLogging(true)}
+            className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            <Plus className="h-3.5 w-3.5" /> Log Maintenance
+          </button>
+        )}
+      </div>
+
+      {logging && (
+        <MaintenanceLogForm
+          equipmentId={eq.id}
+          onSave={(log) => {
+            addMaintenanceLog(log);
+            setLogging(false);
+          }}
+          onCancel={() => setLogging(false)}
+        />
+      )}
+
+      {logs.length === 0 && !logging ? (
+        <p className="py-4 text-center text-sm text-muted-foreground italic">
+          No maintenance records yet.
+        </p>
+      ) : (
+        <div className="mt-2 rounded-lg border border-border">
+          {/* Mobile: stacked cards */}
+          <div className="divide-y divide-border md:hidden">
+            {logs.map((log) => (
+              <MaintenanceLogCard
+                key={log.id}
+                log={log}
+                onDelete={async () => {
+                  if (await confirm({ title: "Delete this log entry?", requirePin: true }))
+                    deleteMaintenanceLog(log.id);
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Tablet/desktop: table */}
+          <div className="hidden overflow-x-auto md:block">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-muted/50">
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">
+                    Date
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">
+                    Type
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">
+                    Description
+                  </th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">
+                    Performed By
+                  </th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
+                    Cost
+                  </th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map((log) => (
+                  <MaintenanceLogRow
+                    key={log.id}
+                    log={log}
+                    onDelete={async () => {
+                      if (await confirm({ title: "Delete this log entry?", requirePin: true }))
+                        deleteMaintenanceLog(log.id);
+                    }}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+const MAINT_TYPE_BADGE: Record<MaintenanceType, string> = {
+  Service: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400",
+  Repair: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400",
+  Inspection: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400",
+  Replacement: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400",
+};
+
+function MaintenanceLogRow({ log, onDelete }: { log: MaintenanceLog; onDelete: () => void }) {
+  return (
+    <tr className="border-t border-border">
+      <td className="px-3 py-2 text-sm whitespace-nowrap">{fmtDate(log.date)}</td>
+      <td className="px-3 py-2">
+        <span
+          className={cn(
+            "rounded-full px-2 py-0.5 text-xs font-medium",
+            MAINT_TYPE_BADGE[log.type],
+          )}
+        >
+          {log.type}
+        </span>
+      </td>
+      <td className="px-3 py-2 text-sm">{log.description}</td>
+      <td className="px-3 py-2 text-sm text-muted-foreground">{log.performedBy || "—"}</td>
+      <td className="px-3 py-2 text-right text-sm font-medium">
+        {log.cost > 0 ? formatCurrency(log.cost) : "—"}
+      </td>
+      <td className="px-3 py-2">
+        <button
+          onClick={onDelete}
+          className="rounded p-1 text-muted-foreground hover:text-destructive"
+          title="Delete"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+function MaintenanceLogCard({ log, onDelete }: { log: MaintenanceLog; onDelete: () => void }) {
+  return (
+    <div className="p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span
+              className={cn(
+                "rounded-full px-2 py-0.5 text-xs font-medium",
+                MAINT_TYPE_BADGE[log.type],
+              )}
+            >
+              {log.type}
+            </span>
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              {fmtDate(log.date)}
+            </span>
+          </div>
+          <div className="mt-1 text-sm">{log.description}</div>
+        </div>
+        <button
+          onClick={onDelete}
+          className="shrink-0 rounded p-1 text-muted-foreground hover:text-destructive"
+          title="Delete"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        {log.performedBy && <span>{log.performedBy}</span>}
+        {log.cost > 0 && <span className="font-medium">{formatCurrency(log.cost)}</span>}
+      </div>
+    </div>
+  );
+}
+
+/** The details grid + maintenance history, wrapper-agnostic so the caller
+ *  supplies the right container (a <td colSpan> for the desktop table row,
+ *  a plain <div> for the mobile card). */
+function EquipmentDetailBody({
+  eq,
+  logs,
+  logging,
+  setLogging,
+  confirm,
+  addMaintenanceLog,
+  deleteMaintenanceLog,
+}: {
+  eq: Equipment;
+  logs: MaintenanceLog[];
+  logging: boolean;
+  setLogging: (v: boolean) => void;
+  confirm: ReturnType<typeof useConfirm>["confirm"];
+  addMaintenanceLog: (log: Omit<MaintenanceLog, "id" | "createdAt">) => MaintenanceLog;
+  deleteMaintenanceLog: (id: string) => void;
+}) {
+  return (
+    <>
+      <div className="mb-4 grid grid-cols-2 gap-x-8 gap-y-1 text-sm sm:grid-cols-4">
+        {eq.make && (
+          <div>
+            <span className="text-muted-foreground">Make: </span>
+            {eq.make}
+          </div>
+        )}
+        {eq.model && (
+          <div>
+            <span className="text-muted-foreground">Model: </span>
+            {eq.model}
+          </div>
+        )}
+        {eq.serial && (
+          <div>
+            <span className="text-muted-foreground">Serial: </span>
+            {eq.serial}
+          </div>
+        )}
+        {eq.purchasedAt && (
+          <div>
+            <span className="text-muted-foreground">Purchased: </span>
+            {fmtDate(eq.purchasedAt)}
+          </div>
+        )}
+        {eq.notes && (
+          <div className="col-span-2 sm:col-span-4 text-muted-foreground">{eq.notes}</div>
+        )}
+      </div>
+      <MaintenanceHistorySection
+        eq={eq}
+        logs={logs}
+        logging={logging}
+        setLogging={setLogging}
+        confirm={confirm}
+        addMaintenanceLog={addMaintenanceLog}
+        deleteMaintenanceLog={deleteMaintenanceLog}
+      />
+    </>
+  );
+}
+
+function EquipmentRow({ eq }: { eq: Equipment }) {
+  const s = useEquipmentRowState(eq);
+  const SvcIcon = s.svc.icon;
 
   const statusBadge = {
     Active: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400",
@@ -374,17 +644,17 @@ function EquipmentRow({ eq }: { eq: Equipment }) {
     Retired: "bg-muted text-muted-foreground",
   }[eq.status];
 
-  if (editing) {
+  if (s.editing) {
     return (
       <tr>
         <td colSpan={6} className="px-4 py-3">
           <EquipmentForm
             initial={eq}
             onSave={(updated) => {
-              upsertEquipment(updated);
-              setEditing(false);
+              s.upsertEquipment(updated);
+              s.setEditing(false);
             }}
-            onCancel={() => setEditing(false)}
+            onCancel={() => s.setEditing(false)}
           />
         </td>
       </tr>
@@ -393,23 +663,23 @@ function EquipmentRow({ eq }: { eq: Equipment }) {
 
   return (
     <>
-      {ConfirmDialog}
+      {s.ConfirmDialog}
       <tr
         className={cn(
           "border-t border-border transition-colors hover:bg-muted/30 cursor-pointer",
-          open && "bg-muted/20",
+          s.open && "bg-muted/20",
         )}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => s.setOpen((o) => !o)}
       >
         <td className="px-4 py-3">
           <div className="flex items-center gap-2">
             <span
               className={cn(
                 "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold",
-                open ? "bg-primary text-primary-foreground" : "bg-muted",
+                s.open ? "bg-primary text-primary-foreground" : "bg-muted",
               )}
             >
-              {open ? (
+              {s.open ? (
                 <ChevronDown className="h-3.5 w-3.5" />
               ) : (
                 <ChevronRight className="h-3.5 w-3.5" />
@@ -430,16 +700,16 @@ function EquipmentRow({ eq }: { eq: Equipment }) {
           {eq.lastServiceDate ? fmtDate(eq.lastServiceDate) : <span className="italic">None</span>}
         </td>
         <td className="px-4 py-3">
-          <div className={cn("flex items-center gap-1.5 text-sm font-medium", svc.cls)}>
+          <div className={cn("flex items-center gap-1.5 text-sm font-medium", s.svc.cls)}>
             <SvcIcon className="h-4 w-4 shrink-0" />
-            {svc.label}
+            {s.svc.label}
           </div>
         </td>
         <td className="px-4 py-3 text-sm text-muted-foreground">Every {eq.serviceIntervalDays}d</td>
         <td className="px-4 py-3">
           <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             <button
-              onClick={() => setEditing(true)}
+              onClick={() => s.setEditing(true)}
               className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
               title="Edit"
             >
@@ -447,8 +717,8 @@ function EquipmentRow({ eq }: { eq: Equipment }) {
             </button>
             <button
               onClick={async () => {
-                if (await confirm({ title: "Delete this equipment record?", requirePin: true }))
-                  deleteEquipment(eq.id);
+                if (await s.confirm({ title: "Delete this equipment record?", requirePin: true }))
+                  s.deleteEquipment(eq.id);
               }}
               className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
               title="Delete"
@@ -459,153 +729,123 @@ function EquipmentRow({ eq }: { eq: Equipment }) {
         </td>
       </tr>
 
-      {open && (
+      {s.open && (
         <tr className="border-t border-border">
           <td colSpan={6} className="bg-muted/10 px-6 py-4">
-            {/* Equipment details */}
-            <div className="mb-4 grid grid-cols-2 gap-x-8 gap-y-1 text-sm sm:grid-cols-4">
-              {eq.make && (
-                <div>
-                  <span className="text-muted-foreground">Make: </span>
-                  {eq.make}
-                </div>
-              )}
-              {eq.model && (
-                <div>
-                  <span className="text-muted-foreground">Model: </span>
-                  {eq.model}
-                </div>
-              )}
-              {eq.serial && (
-                <div>
-                  <span className="text-muted-foreground">Serial: </span>
-                  {eq.serial}
-                </div>
-              )}
-              {eq.purchasedAt && (
-                <div>
-                  <span className="text-muted-foreground">Purchased: </span>
-                  {fmtDate(eq.purchasedAt)}
-                </div>
-              )}
-              {eq.notes && (
-                <div className="col-span-2 sm:col-span-4 text-muted-foreground">{eq.notes}</div>
-              )}
-            </div>
-
-            {/* Maintenance history */}
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-semibold flex items-center gap-1.5">
-                <ClipboardList className="h-4 w-4" /> Maintenance History ({logs.length})
-              </p>
-              {!logging && (
-                <button
-                  onClick={() => setLogging(true)}
-                  className="flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-                >
-                  <Plus className="h-3.5 w-3.5" /> Log Maintenance
-                </button>
-              )}
-            </div>
-
-            {logging && (
-              <MaintenanceLogForm
-                equipmentId={eq.id}
-                onSave={(log) => {
-                  addMaintenanceLog(log);
-                  setLogging(false);
-                }}
-                onCancel={() => setLogging(false)}
-              />
-            )}
-
-            {logs.length === 0 && !logging ? (
-              <p className="py-4 text-center text-sm text-muted-foreground italic">
-                No maintenance records yet.
-              </p>
-            ) : (
-              <div className="mt-2 overflow-x-auto rounded-lg border border-border">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-muted/50">
-                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">
-                        Date
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">
-                        Type
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">
-                        Description
-                      </th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-muted-foreground">
-                        Performed By
-                      </th>
-                      <th className="px-3 py-2 text-right text-xs font-medium text-muted-foreground">
-                        Cost
-                      </th>
-                      <th className="px-3 py-2"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {logs.map((log) => {
-                      const typeBadge = {
-                        Service: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400",
-                        Repair: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400",
-                        Inspection:
-                          "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400",
-                        Replacement:
-                          "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400",
-                      }[log.type];
-                      return (
-                        <tr key={log.id} className="border-t border-border">
-                          <td className="px-3 py-2 text-sm whitespace-nowrap">
-                            {fmtDate(log.date)}
-                          </td>
-                          <td className="px-3 py-2">
-                            <span
-                              className={cn(
-                                "rounded-full px-2 py-0.5 text-xs font-medium",
-                                typeBadge,
-                              )}
-                            >
-                              {log.type}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-sm">{log.description}</td>
-                          <td className="px-3 py-2 text-sm text-muted-foreground">
-                            {log.performedBy || "—"}
-                          </td>
-                          <td className="px-3 py-2 text-right text-sm font-medium">
-                            {log.cost > 0 ? formatCurrency(log.cost) : "—"}
-                          </td>
-                          <td className="px-3 py-2">
-                            <button
-                              onClick={async () => {
-                                if (
-                                  await confirm({
-                                    title: "Delete this log entry?",
-                                    requirePin: true,
-                                  })
-                                )
-                                  deleteMaintenanceLog(log.id);
-                              }}
-                              className="rounded p-1 text-muted-foreground hover:text-destructive"
-                              title="Delete"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <EquipmentDetailBody
+              eq={eq}
+              logs={s.logs}
+              logging={s.logging}
+              setLogging={s.setLogging}
+              confirm={s.confirm}
+              addMaintenanceLog={s.addMaintenanceLog}
+              deleteMaintenanceLog={s.deleteMaintenanceLog}
+            />
           </td>
         </tr>
       )}
     </>
+  );
+}
+
+function EquipmentCard({ eq }: { eq: Equipment }) {
+  const s = useEquipmentRowState(eq);
+  const SvcIcon = s.svc.icon;
+
+  const statusBadge = {
+    Active: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-400",
+    "In Maintenance": "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400",
+    Retired: "bg-muted text-muted-foreground",
+  }[eq.status];
+
+  if (s.editing) {
+    return (
+      <div className="p-4">
+        <EquipmentForm
+          initial={eq}
+          onSave={(updated) => {
+            s.upsertEquipment(updated);
+            s.setEditing(false);
+          }}
+          onCancel={() => s.setEditing(false)}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {s.ConfirmDialog}
+      <button
+        type="button"
+        className={cn(
+          "flex w-full items-start gap-2.5 p-4 text-left transition-colors hover:bg-muted/30",
+          s.open && "bg-muted/20",
+        )}
+        onClick={() => s.setOpen((o) => !o)}
+      >
+        <span
+          className={cn(
+            "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold",
+            s.open ? "bg-primary text-primary-foreground" : "bg-muted",
+          )}
+        >
+          {s.open ? (
+            <ChevronDown className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5" />
+          )}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-sm font-medium truncate">{eq.name}</span>
+            <span className={cn("shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium", statusBadge)}>
+              {eq.status}
+            </span>
+          </div>
+          <div className="text-xs text-muted-foreground">{eq.type}</div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+            <span className={cn("flex items-center gap-1.5 font-medium", s.svc.cls)}>
+              <SvcIcon className="h-3.5 w-3.5 shrink-0" />
+              {s.svc.label}
+            </span>
+            <span className="text-muted-foreground">Every {eq.serviceIntervalDays}d</span>
+          </div>
+        </div>
+      </button>
+
+      <div className="flex items-center gap-1.5 px-4 pb-3">
+        <button
+          onClick={() => s.setEditing(true)}
+          className="inline-flex items-center gap-1 rounded-md border border-input px-2.5 py-1.5 text-[11px] font-medium hover:bg-accent"
+        >
+          <Pencil className="h-3.5 w-3.5" /> Edit
+        </button>
+        <button
+          onClick={async () => {
+            if (await s.confirm({ title: "Delete this equipment record?", requirePin: true }))
+              s.deleteEquipment(eq.id);
+          }}
+          className="inline-flex items-center gap-1 rounded-md border border-input px-2.5 py-1.5 text-[11px] font-medium hover:bg-accent hover:text-primary"
+        >
+          <Trash2 className="h-3.5 w-3.5" /> Delete
+        </button>
+      </div>
+
+      {s.open && (
+        <div className="border-t border-border bg-muted/10 px-4 py-4">
+          <EquipmentDetailBody
+            eq={eq}
+            logs={s.logs}
+            logging={s.logging}
+            setLogging={s.setLogging}
+            confirm={s.confirm}
+            addMaintenanceLog={s.addMaintenanceLog}
+            deleteMaintenanceLog={s.deleteMaintenanceLog}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -724,8 +964,20 @@ function EquipmentPage() {
         </div>
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto rounded-lg border border-border bg-card">
+      {/* Mobile: stacked cards */}
+      <div className="divide-y divide-border rounded-lg border border-border bg-card md:hidden">
+        {filtered.length === 0 ? (
+          <div className="py-16 text-center text-muted-foreground">
+            <Hammer className="mx-auto mb-2 h-8 w-8 opacity-30" />
+            <p className="text-sm">No equipment found</p>
+          </div>
+        ) : (
+          filtered.map((eq) => <EquipmentCard key={eq.id} eq={eq} />)
+        )}
+      </div>
+
+      {/* Tablet/desktop: table */}
+      <div className="hidden overflow-x-auto rounded-lg border border-border bg-card md:block">
         <table className="w-full">
           <thead className="bg-muted/50">
             <tr>

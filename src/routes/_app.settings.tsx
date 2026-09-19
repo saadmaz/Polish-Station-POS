@@ -89,7 +89,7 @@ function Settings() {
   return (
     <div className="p-4 sm:p-6">
       <PageHeader title="Settings" subtitle="Admin-only · sales and records audited" />
-      <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-5">
         <nav className="rounded-xl border border-border bg-card shadow-card p-2 h-fit">
           {SECTIONS.map(({ id, icon: Icon, name }) => (
             <button

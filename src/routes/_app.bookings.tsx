@@ -645,7 +645,75 @@ function Bookings() {
 
           {/* Week view */}
           {view === "week" && (
-            <div className="overflow-x-auto">
+            <>
+              {/* Mobile: agenda list, one section per day (the hour grid below
+                  needs a 760px min-width to stay legible, so under md it's
+                  replaced entirely rather than squeezed/scrolled). */}
+              <div className="divide-y divide-border md:hidden">
+                {weekDates.map((date) => {
+                  const dayBookings = bookings
+                    .filter((b) => b.date === date)
+                    .sort((a, b) => a.time.localeCompare(b.time));
+                  const isToday = date === todayBusinessDate();
+                  return (
+                    <div key={date} className="p-3">
+                      <div className="mb-2 flex items-center gap-2">
+                        <span
+                          className={cn(
+                            "text-xs font-semibold uppercase tracking-wider",
+                            isToday ? "text-primary" : "text-muted-foreground",
+                          )}
+                        >
+                          {new Date(date + "T00:00:00").toLocaleDateString([], {
+                            weekday: "short",
+                            day: "numeric",
+                            month: "short",
+                          })}
+                        </span>
+                        <span className="text-xs text-muted-foreground/60">
+                          {dayBookings.length}
+                        </span>
+                      </div>
+                      {dayBookings.length === 0 ? (
+                        <div className="text-xs text-muted-foreground">No bookings</div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {dayBookings.map((b) => (
+                            <button
+                              key={b.id}
+                              onClick={() => {
+                                setCurrentDate(date);
+                                setView("day");
+                                setActiveCard(b.id);
+                              }}
+                              className={cn(
+                                "flex w-full items-center gap-2 rounded-md border-l-[3px] bg-card px-2.5 py-2 text-left hover:shadow-card",
+                                b.status === "Cancelled" && "opacity-40",
+                              )}
+                              style={{
+                                borderLeftColor: CAT_COLORS[b.category] ?? "var(--primary)",
+                              }}
+                            >
+                              <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                                {b.time}
+                              </span>
+                              <span className="min-w-0 flex-1 truncate text-xs font-medium">
+                                {b.customerName}
+                              </span>
+                              <span className="max-w-[35%] shrink-0 truncate text-[10px] text-muted-foreground">
+                                {b.serviceName}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Tablet/desktop: hour grid */}
+              <div className="hidden overflow-x-auto md:block">
               <div className="grid grid-cols-[60px_repeat(7,minmax(100px,1fr))] divide-x divide-border min-w-[760px]">
                 <div>
                   <div className="h-10 border-b border-border" />
@@ -732,12 +800,85 @@ function Bookings() {
                   );
                 })}
               </div>
-            </div>
+              </div>
+            </>
           )}
 
           {/* List view */}
           {view === "list" && (
-            <div className="overflow-x-auto">
+            <>
+              {/* Mobile: stacked cards */}
+              <div className="divide-y divide-border md:hidden">
+                {todayBookings.map((b) => (
+                  <div key={b.id} className="p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-mono text-xs text-muted-foreground">
+                          {b.date} · {b.time}
+                        </div>
+                        <div className="mt-0.5 font-semibold truncate">{b.customerName}</div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {b.serviceName}
+                        </div>
+                      </div>
+                      <StatusChip variant={statusVariant(b.status)}>{b.status}</StatusChip>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <span className="font-mono">{b.plate}</span>
+                      <span>{b.vehicleModel}</span>
+                      {b.tech && <span>Tech: {b.tech}</span>}
+                      <span className="font-mono font-semibold text-foreground">
+                        {formatCurrency(b.price)}
+                      </span>
+                      {b.depositStatus && b.depositStatus !== "none" && (
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                            b.depositStatus === "paid"
+                              ? "bg-success/10 text-success"
+                              : "bg-warning/10 text-warning",
+                          )}
+                        >
+                          <Banknote className="h-3 w-3" />
+                          {b.depositStatus === "paid" ? "Dep. Paid" : "Dep. Req."}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-2.5 flex items-center gap-1.5">
+                      {b.depositStatus === "required" && (
+                        <button
+                          onClick={() => handleMarkDepositPaid(b.id)}
+                          className="inline-flex items-center gap-1 rounded-md border border-warning/30 bg-warning/10 px-2.5 py-1.5 text-[11px] font-semibold text-warning hover:bg-warning/20"
+                        >
+                          <Banknote className="h-3.5 w-3.5" /> Mark Deposit Paid
+                        </button>
+                      )}
+                      {(b.status === "Confirmed" || b.status === "Pending") && (
+                        <button
+                          onClick={() => handleCheckin(b.id)}
+                          className="inline-flex items-center gap-1 rounded-md border border-success/30 bg-success/10 px-2.5 py-1.5 text-[11px] font-semibold text-success hover:bg-success/20"
+                        >
+                          <LogIn className="h-3.5 w-3.5" /> Check In
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDelete(b.id)}
+                        className="inline-flex items-center gap-1 rounded-md border border-input px-2.5 py-1.5 text-[11px] font-medium hover:bg-accent hover:text-primary"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {todayBookings.length === 0 && (
+                  <div className="py-10 text-center text-sm text-muted-foreground">
+                    No bookings for {formatDate(currentDate)}
+                  </div>
+                )}
+              </div>
+
+              {/* Tablet/desktop: table */}
+              <div className="hidden overflow-x-auto md:block">
               <table className="w-full text-sm">
                 <thead className="bg-charcoal text-charcoal-foreground text-[11px] uppercase tracking-wider">
                   <tr>
@@ -826,7 +967,8 @@ function Bookings() {
                   )}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
         </div>
 

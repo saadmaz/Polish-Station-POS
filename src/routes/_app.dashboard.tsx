@@ -55,7 +55,7 @@ function Dashboard() {
           series behind it yet (see audit finding on fabricated deltas). Add
           one back only once there's an actual prior-period comparison to
           plot — a fixed/fake number is worse than no number. */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
         {kpis.map((k) => (
           <div key={k.label} className="rounded-xl border border-border bg-card p-4 shadow-card">
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
