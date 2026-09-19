@@ -10,7 +10,7 @@
 import { jsPDF } from "jspdf";
 import { ref as storageRef, uploadBytes, getDownloadURL, getBytes } from "firebase/storage";
 import type { Invoice, InvoiceLine, PurchaseOrder } from "./db";
-import { getPayments, getAmountRefunded, getBusinessInfo } from "./db";
+import { getPayments, getAmountRefunded, getBusinessInfo, computeInvoice } from "./db";
 import { formatCurrency } from "./currency";
 import { formatDate, formatDateTimeInColombo } from "./date-format";
 import { LOGO_PNG_BASE64 } from "./logo-asset";
@@ -200,6 +200,8 @@ interface DocOptions {
   vehicleModel?: string;
   lines: InvoiceLine[];
   subtotal: number;
+  discountAmount?: number;
+  discountLabel?: string;
   couponCode?: string;
   couponDiscount?: number;
   pointsDiscount?: number;
@@ -210,6 +212,7 @@ interface DocOptions {
   refundedTotal?: number;
   status: string;
   notes?: string;
+  terms?: string;
 }
 
 function buildDoc(opts: DocOptions): jsPDF {
@@ -424,6 +427,9 @@ function buildDoc(opts: DocOptions): jsPDF {
   }
 
   totalRow("Subtotal", fmt(opts.subtotal));
+  if (opts.discountAmount && opts.discountAmount > 0) {
+    totalRow(opts.discountLabel ?? "Discount", `− ${fmt(opts.discountAmount)}`, false, SUCCESS);
+  }
   if (opts.couponDiscount && opts.couponDiscount > 0) {
     totalRow(
       opts.couponCode ? `Coupon (${opts.couponCode})` : "Coupon Discount",
@@ -586,6 +592,22 @@ function buildDoc(opts: DocOptions): jsPDF {
     y += noteLines.length * 5 + 4;
   }
 
+  // ── Terms ────────────────────────────────────────────────────────────────────
+  if (opts.terms) {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7);
+    doc.setTextColor(...MUTED);
+    doc.text("TERMS", ML, y);
+    y += 5;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(...SLATE);
+    const termsLines = doc.splitTextToSize(opts.terms, CW);
+    doc.text(termsLines, ML, y);
+    y += termsLines.length * 5 + 4;
+  }
+
   // ── Footer ───────────────────────────────────────────────────────────────────
   // Always pinned at the bottom of the page, regardless of content — that's
   // what makes it read as a footer rather than just the last block of content.
@@ -618,6 +640,7 @@ function buildDoc(opts: DocOptions): jsPDF {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export function downloadInvoicePDF(invoice: Invoice) {
+  const computed = computeInvoice(invoice);
   const doc = buildDoc({
     docType: "INVOICE",
     docId: invoice.id,
@@ -628,6 +651,8 @@ export function downloadInvoicePDF(invoice: Invoice) {
     vehicleModel: invoice.vehicleModel,
     lines: invoice.lines,
     subtotal: invoice.subtotal,
+    discountAmount: computed.discountAmount,
+    discountLabel: invoice.discount?.reason ? `Discount (${invoice.discount.reason})` : "Discount",
     couponCode: invoice.couponCode,
     couponDiscount: invoice.couponDiscount,
     pointsDiscount: invoice.pointsRedeemedValue,
@@ -641,6 +666,8 @@ export function downloadInvoicePDF(invoice: Invoice) {
     })),
     refundedTotal: getAmountRefunded(invoice),
     status: invoice.status,
+    notes: invoice.notes,
+    terms: invoice.terms,
   });
   doc.save(`${invoice.id}.pdf`);
 }

@@ -42,6 +42,7 @@ import {
   sanitizeBays,
   setBusinessInfoCache,
   getAmountPaid,
+  computeInvoice,
   type BusinessInfo,
 } from "./db";
 import { synthesizeWalkInJob } from "./job-linking";
@@ -1920,10 +1921,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         id: await nextSeqId("invoices", "INV-", S.current.invoices, 2090),
         createdAt: new Date().toISOString(),
       };
-      // getAmountPaid folds in any deposit already collected earlier, so a
-      // checkout that only tenders the remaining balance still resolves to
-      // "Paid" rather than incorrectly staying "Partially Paid".
-      const amountPaid = getAmountPaid(draft);
+      // computeInvoice folds in any deposit already collected earlier (via
+      // getAmountPaid), so a checkout that only tenders the remaining
+      // balance still resolves to "Paid" rather than incorrectly staying
+      // "Partially Paid". Single source for this ternary -- see
+      // recordInvoicePayment below, which used to duplicate it.
+      const status = computeInvoice(draft).status;
 
       // Every invoice must belong to a same-day Job so the dashboard's
       // "Revenue Today" and "Today's Timeline" can never disagree (see
@@ -1961,11 +1964,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const inv: Invoice = {
-        ...draft,
-        jobId,
-        status: amountPaid >= draft.total ? "Paid" : amountPaid > 0 ? "Partially Paid" : "Issued",
-      };
+      const inv: Invoice = { ...draft, jobId, status };
       batch.set(fd("invoices", inv.id), inv);
       // Update customer visit + spend + loyalty points
       if (data.customerId) {
@@ -2055,11 +2054,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ...newPayments.map((p) => ({ ...p, id: newId() })),
       ];
       const updated = { ...inv, payments };
-      const amountPaid = getAmountPaid(updated);
-      write("invoices", {
-        ...updated,
-        status: amountPaid >= inv.total ? "Paid" : "Partially Paid",
-      });
+      write("invoices", { ...updated, status: computeInvoice(updated).status });
     },
     [],
   );

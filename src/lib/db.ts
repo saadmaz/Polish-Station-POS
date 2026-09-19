@@ -34,6 +34,7 @@ export interface Customer {
   name: string;
   phone: string;
   email: string;
+  address?: string;
   vehicles: Vehicle[];
   visits: number;
   spend: number;
@@ -313,6 +314,14 @@ export interface RefundRecord {
   at: string;
 }
 
+export type InvoiceDiscountType = "percent" | "fixed";
+
+export interface InvoiceDiscount {
+  type: InvoiceDiscountType;
+  value: number; // percent (0-100) or a fixed currency amount
+  reason?: string;
+}
+
 export interface Invoice {
   id: string;
   customerId: string | null;
@@ -324,10 +333,21 @@ export interface Invoice {
   phone?: string;
   plate?: string;
   vehicleModel?: string;
+  address?: string;
   lines: InvoiceLine[];
   subtotal: number;
   tip: number;
   total: number;
+  // Invoice-level, ad-hoc discount (e.g. a manager-negotiated reduction with
+  // a reason) -- separate from a Coupon, which is code-redeemed and capped.
+  // Absent on every invoice issued before this field existed, which is
+  // exactly the "no discount" case, so no backfill is needed.
+  discount?: InvoiceDiscount;
+  // Defaults to createdAt when absent (every invoice up to this field's
+  // introduction was due on issue).
+  dueAt?: string;
+  notes?: string;
+  terms?: string;
   method: PaymentMethod;
   status: InvoiceStatus;
   createdAt: string;
@@ -563,6 +583,126 @@ export function isCouponValid(c: Coupon, now: Date = new Date()): boolean {
 export function calcCouponDiscount(c: Coupon, subtotal: number): number {
   const raw = c.type === "percent" ? subtotal * (c.value / 100) : c.value;
   return Math.min(Math.max(0, raw), Math.max(0, subtotal));
+}
+
+/**
+ * Ad-hoc invoice-level discount off a subtotal, never more than the subtotal
+ * itself. Same shape as calcCouponDiscount, kept separate because a Coupon
+ * carries redemption/expiry rules an invoice-level discount doesn't.
+ */
+export function calcInvoiceDiscount(
+  discount: InvoiceDiscount | undefined,
+  subtotal: number,
+): number {
+  if (!discount) return 0;
+  const raw = discount.type === "percent" ? subtotal * (discount.value / 100) : discount.value;
+  return Math.min(Math.max(0, raw), Math.max(0, subtotal));
+}
+
+export interface ComputedInvoice {
+  subtotal: number;
+  discountAmount: number; // invoice-level discount only
+  couponDiscount: number;
+  pointsValue: number;
+  tip: number;
+  total: number;
+  amountPaid: number;
+  amountRefunded: number;
+  balanceDue: number;
+  status: InvoiceStatus;
+}
+
+/**
+ * The single place invoice arithmetic happens. Screen, PDF, Recent Invoices,
+ * and any report must all call this rather than re-deriving totals -- see
+ * the audit note on sumPaymentsByMethod below for what duplicated money math
+ * already cost this codebase once (finding R1: Transfer silently counted as
+ * Card because two call sites bucketed payments differently).
+ *
+ * `subtotal`/`total` are read from the invoice, not rebuilt from `lines`:
+ * they're the sale-time snapshot of what the customer was actually charged,
+ * and `lines` alone cannot always reconstruct that. Concretely, every
+ * invoice issued before 2026-08-28 was charged with an 18% VAT line (see
+ * the removed `calcTax`/`Invoice.tax`) that is baked into its stored `total`
+ * but has no corresponding entry in `lines` -- recomputing from `lines`
+ * would silently under-total every one of those historical invoices by its
+ * VAT amount. `discountAmount` is still derived here (from the new
+ * `discount` field, which is undefined on every pre-existing invoice and so
+ * contributes 0) purely for display -- it does not feed into `total`.
+ *
+ * Status is derived from amountPaid vs. total, except the two terminal
+ * manual states (Void/Refunded) always pass through as stored -- nobody
+ * (including this function) sets "Paid" by hand.
+ */
+export function computeInvoice(inv: Invoice): ComputedInvoice {
+  const subtotal = inv.subtotal;
+  const discountAmount = calcInvoiceDiscount(inv.discount, subtotal);
+  const couponDiscount = inv.couponDiscount ?? 0;
+  const pointsValue = inv.pointsRedeemedValue ?? 0;
+  const tip = inv.tip;
+  const total = inv.total;
+
+  const amountPaid = getAmountPaid(inv);
+  const amountRefunded = getAmountRefunded(inv);
+  const balanceDue = Math.max(0, total - amountPaid);
+
+  const status: InvoiceStatus =
+    inv.status === "Void" || inv.status === "Refunded"
+      ? inv.status
+      : amountPaid >= total
+        ? "Paid"
+        : amountPaid > 0
+          ? "Partially Paid"
+          : "Issued";
+
+  return {
+    subtotal,
+    discountAmount,
+    couponDiscount,
+    pointsValue,
+    tip,
+    total,
+    amountPaid,
+    amountRefunded,
+    balanceDue,
+    status,
+  };
+}
+
+export interface DraftInvoiceInput {
+  lines: InvoiceLine[];
+  discount?: InvoiceDiscount;
+  coupon?: Coupon;
+  pointsToRedeem?: number;
+  tip: number;
+}
+
+export interface DraftInvoiceTotal {
+  subtotal: number;
+  discountAmount: number;
+  couponDiscount: number;
+  pointsValue: number;
+  tip: number;
+  total: number;
+}
+
+/**
+ * Same formula computeInvoice's discount/points math is built on, applied to
+ * a cart that hasn't been saved as an Invoice yet (so there's no stored
+ * subtotal/total to trust -- see computeInvoice's module comment on why it
+ * trusts stored fields instead of this kind of from-lines recomputation).
+ * The checkout screen calls this instead of inlining its own reduce, so
+ * there is exactly one place the subtotal-to-total formula is written.
+ */
+export function computeDraftInvoiceTotal(input: DraftInvoiceInput): DraftInvoiceTotal {
+  const subtotal = input.lines.reduce((s, l) => s + l.unitPrice * l.qty - l.discount, 0);
+  const discountAmount = calcInvoiceDiscount(input.discount, subtotal);
+  const couponDiscount = input.coupon ? calcCouponDiscount(input.coupon, subtotal) : 0;
+  const afterDiscounts = Math.max(0, subtotal - discountAmount - couponDiscount);
+  const tip = input.tip;
+  const pointsValue = calcPointsValue(input.pointsToRedeem ?? 0, afterDiscounts + tip);
+  const total = Math.max(0, afterDiscounts + tip - pointsValue);
+  return { subtotal, discountAmount, couponDiscount, pointsValue, tip, total };
 }
 
 export interface InventoryItem {

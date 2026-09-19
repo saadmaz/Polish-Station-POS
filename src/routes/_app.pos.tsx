@@ -4,59 +4,73 @@ import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { useAuth } from "@/lib/auth";
 import { auth as firebaseAuth } from "@/lib/firebase";
-import { isManagerOrAbove } from "@/lib/permissions";
+import { isManagerOrAbove, type StaffRole } from "@/lib/permissions";
 import { formatCurrency } from "@/lib/currency";
-import { formatDateTime } from "@/lib/date-format";
+import { formatDate, formatDateTime } from "@/lib/date-format";
 import { useConfirm } from "@/hooks/use-confirm";
 import { PageHeader } from "@/components/page-header";
-import { StatusChip, statusVariant } from "@/components/status-chip";
 import { sendReceiptEmailFn, getEmailProviderStatusFn } from "@/server/notifications";
 import {
   Plus,
-  Trash2,
   Search,
   FileDown,
   FileText,
+  Printer,
   MessageCircle,
   Mail,
   Star,
   Ticket,
+  Percent,
   Gift,
+  UserPlus,
+  ReceiptText,
+  ChevronLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { InvoiceLine, Invoice, Coupon } from "@/lib/db";
+import type { Invoice, InvoiceDiscount, Coupon } from "@/lib/db";
 import {
+  getPayments,
   getAmountPaid,
   getAmountRefunded,
   getInvoiceBalance,
   describePaymentMethods,
   isCouponValid,
-  calcCouponDiscount,
-  calcPointsValue,
+  computeInvoice,
+  computeDraftInvoiceTotal,
 } from "@/lib/db";
 import { downloadInvoicePDF, downloadQuotationPDF } from "@/lib/pdf";
 import { newId } from "@/lib/db";
 import { buildWALink, fillTemplate } from "@/lib/notifications";
 import { TenderLineEditor, PaymentModal, type TenderLine } from "@/components/payment-modal";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  DocumentHeader,
+  TotalsStack,
+  LineItemsTable,
+  AddLineCombobox,
+  PaymentsHistory,
+  type EditableLine,
+} from "@/components/invoice-document";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Textarea } from "@/components/ui/textarea";
 
 export const Route = createFileRoute("/_app/pos")({
   head: () => ({ meta: [{ title: "POS / Checkout · Polish Station OS" }] }),
   component: POS,
 });
 
-interface ChargedInfo {
-  customerName: string;
-  phone: string;
+// Invoice.email doesn't exist (the customer snapshot only carries
+// phone/plate/vehicleModel -- see Invoice's module comment) so the post-
+// charge email-receipt/review-request actions need this alongside
+// `viewingInvoice`, not on the Invoice itself.
+interface ChargedExtra {
+  invoiceId: string;
   email: string;
   customerId: string | null;
   vehicleModel: string;
   plate: string;
-  serviceName: string;
-  invoiceId: string;
-  lines: InvoiceLine[];
-  total: number;
 }
+
+const EMPTY_NEW_CUSTOMER = { name: "", phone: "", email: "", plate: "", model: "", address: "" };
 
 function POS() {
   const {
@@ -64,43 +78,70 @@ function POS() {
     customers,
     coupons,
     invoices,
+    businessInfo,
     addInvoice,
+    addCustomer,
+    updateInvoice,
     voidInvoice,
     notificationSettingsData,
     recordNotification,
   } = useStore();
   const { staff } = useAuth();
+  const { confirm, ConfirmDialog } = useConfirm();
 
-  // Customer selection
+  // ── Customer / Billed To ──────────────────────────────────────────────
   const [customerSearch, setCustomerSearch] = useState("");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const [manualBillingOpen, setManualBillingOpen] = useState(false);
   const [manualCustomer, setManualCustomer] = useState("");
+  const [newCustomerOpen, setNewCustomerOpen] = useState(false);
+  const [newCustomerForm, setNewCustomerForm] = useState(EMPTY_NEW_CUSTOMER);
 
-  // Line items
-  const [lines, setLines] = useState<(InvoiceLine & { key: number })[]>([]);
+  // ── Line items ───────────────────────────────────────────────────────
+  const [lines, setLines] = useState<EditableLine[]>([]);
   const [lineCounter, setLineCounter] = useState(0);
 
-  // Loyalty & coupons
+  // ── Adjustments: invoice-level discount, coupon, loyalty points ────────
+  const [discountOpen, setDiscountOpen] = useState(false);
+  const [discountType, setDiscountType] = useState<InvoiceDiscount["type"]>("percent");
+  const [discountValue, setDiscountValue] = useState(0);
+  const [discountReason, setDiscountReason] = useState("");
+  const [appliedDiscount, setAppliedDiscount] = useState<InvoiceDiscount | undefined>(undefined);
   const [couponInput, setCouponInput] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
   const [pointsToRedeem, setPointsToRedeem] = useState(0);
 
-  // Payment
+  // ── Payment ──────────────────────────────────────────────────────────
   const [tip, setTip] = useState(0);
   const [tenderLines, setTenderLines] = useState<TenderLine[]>([]);
-  const [charging, setCharging] = useState(false);
-  const [chargedInfo, setChargedInfo] = useState<ChargedInfo | null>(null);
+  const [issuing, setIssuing] = useState(false);
+
+  // ── Notes / terms (draft) ───────────────────────────────────────────
+  const [notes, setNotes] = useState("");
+  const [terms, setTerms] = useState("");
+
+  // ── Document / view mode ────────────────────────────────────────────
+  // Set right after Issue, or by opening a past invoice from the drawer.
+  // Independent of the cart above, so viewing a past invoice never loses an
+  // in-progress draft sale. `viewingInvoiceRef` is a sticky pointer + the
+  // last-known object (so the just-issued invoice displays immediately,
+  // before the Firestore listener has necessarily caught up with it); the
+  // actual `viewingInvoice` used everywhere below re-reads the live
+  // `invoices` array on every render, so Collect/Refund/Void update the
+  // on-screen document reactively instead of needing a manual refresh
+  // wired into every mutation's callback (which would silently go stale
+  // the moment a closure captured an old `invoices` array).
+  const [viewingInvoiceRef, setViewingInvoice] = useState<Invoice | null>(null);
+  const viewingInvoice = viewingInvoiceRef
+    ? (invoices.find((i) => i.id === viewingInvoiceRef.id) ?? viewingInvoiceRef)
+    : null;
+  const [chargedExtra, setChargedExtra] = useState<ChargedExtra | null>(null);
+  const [recentOpen, setRecentOpen] = useState(false);
   const [paymentModal, setPaymentModal] = useState<{
     invoice: Invoice;
     mode: "collect" | "refund";
   } | null>(null);
-  const [mobilePaymentOpen, setMobilePaymentOpen] = useState(false);
-  const { confirm, ConfirmDialog } = useConfirm();
 
-  // Receipt email: real, staff-initiated (Settings → Notifications), see
-  // src/server/notifications.ts. Checked once on mount, same reasoning as
-  // NotifyPanel's own check -- never show a send option for an unconfigured
-  // channel.
   const [emailConfigured, setEmailConfigured] = useState(false);
   const [sendingReceipt, setSendingReceipt] = useState(false);
   useEffect(() => {
@@ -121,51 +162,91 @@ function POS() {
     setSelectedCustomerId(id);
     setCustomerSearch("");
     setManualCustomer("");
+    setManualBillingOpen(false);
+    setNewCustomerOpen(false);
   }
 
-  function addLine(serviceId?: string) {
+  function clearCustomer() {
+    setSelectedCustomerId(null);
+    setManualCustomer("");
+  }
+
+  function handleCreateCustomer() {
+    if (!newCustomerForm.name.trim()) {
+      toast.error("Enter a name for the new customer");
+      return;
+    }
+    const c = addCustomer({
+      name: newCustomerForm.name.trim(),
+      phone: newCustomerForm.phone.trim(),
+      email: newCustomerForm.email.trim(),
+      vehicles: newCustomerForm.plate.trim()
+        ? [
+            {
+              plate: newCustomerForm.plate.trim().toUpperCase(),
+              model: newCustomerForm.model.trim(),
+              color: "",
+            },
+          ]
+        : [],
+      // Omit rather than write `address: undefined` -- Firestore's client
+      // SDK throws on an explicit undefined field (see the checkout write
+      // below, same precedent).
+      ...(newCustomerForm.address.trim() ? { address: newCustomerForm.address.trim() } : {}),
+    });
+    selectCustomer(c.id);
+    setNewCustomerForm(EMPTY_NEW_CUSTOMER);
+    toast.success(`${c.name} added`);
+  }
+
+  // ── Line items ───────────────────────────────────────────────────────
+  function addLineFromService(serviceId: string) {
     const svc = services.find((s) => s.id === serviceId);
+    if (!svc) return;
     const key = lineCounter + 1;
     setLineCounter(key);
-    setLines((ls) => [
-      ...ls,
-      { key, name: svc?.name ?? "Custom item", qty: 1, unitPrice: svc?.price ?? 0, discount: 0 },
-    ]);
+    setLines((ls) => [...ls, { key, name: svc.name, qty: 1, unitPrice: svc.price, discount: 0 }]);
   }
-
-  function updateLine(key: number, field: keyof InvoiceLine, value: string | number) {
+  function addLineFromCustom(name: string) {
+    const key = lineCounter + 1;
+    setLineCounter(key);
+    setLines((ls) => [...ls, { key, name, qty: 1, unitPrice: 0, discount: 0 }]);
+  }
+  function updateLine(key: number, field: keyof EditableLine, value: string | number) {
     setLines((ls) =>
       ls.map((l) => {
         if (l.key !== key) return l;
         const next = { ...l, [field]: value };
-        // Keep the arithmetic fields sane no matter what was typed: a NaN or
-        // negative here would flow straight into the stored invoice totals.
         if (typeof value === "number" && !Number.isFinite(value)) return l;
         next.qty = Math.max(1, Math.floor(next.qty) || 1);
         next.unitPrice = Math.max(0, next.unitPrice || 0);
-        // A discount larger than the line itself would make the line (and
-        // potentially the subtotal) negative.
         next.discount = Math.min(Math.max(0, next.discount || 0), next.qty * next.unitPrice);
         return next;
       }),
     );
   }
-
   function removeLine(key: number) {
     setLines((ls) => ls.filter((l) => l.key !== key));
   }
 
-  const subtotal = lines.reduce((s, l) => s + l.unitPrice * l.qty - l.discount, 0);
-  const couponDiscount = appliedCoupon ? calcCouponDiscount(appliedCoupon, subtotal) : 0;
-  const discountedSubtotal = Math.max(0, subtotal - couponDiscount);
-  const grossTotal = discountedSubtotal + tip;
-  const pointsBalance = customerRecord?.loyaltyPoints ?? 0;
-  // Clamp live so a stale value from a previously-selected customer never
-  // over-redeems once the balance it was checked against has changed.
-  const pointsRedeemed = Math.min(pointsToRedeem, pointsBalance);
-  const pointsValue = calcPointsValue(pointsRedeemed, grossTotal);
-  const total = Math.max(0, grossTotal - pointsValue);
-  const tendered = tenderLines.reduce((s, l) => s + l.amount, 0);
+  // ── Adjustments ──────────────────────────────────────────────────────
+  function applyDiscount() {
+    if (discountValue <= 0) {
+      toast.error("Enter a discount amount");
+      return;
+    }
+    setAppliedDiscount({
+      type: discountType,
+      value: discountValue,
+      ...(discountReason.trim() ? { reason: discountReason.trim() } : {}),
+    });
+    setDiscountOpen(false);
+    setDiscountValue(0);
+    setDiscountReason("");
+  }
+  function removeDiscount() {
+    setAppliedDiscount(undefined);
+  }
 
   function applyCoupon() {
     const code = couponInput.trim().toUpperCase();
@@ -183,10 +264,21 @@ function POS() {
     setCouponInput("");
     toast.success(`Coupon ${coupon.code} applied`);
   }
-
   function removeCoupon() {
     setAppliedCoupon(null);
   }
+
+  const pointsBalance = customerRecord?.loyaltyPoints ?? 0;
+  const pointsRedeemed = Math.min(pointsToRedeem, pointsBalance);
+
+  const draft = computeDraftInvoiceTotal({
+    lines,
+    discount: appliedDiscount,
+    coupon: appliedCoupon ?? undefined,
+    pointsToRedeem: pointsRedeemed,
+    tip,
+  });
+  const tendered = tenderLines.reduce((s, l) => s + l.amount, 0);
 
   function handleSaveQuote() {
     if (lines.length === 0) {
@@ -205,34 +297,31 @@ function POS() {
     toast.success(`Quotation ${quoteId} downloaded`);
   }
 
-  async function handleCharge() {
+  async function handleIssue() {
     if (lines.length === 0) {
       toast.error("Add at least one line item");
       return;
     }
     const validTenders = tenderLines.filter((l) => l.amount > 0);
-    // total can legitimately be 0 when points redemption covers the whole
-    // bill: only demand a cash/card/transfer tender for what's still owed.
-    if (total > 0 && validTenders.length === 0) {
+    if (draft.total > 0 && validTenders.length === 0) {
       toast.error("Add at least one payment (Cash/Card/Transfer)");
       return;
     }
-    setCharging(true);
-
+    setIssuing(true);
     const now = new Date().toISOString();
     try {
       const inv = await addInvoice({
         customerId,
         customerName: customerName || "Guest",
         lines: lines.map(({ key: _k, ...l }) => l),
-        subtotal,
+        subtotal: draft.subtotal,
         tip,
-        total,
-        // Omit the key entirely rather than setting it to `undefined`:
-        // Firestore's client SDK batch.set() throws on an explicit undefined
-        // field value (this previously broke every checkout with no deposit).
-        ...(appliedCoupon ? { couponCode: appliedCoupon.code, couponDiscount } : {}),
-        ...(pointsRedeemed > 0 ? { pointsRedeemed, pointsRedeemedValue: pointsValue } : {}),
+        total: draft.total,
+        ...(appliedDiscount ? { discount: appliedDiscount } : {}),
+        ...(appliedCoupon
+          ? { couponCode: appliedCoupon.code, couponDiscount: draft.couponDiscount }
+          : {}),
+        ...(pointsRedeemed > 0 ? { pointsRedeemed, pointsRedeemedValue: draft.pointsValue } : {}),
         ...(selectedCustomer?.phone ? { phone: selectedCustomer.phone } : {}),
         ...(selectedCustomer?.vehicles[0]?.plate
           ? { plate: selectedCustomer.vehicles[0].plate }
@@ -240,6 +329,9 @@ function POS() {
         ...(selectedCustomer?.vehicles[0]?.model
           ? { vehicleModel: selectedCustomer.vehicles[0].model }
           : {}),
+        ...(selectedCustomer?.address ? { address: selectedCustomer.address } : {}),
+        ...(notes.trim() ? { notes: notes.trim() } : {}),
+        ...(terms.trim() ? { terms: terms.trim() } : {}),
         payments: validTenders.map((l) => ({
           method: l.method,
           amount: l.amount,
@@ -250,49 +342,48 @@ function POS() {
       });
 
       toast.success(
-        inv.status === "Partially Paid" ? "Partial payment recorded" : "Payment received",
+        inv.status === "Partially Paid" ? "Partial payment recorded" : "Invoice issued",
         {
           description: `${inv.id} · ${formatCurrency(tendered)} · ${describePaymentMethods(inv)}`,
         },
       );
 
-      setChargedInfo({
-        customerName: customerName || "Guest",
-        phone: selectedCustomer?.phone ?? "",
+      setViewingInvoice(inv);
+      setChargedExtra({
+        invoiceId: inv.id,
         email: selectedCustomer?.email ?? "",
         customerId,
         vehicleModel: selectedCustomer?.vehicles[0]?.model ?? "",
         plate: selectedCustomer?.vehicles[0]?.plate ?? "",
-        serviceName: lines[0]?.name ?? "",
-        invoiceId: inv.id,
-        lines: inv.lines,
-        total: inv.total,
       });
 
-      // Reset — only on success: a failed charge keeps the cart so the
-      // cashier can just retry instead of re-entering everything.
+      // Reset the draft only on success -- a failed issue keeps the cart so
+      // the cashier can just retry instead of re-entering everything.
       setLines([]);
-      setSelectedCustomerId(null);
-      setManualCustomer("");
-      setCustomerSearch("");
+      clearCustomer();
+      setManualBillingOpen(false);
       setTip(0);
       setTenderLines([]);
       setAppliedCoupon(null);
+      setAppliedDiscount(undefined);
       setPointsToRedeem(0);
+      setNotes("");
+      setTerms("");
     } catch (err) {
-      // addInvoice() now awaits its Firestore write instead of firing it and
-      // forgetting: a network drop here throws, so the till must show that
-      // instead of a false "payment received" receipt for a sale that never
-      // landed.
       console.error("[pos] checkout failed:", err);
       toast.error("Checkout failed, please check your connection and try again");
     } finally {
-      setCharging(false);
+      setIssuing(false);
     }
   }
 
+  function startNewSale() {
+    setViewingInvoice(null);
+    setChargedExtra(null);
+  }
+
   async function handleSendReceipt() {
-    if (!chargedInfo || !chargedInfo.email) return;
+    if (!viewingInvoice || !chargedExtra?.email) return;
     setSendingReceipt(true);
     try {
       const idToken = await firebaseAuth.currentUser?.getIdToken();
@@ -300,24 +391,20 @@ function POS() {
       const result = await sendReceiptEmailFn({
         data: {
           idToken,
-          toEmail: chargedInfo.email,
-          customerName: chargedInfo.customerName,
-          invoiceId: chargedInfo.invoiceId,
-          total: chargedInfo.total,
-          lines: chargedInfo.lines,
+          toEmail: chargedExtra.email,
+          customerName: viewingInvoice.customerName,
+          invoiceId: viewingInvoice.id,
+          total: viewingInvoice.total,
+          lines: viewingInvoice.lines,
         },
       });
       if (result.success) {
-        // Honest per Stage 4: this records that the send request was
-        // accepted by Resend, not that it was delivered -- there's no
-        // webhook/delivery-status pipeline behind this, same as the
-        // WhatsApp/SMS deep-links only ever recording "staff sent this".
         recordNotification({
           type: "receipt_email",
-          customerId: chargedInfo.customerId,
-          customerName: chargedInfo.customerName,
-          phone: chargedInfo.phone,
-          email: chargedInfo.email,
+          customerId: chargedExtra.customerId,
+          customerName: viewingInvoice.customerName,
+          phone: viewingInvoice.phone ?? "",
+          email: chargedExtra.email,
         });
         toast.success("Receipt email sent");
       } else {
@@ -345,11 +432,11 @@ function POS() {
         .slice(0, 8)
     : [];
 
-  // Derived once and shared by both the desktop table and the mobile card
-  // list so the Collect/Refund/Void eligibility logic isn't duplicated.
+  // Derived once and shared by the drawer table so Collect/Refund/Void
+  // eligibility logic isn't duplicated per row.
   const recentInvoiceRows = [...invoices]
     .reverse()
-    .slice(0, 10)
+    .slice(0, 20)
     .map((i) => {
       const paid = getAmountPaid(i);
       const refunded = getAmountRefunded(i);
@@ -358,13 +445,20 @@ function POS() {
         invoice: i,
         paid,
         refunded,
+        balance,
         canCollect: balance > 0 && i.status !== "Void" && i.status !== "Refunded",
         canRefund: paid > refunded && i.status !== "Void" && isManagerOrAbove(staff?.role),
         canVoid: paid === 0 && i.status !== "Void",
       };
     });
 
-  function renderInvoiceActions(row: (typeof recentInvoiceRows)[number]) {
+  function viewRow(inv: Invoice) {
+    setViewingInvoice(inv);
+    if (chargedExtra?.invoiceId !== inv.id) setChargedExtra(null);
+    setRecentOpen(false);
+  }
+
+  function renderRowActions(row: (typeof recentInvoiceRows)[number]) {
     const i = row.invoice;
     return (
       <div className="flex flex-wrap items-center gap-1.5">
@@ -397,7 +491,9 @@ function POS() {
             disabled={!row.canVoid}
             title={row.canVoid ? undefined : "Money already collected, use Refund instead"}
             onClick={async () => {
-              if (await confirm({ title: `Void ${i.id}?` })) {
+              if (
+                await confirm({ title: `Void ${i.id}?`, description: "This cannot be undone." })
+              ) {
                 voidInvoice(i.id);
                 toast.success(`${i.id} voided`);
               }
@@ -411,614 +507,582 @@ function POS() {
     );
   }
 
-  // Shared between the desktop sticky sidebar and the mobile payment sheet so
-  // the checkout/payment UI isn't maintained in two places.
-  function renderPaymentPanel() {
-    return (
-      <>
-        {customerRecord && (
-          <div className="mb-3 rounded-md bg-muted/40 px-3 py-2">
-            <div className="text-xs text-muted-foreground">Customer</div>
-            <div className="font-display font-bold">{customerRecord.name}</div>
-            <div className="text-xs text-muted-foreground">
-              {customerRecord.tier} · {customerRecord.visits} visits ·{" "}
-              {formatCurrency(customerRecord.spend)} lifetime
-            </div>
-            <div className="text-xs text-muted-foreground mt-0.5">
-              <Gift className="mr-1 inline h-3 w-3" />
-              {pointsBalance.toLocaleString()} loyalty points (≈ {formatCurrency(pointsBalance)})
-            </div>
-          </div>
-        )}
-        {!customerRecord && customerName && (
-          <div className="mb-3 text-sm font-semibold">{customerName}</div>
-        )}
+  // ── Rendering ────────────────────────────────────────────────────────
 
-        {/* Coupon */}
-        <div className="mb-3">
-          {appliedCoupon ? (
-            <div className="flex items-center justify-between rounded-md bg-success/10 px-3 py-2 text-sm">
-              <span className="flex items-center gap-1.5 font-medium text-success">
-                <Ticket className="h-3.5 w-3.5" /> {appliedCoupon.code}
-              </span>
-              <button
-                onClick={removeCoupon}
-                aria-label="Remove coupon"
-                className="rounded-md p-1.5 text-muted-foreground hover:text-foreground"
-                title="Remove coupon"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ) : (
-            <div className="flex gap-2">
-              <input
-                className="min-h-11 flex-1 rounded-md border border-input bg-background px-2.5 py-2 text-sm uppercase placeholder:text-muted-foreground placeholder:normal-case focus:outline-none focus:ring-2 focus:ring-ring"
-                placeholder="Coupon code"
-                value={couponInput}
-                onChange={(e) => setCouponInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
-              />
-              <button
-                onClick={applyCoupon}
-                className="min-h-11 rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent"
-              >
-                Apply
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Loyalty points redemption */}
-        {pointsBalance > 0 && (
-          <div className="mb-3 flex items-center justify-between gap-2 text-sm">
-            <label className="flex items-center gap-1.5 text-muted-foreground">
-              <Gift className="h-3.5 w-3.5" /> Redeem points
-            </label>
-            <input
-              type="number"
-              min={0}
-              max={pointsBalance}
-              className="w-24 min-h-9 rounded-md border border-input bg-background px-2 py-1.5 text-right text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              value={pointsRedeemed}
-              onChange={(e) =>
-                setPointsToRedeem(Math.max(0, Math.min(pointsBalance, Number(e.target.value) || 0)))
-              }
-            />
-          </div>
-        )}
-
-        <div className="space-y-2 text-sm border-y border-border py-4">
-          <Row label="Subtotal" value={formatCurrency(subtotal)} />
-          {couponDiscount > 0 && (
-            <Row
-              label={`Coupon (${appliedCoupon?.code})`}
-              value={`− ${formatCurrency(couponDiscount)}`}
-              tone="success"
-            />
-          )}
-          <Row label="Tip" value={formatCurrency(tip)} />
-          {pointsValue > 0 && (
-            <Row
-              label="Points redeemed"
-              value={`− ${formatCurrency(pointsValue)}`}
-              tone="success"
-            />
-          )}
-        </div>
-        <div className="flex items-baseline justify-between py-4">
-          <span className="text-sm font-semibold uppercase tracking-wider">Total</span>
-          <span className="font-display text-2xl font-extrabold text-primary">
-            {formatCurrency(total)}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-3 gap-2 mb-3">
-          {[150, 300, 500].map((amt) => (
-            <button
-              key={amt}
-              onClick={() => setTip(tip === amt ? 0 : amt)}
-              className={cn(
-                "min-h-11 rounded-md border py-2 text-xs font-medium transition-colors",
-                tip === amt
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-input hover:bg-accent",
-              )}
-            >
-              Tip {formatCurrency(amt)}
-            </button>
-          ))}
-        </div>
-
-        <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold mb-2">
-          Payment
-        </div>
-        <div className="mb-4">
-          <TenderLineEditor lines={tenderLines} onChange={setTenderLines} remaining={total} />
-        </div>
-
-        {chargedInfo && (
-          <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800/40 dark:bg-green-900/20 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-green-700 dark:text-green-400 flex items-center gap-1.5">
-                <Star className="h-4 w-4" /> Payment complete · {chargedInfo.invoiceId}
-              </p>
-              <button
-                onClick={() => setChargedInfo(null)}
-                aria-label="Dismiss"
-                className="rounded-md p-1.5 text-green-600 hover:text-green-800 dark:text-green-400"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <p className="text-xs text-green-700 dark:text-green-300">
-              Ask {chargedInfo.customerName.split(" ")[0]} for a Google review?
-            </p>
-            {chargedInfo.phone && notificationSettingsData.googleReviewLink ? (
-              <a
-                href={buildWALink(
-                  chargedInfo.phone,
-                  fillTemplate(notificationSettingsData.reviewRequestTemplate, {
-                    customerName: chargedInfo.customerName.split(" ")[0],
-                    vehicle: chargedInfo.vehicleModel,
-                    plate: chargedInfo.plate,
-                    serviceName: chargedInfo.serviceName,
-                    daysSinceVisit: "",
-                    reviewLink: notificationSettingsData.googleReviewLink,
-                  }),
-                )}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => {
-                  recordNotification({
-                    type: "review_request",
-                    customerId: chargedInfo.customerId,
-                    customerName: chargedInfo.customerName,
-                    phone: chargedInfo.phone,
-                  });
-                  setChargedInfo(null);
-                }}
-                className="flex w-full items-center justify-center gap-2 rounded-md bg-green-600 py-2.5 text-sm font-medium text-white hover:bg-green-700"
-              >
-                <MessageCircle className="h-4 w-4" /> Send Review Request via WhatsApp
-              </a>
-            ) : !notificationSettingsData.googleReviewLink ? (
-              <p className="text-xs text-amber-600">
-                Set your Google Review link in Notifications → Templates.
-              </p>
-            ) : null}
-
-            {/* Receipt email: real, staff-initiated (src/server/notifications.ts).
-                Only ever shown as a real, clickable option -- disabled/hidden
-                states below explain exactly why when it isn't available. */}
-            {chargedInfo.email &&
-            notificationSettingsData.receiptEmailEnabled &&
-            emailConfigured ? (
-              <button
-                onClick={handleSendReceipt}
-                disabled={sendingReceipt}
-                className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-green-600 py-2.5 text-sm font-medium text-green-700 hover:bg-green-100 disabled:opacity-60 dark:text-green-400 dark:hover:bg-green-900/20"
-              >
-                <Mail className="h-4 w-4" /> {sendingReceipt ? "Sending…" : "Email Receipt"}
-              </button>
-            ) : !chargedInfo.email ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                No email on file for this customer — can't send a receipt.
-              </p>
-            ) : !notificationSettingsData.receiptEmailEnabled ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                Receipt email is off — enable it in Settings → Notifications.
-              </p>
-            ) : (
-              <p className="mt-2 text-xs text-amber-600">
-                Receipt email isn't configured on the server yet.
-              </p>
-            )}
-          </div>
-        )}
-
-        <button
-          onClick={handleCharge}
-          disabled={charging || lines.length === 0 || (tendered <= 0 && total > 0)}
-          className="w-full rounded-md gradient-brand py-3 text-sm font-bold uppercase tracking-wider text-primary-foreground shadow-red hover:opacity-95 disabled:opacity-50"
-        >
-          {charging
-            ? "Processing…"
-            : lines.length === 0
-              ? "Complete Sale"
-              : total <= 0 && pointsValue > 0
-                ? "Complete: Covered by Points"
-                : total <= 0
-                  ? "Complete Sale"
-                  : tendered > 0 && tendered < total
-                    ? `Collect ${formatCurrency(tendered)} of ${formatCurrency(total)}`
-                    : `Charge ${formatCurrency(total)}`}
-        </button>
-
-        <button
-          onClick={handleSaveQuote}
-          disabled={lines.length === 0}
-          className="mt-2 w-full flex items-center justify-center gap-2 rounded-md border border-input bg-background py-2.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
-        >
-          <FileText className="h-4 w-4" /> Download Quotation PDF
-        </button>
-      </>
-    );
-  }
+  const primaryLabel =
+    lines.length === 0
+      ? "Issue Invoice"
+      : draft.total <= 0 && draft.pointsValue > 0
+        ? "Issue Invoice · Covered by Points"
+        : draft.total <= 0
+          ? "Issue Invoice"
+          : tendered > 0 && tendered < draft.total
+            ? `Record Payment · ${formatCurrency(tendered)} of ${formatCurrency(draft.total)}`
+            : `Issue Invoice · ${formatCurrency(draft.total)}`;
 
   return (
-    <div className="grid grid-cols-1 gap-6 p-4 pb-28 sm:p-6 lg:h-full lg:grid-cols-[1fr_400px] lg:pb-6">
+    <div className="p-4 pb-16 sm:p-6">
+      <style>{`
+        @media print {
+          @page { size: A4; margin: 15mm; }
+          html, body { background: #fff; }
+          body * { visibility: hidden; }
+          .invoice-print-area, .invoice-print-area * { visibility: visible; }
+          .invoice-print-area {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            margin: 0;
+            padding: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+            border-radius: 0 !important;
+          }
+          .no-print { display: none !important; }
+          /* Repeat the line-item header on every page, and never split a
+             row or the totals block across a page break. */
+          thead { display: table-header-group; }
+          tr { break-inside: avoid; }
+          .invoice-totals { break-inside: avoid; }
+        }
+      `}</style>
       {ConfirmDialog}
-      <div className="space-y-6">
-        <PageHeader title="POS / Checkout" />
 
-        {/* Customer selector */}
-        <div className="rounded-xl border border-border bg-card shadow-card p-4">
-          <h2 className="font-display font-bold mb-3">Select Customer</h2>
-          <div className="relative mb-3">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <input
-              className="w-full rounded-md border border-input bg-background pl-9 pr-3 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              placeholder="Search by name, phone, or plate…"
-              value={customerSearch}
-              onChange={(e) => setCustomerSearch(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5 max-h-64 overflow-y-auto sm:max-h-48">
-            {filteredCustomers.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => selectCustomer(c.id)}
-                className={cn(
-                  "flex min-h-11 w-full items-center gap-3 rounded-lg border px-3 py-2 text-sm text-left transition-colors",
-                  selectedCustomerId === c.id
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:bg-muted/40",
-                )}
+      <div className="mx-auto max-w-[900px]">
+        <PageHeader
+          title="POS / Checkout"
+          actions={
+            <Sheet open={recentOpen} onOpenChange={setRecentOpen}>
+              <SheetTrigger asChild>
+                <button
+                  data-testid="recent-invoices-trigger"
+                  className="no-print inline-flex min-h-9 items-center gap-1.5 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
+                >
+                  <ReceiptText className="h-3.5 w-3.5" /> Recent Invoices
+                </button>
+              </SheetTrigger>
+              <SheetContent
+                data-testid="recent-invoices-drawer"
+                side="right"
+                className="w-full overflow-y-auto sm:max-w-xl"
               >
-                <div className="flex-1 min-w-0">
-                  <div className="font-semibold truncate">{c.name}</div>
-                  <div className="text-[11px] text-muted-foreground truncate">
-                    {c.phone}
-                    {c.vehicles[0] ? ` · ${c.vehicles[0].plate}` : ""}
-                  </div>
+                <SheetHeader>
+                  <SheetTitle>Recent Invoices</SheetTitle>
+                </SheetHeader>
+                <div className="mt-4 space-y-2">
+                  {recentInvoiceRows.length === 0 && (
+                    <div className="py-6 text-center text-sm text-muted-foreground">
+                      No invoices yet
+                    </div>
+                  )}
+                  {recentInvoiceRows.map((row) => {
+                    const i = row.invoice;
+                    return (
+                      <div key={i.id} className="rounded-lg border border-border p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <button
+                            onClick={() => viewRow(i)}
+                            className="min-w-0 text-left hover:underline"
+                          >
+                            <div className="font-mono text-xs text-muted-foreground">{i.id}</div>
+                            <div className="font-medium truncate">{i.customerName}</div>
+                          </button>
+                          <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            {i.status}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+                          <span>{formatDateTime(i.createdAt)}</span>
+                          <span>{describePaymentMethods(i)}</span>
+                        </div>
+                        <div className="mt-2 flex items-baseline justify-between">
+                          <span className="text-sm text-muted-foreground">Total</span>
+                          <span className="font-mono text-sm font-semibold tabular-nums">
+                            {formatCurrency(i.total)}
+                          </span>
+                        </div>
+                        {row.balance > 0 && (
+                          <div className="flex items-baseline justify-between">
+                            <span className="text-sm text-muted-foreground">Balance</span>
+                            <span className="font-mono text-sm font-semibold tabular-nums text-primary">
+                              {formatCurrency(row.balance)}
+                            </span>
+                          </div>
+                        )}
+                        <div className="mt-2">{renderRowActions(row)}</div>
+                      </div>
+                    );
+                  })}
                 </div>
-                <span className="text-[11px] text-muted-foreground shrink-0">{c.tier}</span>
-              </button>
-            ))}
-            {customerSearch && filteredCustomers.length === 0 && (
-              <div className="text-sm text-muted-foreground text-center py-4">
-                No customers found. Enter a name below for manual billing
-              </div>
-            )}
-          </div>
-          {!selectedCustomerId && (
-            <div className="mt-3">
-              <input
-                className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                placeholder="Or type customer name for manual billing…"
-                value={manualCustomer}
-                onChange={(e) => setManualCustomer(e.target.value)}
-              />
-            </div>
-          )}
-          {selectedCustomer && (
-            <div className="mt-3 flex items-center justify-between gap-2 text-sm rounded-md bg-primary/5 border border-primary/20 px-3 py-2">
-              <span className="min-w-0 truncate">
-                <strong>{selectedCustomer.name}</strong>
-                {selectedCustomer.vehicles[0] ? ` · ${selectedCustomer.vehicles[0].plate}` : ""}
-              </span>
-              <button
-                onClick={() => setSelectedCustomerId(null)}
-                aria-label="Clear selected customer"
-                className="shrink-0 rounded-md p-2 text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          )}
-        </div>
+              </SheetContent>
+            </Sheet>
+          }
+        />
 
-        {/* Line items */}
-        <div className="rounded-xl border border-border bg-card shadow-card">
-          <div className="flex flex-col gap-2 p-4 border-b border-border sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="font-display font-bold">Line Items</h2>
-            <div className="flex flex-wrap gap-2">
-              <select
-                className="min-h-9 flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs focus:outline-none sm:flex-none"
-                value=""
-                onChange={(e) => {
-                  if (e.target.value) addLine(e.target.value);
-                }}
-              >
-                <option value="">+ Add service…</option>
-                {services.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} · {formatCurrency(s.price)}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={() => addLine()}
-                className="inline-flex min-h-9 items-center gap-1 rounded-md border border-input bg-background px-3 py-1.5 text-xs hover:bg-accent"
-              >
-                <Plus className="h-3.5 w-3.5" /> Custom
-              </button>
-            </div>
-          </div>
-          {lines.length > 0 ? (
-            <>
-              {/* Mobile: stacked cards */}
-              <div className="divide-y divide-border md:hidden">
-                {lines.map((l) => (
-                  <div key={l.key} className="space-y-2 p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <input
-                        className="min-h-9 flex-1 bg-transparent text-sm font-medium focus:outline-none"
-                        value={l.name}
-                        onChange={(e) => updateLine(l.key, "name", e.target.value)}
-                      />
+        {viewingInvoice ? (
+          <ViewedInvoice
+            key={viewingInvoice.id}
+            invoice={viewingInvoice}
+            justCharged={chargedExtra?.invoiceId === viewingInvoice.id}
+            chargedExtra={chargedExtra}
+            businessInfo={businessInfo}
+            staffRole={staff?.role}
+            notificationSettingsData={notificationSettingsData}
+            emailConfigured={emailConfigured}
+            sendingReceipt={sendingReceipt}
+            onSendReceipt={handleSendReceipt}
+            onRecordReview={() => {
+              if (!chargedExtra) return;
+              recordNotification({
+                type: "review_request",
+                customerId: chargedExtra.customerId,
+                customerName: viewingInvoice.customerName,
+                phone: viewingInvoice.phone ?? "",
+              });
+            }}
+            onBack={startNewSale}
+            onCollect={() => setPaymentModal({ invoice: viewingInvoice, mode: "collect" })}
+            onRefund={() => setPaymentModal({ invoice: viewingInvoice, mode: "refund" })}
+            onVoid={async () => {
+              if (
+                await confirm({
+                  title: `Void ${viewingInvoice.id}?`,
+                  description: "This cannot be undone.",
+                })
+              ) {
+                voidInvoice(viewingInvoice.id);
+                setViewingInvoice({ ...viewingInvoice, status: "Void" });
+                toast.success(`${viewingInvoice.id} voided`);
+              }
+            }}
+            onSaveNotes={(n, t) => {
+              const updated = { ...viewingInvoice, notes: n, terms: t };
+              updateInvoice(updated);
+              setViewingInvoice(updated);
+              toast.success("Notes saved");
+            }}
+          />
+        ) : (
+          <div className="invoice-print-area rounded-xl border border-border bg-card shadow-card p-6 sm:p-8">
+            <DocumentHeader
+              business={businessInfo}
+              docType="INVOICE"
+              docNumber="DRAFT"
+              issuedAt={new Date().toISOString()}
+            />
+
+            {/* Billed To */}
+            <div className="mt-6">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Billed To
+              </div>
+              {selectedCustomer ? (
+                <div className="flex items-start justify-between gap-2 rounded-md bg-muted/40 px-3 py-2.5">
+                  <div>
+                    <div className="font-semibold">{selectedCustomer.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {selectedCustomer.phone}
+                      {selectedCustomer.vehicles[0]
+                        ? ` · ${selectedCustomer.vehicles[0].plate} (${selectedCustomer.vehicles[0].model})`
+                        : ""}
+                    </div>
+                    {selectedCustomer.address && (
+                      <div className="text-xs text-muted-foreground">
+                        {selectedCustomer.address}
+                      </div>
+                    )}
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {selectedCustomer.tier} · {selectedCustomer.visits} visits ·{" "}
+                      {formatCurrency(selectedCustomer.spend)} lifetime
+                      {selectedCustomer.lastVisit
+                        ? ` · last visit ${formatDate(selectedCustomer.lastVisit)}`
+                        : ""}
+                    </div>
+                    {pointsBalance > 0 && (
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        <Gift className="mr-1 inline h-3 w-3" />
+                        {pointsBalance.toLocaleString()} loyalty points (≈{" "}
+                        {formatCurrency(pointsBalance)})
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={clearCustomer}
+                    aria-label="Change customer"
+                    className="no-print shrink-0 rounded-md p-2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="no-print space-y-3">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      className="w-full rounded-md border border-input bg-background py-2.5 pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      placeholder="Search by name, phone, or plate…"
+                      value={customerSearch}
+                      onChange={(e) => setCustomerSearch(e.target.value)}
+                    />
+                  </div>
+                  {filteredCustomers.length > 0 && (
+                    <div className="max-h-48 space-y-1.5 overflow-y-auto">
+                      {filteredCustomers.map((c) => (
+                        <button
+                          key={c.id}
+                          onClick={() => selectCustomer(c.id)}
+                          className="flex min-h-11 w-full items-center gap-3 rounded-lg border border-border px-3 py-2 text-left text-sm hover:bg-muted/40"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="font-semibold truncate">{c.name}</div>
+                            <div className="truncate text-[11px] text-muted-foreground">
+                              {c.phone}
+                              {c.vehicles[0] ? ` · ${c.vehicles[0].plate}` : ""}
+                            </div>
+                          </div>
+                          <span className="shrink-0 text-[11px] text-muted-foreground">
+                            {c.tier}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {customerSearch && filteredCustomers.length === 0 && (
+                    <div className="py-2 text-sm text-muted-foreground">No customers found.</div>
+                  )}
+
+                  <div className="flex flex-wrap gap-4 text-xs">
+                    <button
+                      onClick={() => setNewCustomerOpen((v) => !v)}
+                      className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                    >
+                      <UserPlus className="h-3.5 w-3.5" /> New customer
+                    </button>
+                    <button
+                      data-testid="manual-billing-toggle"
+                      onClick={() => setManualBillingOpen((v) => !v)}
+                      className="text-muted-foreground hover:underline"
+                    >
+                      Bill without saving a customer
+                    </button>
+                  </div>
+
+                  {newCustomerOpen && (
+                    <div className="space-y-2 rounded-md border border-dashed border-border p-3">
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none"
+                          placeholder="Name *"
+                          value={newCustomerForm.name}
+                          onChange={(e) =>
+                            setNewCustomerForm((f) => ({ ...f, name: e.target.value }))
+                          }
+                        />
+                        <input
+                          className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none"
+                          placeholder="Phone"
+                          value={newCustomerForm.phone}
+                          onChange={(e) =>
+                            setNewCustomerForm((f) => ({ ...f, phone: e.target.value }))
+                          }
+                        />
+                        <input
+                          className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none"
+                          placeholder="Email"
+                          value={newCustomerForm.email}
+                          onChange={(e) =>
+                            setNewCustomerForm((f) => ({ ...f, email: e.target.value }))
+                          }
+                        />
+                        <input
+                          className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none"
+                          placeholder="Vehicle plate"
+                          value={newCustomerForm.plate}
+                          onChange={(e) =>
+                            setNewCustomerForm((f) => ({ ...f, plate: e.target.value }))
+                          }
+                        />
+                        <input
+                          className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none"
+                          placeholder="Vehicle model"
+                          value={newCustomerForm.model}
+                          onChange={(e) =>
+                            setNewCustomerForm((f) => ({ ...f, model: e.target.value }))
+                          }
+                        />
+                        <input
+                          className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none"
+                          placeholder="Address"
+                          value={newCustomerForm.address}
+                          onChange={(e) =>
+                            setNewCustomerForm((f) => ({ ...f, address: e.target.value }))
+                          }
+                        />
+                      </div>
                       <button
-                        onClick={() => removeLine(l.key)}
-                        aria-label="Remove line"
-                        className="shrink-0 rounded-md p-2 text-muted-foreground hover:text-primary"
+                        onClick={handleCreateCustomer}
+                        className="min-h-9 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90"
                       >
-                        <Trash2 className="h-4 w-4" />
+                        Create & Bill
                       </button>
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <label className="space-y-1">
-                        <span className="text-[11px] text-muted-foreground">Qty</span>
-                        <input
-                          type="number"
-                          min={1}
-                          className="w-full min-h-9 rounded bg-muted px-2 py-1.5 text-right text-sm font-mono focus:outline-none"
-                          value={l.qty}
-                          onChange={(e) => updateLine(l.key, "qty", Number(e.target.value))}
-                        />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-[11px] text-muted-foreground">Unit</span>
-                        <input
-                          type="number"
-                          min={0}
-                          className="w-full min-h-9 rounded bg-muted px-2 py-1.5 text-right text-sm font-mono focus:outline-none"
-                          value={l.unitPrice}
-                          onChange={(e) => updateLine(l.key, "unitPrice", Number(e.target.value))}
-                        />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-[11px] text-muted-foreground">Disc.</span>
-                        <input
-                          type="number"
-                          min={0}
-                          className="w-full min-h-9 rounded bg-muted px-2 py-1.5 text-right text-sm font-mono text-primary focus:outline-none"
-                          value={l.discount}
-                          onChange={(e) => updateLine(l.key, "discount", Number(e.target.value))}
-                        />
-                      </label>
-                    </div>
-                    <div className="flex items-baseline justify-between text-sm">
-                      <span className="text-muted-foreground">Line total</span>
-                      <span className="font-mono font-semibold">
-                        {formatCurrency(l.unitPrice * l.qty - l.discount)}
-                      </span>
-                    </div>
+                  )}
+
+                  {manualBillingOpen && (
+                    <input
+                      data-testid="manual-billing-input"
+                      className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      placeholder="Customer name for this invoice…"
+                      value={manualCustomer}
+                      onChange={(e) => setManualCustomer(e.target.value)}
+                      autoFocus
+                    />
+                  )}
+                </div>
+              )}
+              {!selectedCustomer && manualCustomer && (
+                <div className="mt-2 text-xs text-muted-foreground">
+                  Billing as <strong>{manualCustomer}</strong> (no customer record saved)
+                </div>
+              )}
+            </div>
+
+            {/* Line items */}
+            <div className="mt-6">
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Line Items
+                </div>
+                <div className="no-print">
+                  <AddLineCombobox
+                    services={services}
+                    onAddService={addLineFromService}
+                    onAddCustom={addLineFromCustom}
+                  />
+                </div>
+              </div>
+              <LineItemsTable
+                lines={lines}
+                editable
+                onUpdateLine={updateLine}
+                onRemoveLine={removeLine}
+              />
+            </div>
+
+            {/* Adjustments: discount, coupon, points */}
+            <div className="no-print mt-4 space-y-2">
+              {appliedDiscount ? (
+                <div className="flex items-center justify-between rounded-md bg-success/10 px-3 py-2 text-sm">
+                  <span className="flex items-center gap-1.5 font-medium text-success">
+                    <Percent className="h-3.5 w-3.5" />
+                    {appliedDiscount.type === "percent"
+                      ? `${appliedDiscount.value}% off`
+                      : formatCurrency(appliedDiscount.value) + " off"}
+                    {appliedDiscount.reason ? ` — ${appliedDiscount.reason}` : ""}
+                  </span>
+                  <button
+                    onClick={removeDiscount}
+                    aria-label="Remove discount"
+                    className="rounded-md p-1.5 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : discountOpen ? (
+                <div className="space-y-2 rounded-md border border-dashed border-border p-3">
+                  <div className="flex gap-2">
+                    <select
+                      value={discountType}
+                      onChange={(e) => setDiscountType(e.target.value as InvoiceDiscount["type"])}
+                      className="min-h-9 rounded-md border border-input bg-background px-2 text-sm focus:outline-none"
+                    >
+                      <option value="percent">%</option>
+                      <option value="fixed">LKR</option>
+                    </select>
+                    <input
+                      type="number"
+                      min={0}
+                      value={discountValue}
+                      onChange={(e) => setDiscountValue(Number(e.target.value))}
+                      className="min-h-9 w-28 rounded-md border border-input bg-background px-2 text-right text-sm tabular-nums focus:outline-none"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Reason (optional)"
+                      value={discountReason}
+                      onChange={(e) => setDiscountReason(e.target.value)}
+                      className="min-h-9 flex-1 rounded-md border border-input bg-background px-2 text-sm focus:outline-none"
+                    />
                   </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={applyDiscount}
+                      className="min-h-9 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground"
+                    >
+                      Apply discount
+                    </button>
+                    <button
+                      onClick={() => setDiscountOpen(false)}
+                      className="min-h-9 rounded-md border border-input px-3 text-xs"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setDiscountOpen(true)}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                >
+                  <Percent className="h-3.5 w-3.5" /> Add discount
+                </button>
+              )}
+
+              {appliedCoupon ? (
+                <div className="flex items-center justify-between rounded-md bg-success/10 px-3 py-2 text-sm">
+                  <span className="flex items-center gap-1.5 font-medium text-success">
+                    <Ticket className="h-3.5 w-3.5" /> {appliedCoupon.code}
+                  </span>
+                  <button
+                    onClick={removeCoupon}
+                    aria-label="Remove coupon"
+                    className="rounded-md p-1.5 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <input
+                    className="min-h-9 flex-1 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm uppercase placeholder:text-muted-foreground placeholder:normal-case focus:outline-none"
+                    placeholder="Coupon code"
+                    value={couponInput}
+                    onChange={(e) => setCouponInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && applyCoupon()}
+                  />
+                  <button
+                    onClick={applyCoupon}
+                    className="min-h-9 rounded-md border border-input px-3 text-xs font-medium hover:bg-accent"
+                  >
+                    Apply
+                  </button>
+                </div>
+              )}
+
+              {pointsBalance > 0 && (
+                <div className="flex items-center justify-between gap-2 text-sm">
+                  <label className="flex items-center gap-1.5 text-muted-foreground">
+                    <Gift className="h-3.5 w-3.5" /> Redeem points
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={pointsBalance}
+                    className="min-h-9 w-24 rounded-md border border-input bg-background px-2 py-1.5 text-right text-sm tabular-nums focus:outline-none"
+                    value={pointsRedeemed}
+                    onChange={(e) =>
+                      setPointsToRedeem(
+                        Math.max(0, Math.min(pointsBalance, Number(e.target.value) || 0)),
+                      )
+                    }
+                  />
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-2 pt-1">
+                {[150, 300, 500].map((amt) => (
+                  <button
+                    key={amt}
+                    onClick={() => setTip(tip === amt ? 0 : amt)}
+                    className={cn(
+                      "min-h-9 rounded-md border py-1.5 text-xs font-medium transition-colors",
+                      tip === amt
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-input hover:bg-accent",
+                    )}
+                  >
+                    Tip {formatCurrency(amt)}
+                  </button>
                 ))}
               </div>
-
-              {/* Tablet/desktop: table */}
-              <div className="hidden overflow-x-auto md:block">
-                <table className="w-full text-sm">
-                  <thead className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                    <tr className="border-b border-border">
-                      <th className="text-left px-4 py-2">Item</th>
-                      <th className="text-right px-3 py-2 w-16">Qty</th>
-                      <th className="text-right px-3 py-2 w-28">Unit</th>
-                      <th className="text-right px-3 py-2 w-28">Disc.</th>
-                      <th className="text-right px-3 py-2 w-32">Total</th>
-                      <th className="w-10" />
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {lines.map((l) => (
-                      <tr key={l.key}>
-                        <td className="px-4 py-2">
-                          <input
-                            className="w-full bg-transparent text-sm font-medium focus:outline-none"
-                            value={l.name}
-                            onChange={(e) => updateLine(l.key, "name", e.target.value)}
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="number"
-                            min={1}
-                            className="w-14 rounded bg-muted px-2 py-1 text-right text-sm font-mono focus:outline-none"
-                            value={l.qty}
-                            onChange={(e) => updateLine(l.key, "qty", Number(e.target.value))}
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="number"
-                            min={0}
-                            className="w-24 rounded bg-muted px-2 py-1 text-right text-sm font-mono focus:outline-none"
-                            value={l.unitPrice}
-                            onChange={(e) => updateLine(l.key, "unitPrice", Number(e.target.value))}
-                          />
-                        </td>
-                        <td className="px-3 py-2">
-                          <input
-                            type="number"
-                            min={0}
-                            className="w-24 rounded bg-muted px-2 py-1 text-right text-sm font-mono text-primary focus:outline-none"
-                            value={l.discount}
-                            onChange={(e) => updateLine(l.key, "discount", Number(e.target.value))}
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono font-semibold">
-                          {formatCurrency(l.unitPrice * l.qty - l.discount)}
-                        </td>
-                        <td className="px-2 py-2 text-right">
-                          <button
-                            onClick={() => removeLine(l.key)}
-                            aria-label="Remove line"
-                            className="rounded-md p-2 text-muted-foreground hover:text-primary"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          ) : (
-            <div className="text-center text-sm text-muted-foreground py-10">
-              Select a customer above or add line items manually
             </div>
-          )}
-        </div>
 
-        {/* Recent invoices */}
-        <div>
-          <h3 className="font-display text-sm font-bold mb-3 uppercase tracking-wider text-muted-foreground">
-            Recent Invoices
-          </h3>
+            <TotalsStack
+              subtotal={draft.subtotal}
+              discountAmount={draft.discountAmount}
+              discountReason={appliedDiscount?.reason}
+              couponCode={appliedCoupon?.code}
+              couponDiscount={draft.couponDiscount}
+              tip={draft.tip}
+              total={draft.total}
+              amountPaid={0}
+              amountRefunded={0}
+              balanceDue={draft.total}
+            />
 
-          {recentInvoiceRows.length === 0 ? (
-            <div className="rounded-xl border border-border bg-card shadow-card py-6 text-center text-sm text-muted-foreground">
-              No invoices yet today
+            {/* Payment */}
+            <div
+              data-testid="checkout-payment"
+              className="no-print mt-6 border-t border-border pt-4"
+            >
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Payment
+              </div>
+              <TenderLineEditor
+                lines={tenderLines}
+                onChange={setTenderLines}
+                remaining={draft.total}
+              />
             </div>
-          ) : (
-            <>
-              {/* Mobile: stacked cards */}
-              <div className="divide-y divide-border rounded-xl border border-border bg-card shadow-card md:hidden">
-                {recentInvoiceRows.map((row) => {
-                  const i = row.invoice;
-                  return (
-                    <div key={i.id} className="space-y-2 p-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="font-mono text-xs text-muted-foreground">{i.id}</div>
-                          <div className="font-medium truncate">{i.customerName}</div>
-                        </div>
-                        <StatusChip variant={statusVariant(i.status)}>{i.status}</StatusChip>
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>{formatDateTime(i.createdAt)}</span>
-                        <span>{describePaymentMethods(i)}</span>
-                      </div>
-                      <div className="flex items-baseline justify-between">
-                        <span className="text-sm text-muted-foreground">Total</span>
-                        <div className="text-right">
-                          <span className="font-mono font-semibold">{formatCurrency(i.total)}</span>
-                          {i.status === "Partially Paid" && (
-                            <div className="text-[10px] font-normal text-muted-foreground">
-                              {formatCurrency(row.paid)} paid
-                            </div>
-                          )}
-                          {row.refunded > 0 && (
-                            <div className="text-[10px] font-normal text-primary">
-                              {formatCurrency(row.refunded)} refunded
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      {renderInvoiceActions(row)}
-                    </div>
-                  );
-                })}
-              </div>
 
-              {/* Tablet/desktop: table */}
-              <div className="hidden overflow-x-auto rounded-xl border border-border bg-card shadow-card md:block">
-                <table className="w-full text-sm">
-                  <thead className="bg-charcoal text-charcoal-foreground text-[11px] uppercase tracking-wider">
-                    <tr>
-                      <th className="text-left px-4 py-2.5">Invoice</th>
-                      <th className="text-left px-3 py-2.5">Customer</th>
-                      <th className="text-left px-3 py-2.5">Date</th>
-                      <th className="text-right px-3 py-2.5">Total</th>
-                      <th className="text-left px-3 py-2.5">Method</th>
-                      <th className="text-left px-3 py-2.5">Status</th>
-                      <th className="px-2 py-2.5">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {recentInvoiceRows.map((row) => {
-                      const i = row.invoice;
-                      return (
-                        <tr key={i.id} className="hover:bg-muted/40">
-                          <td className="px-4 py-2.5 font-mono text-xs">{i.id}</td>
-                          <td className="px-3 py-2.5 font-medium">{i.customerName}</td>
-                          <td className="px-3 py-2.5 text-muted-foreground text-xs">
-                            {formatDateTime(i.createdAt)}
-                          </td>
-                          <td className="px-3 py-2.5 text-right font-mono font-semibold">
-                            {formatCurrency(i.total)}
-                            {i.status === "Partially Paid" && (
-                              <div className="text-[10px] font-normal text-muted-foreground">
-                                {formatCurrency(row.paid)} paid
-                              </div>
-                            )}
-                            {row.refunded > 0 && (
-                              <div className="text-[10px] font-normal text-primary">
-                                {formatCurrency(row.refunded)} refunded
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-3 py-2.5 text-muted-foreground">
-                            {describePaymentMethods(i)}
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <StatusChip variant={statusVariant(i.status)}>{i.status}</StatusChip>
-                          </td>
-                          <td className="px-2 py-2.5">{renderInvoiceActions(row)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
+            {/* Notes / terms */}
+            <div className="no-print mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Notes
+                </span>
+                <Textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={2}
+                  placeholder="Visible on the invoice…"
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Terms
+                </span>
+                <Textarea
+                  value={terms}
+                  onChange={(e) => setTerms(e.target.value)}
+                  rows={2}
+                  placeholder="Payment terms, warranty, etc…"
+                />
+              </label>
+            </div>
 
-      {/* Payment panel: desktop/tablet sticky sidebar */}
-      <aside className="hidden rounded-xl border border-border bg-card shadow-card p-5 h-fit sticky top-4 lg:block">
-        {renderPaymentPanel()}
-      </aside>
-
-      {/* Payment panel, mobile: totals bar pinned above the viewport bottom, full panel in a sheet */}
-      <div className="fixed inset-x-0 bottom-0 z-40 flex items-center gap-3 border-t border-border bg-card p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-elevated lg:hidden">
-        <div className="min-w-0 flex-1">
-          <div className="text-[11px] uppercase tracking-wider text-muted-foreground">Total</div>
-          <div className="font-display text-lg font-extrabold text-primary truncate">
-            {formatCurrency(total)}
+            {/* Actions */}
+            <div className="no-print mt-6 flex flex-col gap-2 border-t border-border pt-6">
+              <button
+                data-testid="issue-invoice-button"
+                onClick={handleIssue}
+                disabled={issuing || lines.length === 0 || (tendered <= 0 && draft.total > 0)}
+                className="min-h-11 w-full rounded-md gradient-brand py-3 text-sm font-bold uppercase tracking-wider text-primary-foreground shadow-red hover:opacity-95 disabled:opacity-50"
+              >
+                {issuing ? "Processing…" : primaryLabel}
+              </button>
+              <button
+                onClick={handleSaveQuote}
+                disabled={lines.length === 0}
+                className="flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-input bg-background py-2.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
+              >
+                <FileText className="h-4 w-4" /> Download Quotation PDF
+              </button>
+            </div>
           </div>
-        </div>
-        <button
-          onClick={() => setMobilePaymentOpen(true)}
-          disabled={lines.length === 0}
-          className="min-h-11 shrink-0 rounded-md gradient-brand px-5 text-sm font-bold uppercase tracking-wider text-primary-foreground shadow-red hover:opacity-95 disabled:opacity-50"
-        >
-          Checkout
-        </button>
+        )}
       </div>
-
-      <Sheet open={mobilePaymentOpen} onOpenChange={setMobilePaymentOpen}>
-        <SheetContent side="bottom" className="max-h-[90vh] overflow-y-auto rounded-t-xl lg:hidden">
-          <SheetHeader>
-            <SheetTitle>Payment</SheetTitle>
-          </SheetHeader>
-          <div className="mt-2">{renderPaymentPanel()}</div>
-        </SheetContent>
-      </Sheet>
 
       {paymentModal && (
         <PaymentModal
@@ -1031,13 +1095,252 @@ function POS() {
   );
 }
 
-function Row({ label, value, tone }: { label: string; value: string; tone?: "success" }) {
+// ─── Viewed invoice (document mode: just-issued, or opened from the drawer) ─
+
+function ViewedInvoice({
+  invoice,
+  justCharged,
+  chargedExtra,
+  businessInfo,
+  staffRole,
+  notificationSettingsData,
+  emailConfigured,
+  sendingReceipt,
+  onSendReceipt,
+  onRecordReview,
+  onBack,
+  onCollect,
+  onRefund,
+  onVoid,
+  onSaveNotes,
+}: {
+  invoice: Invoice;
+  justCharged: boolean;
+  chargedExtra: ChargedExtra | null;
+  businessInfo: ReturnType<typeof useStore>["businessInfo"];
+  staffRole: StaffRole | null | undefined;
+  notificationSettingsData: ReturnType<typeof useStore>["notificationSettingsData"];
+  emailConfigured: boolean;
+  sendingReceipt: boolean;
+  onSendReceipt: () => void;
+  onRecordReview: () => void;
+  onBack: () => void;
+  onCollect: () => void;
+  onRefund: () => void;
+  onVoid: () => void;
+  onSaveNotes: (notes: string, terms: string) => void;
+}) {
+  const [notes, setNotes] = useState(invoice.notes ?? "");
+  const [terms, setTerms] = useState(invoice.terms ?? "");
+  const computed = computeInvoice(invoice);
+  const payments = getPayments(invoice);
+  const editableLines = invoice.lines.map((l, i) => ({ ...l, key: i }));
+
+  const paid = computed.amountPaid;
+  const refunded = computed.amountRefunded;
+  const canCollect =
+    computed.balanceDue > 0 && invoice.status !== "Void" && invoice.status !== "Refunded";
+  const canRefund = paid > refunded && invoice.status !== "Void" && isManagerOrAbove(staffRole);
+  const canVoid = paid === 0 && invoice.status !== "Void";
+
   return (
-    <div className="flex justify-between">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={cn("font-mono font-medium", tone === "success" && "text-success")}>
-        {value}
-      </span>
+    <div className="invoice-print-area rounded-xl border border-border bg-card shadow-card p-6 sm:p-8">
+      <div className="no-print mb-4">
+        <button
+          onClick={onBack}
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ChevronLeft className="h-4 w-4" /> New Sale
+        </button>
+      </div>
+
+      <DocumentHeader
+        business={businessInfo}
+        docType="INVOICE"
+        docNumber={invoice.id}
+        issuedAt={invoice.createdAt}
+        dueAt={invoice.dueAt}
+        status={invoice.status}
+      />
+
+      <div className="mt-6">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Billed To
+        </div>
+        <div className="rounded-md bg-muted/40 px-3 py-2.5">
+          <div className="font-semibold">{invoice.customerName}</div>
+          <div className="text-xs text-muted-foreground">
+            {invoice.phone}
+            {invoice.plate
+              ? ` · ${invoice.plate}${invoice.vehicleModel ? ` (${invoice.vehicleModel})` : ""}`
+              : ""}
+          </div>
+          {invoice.address && (
+            <div className="text-xs text-muted-foreground">{invoice.address}</div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-6">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Line Items
+        </div>
+        <LineItemsTable lines={editableLines} editable={false} />
+      </div>
+
+      <TotalsStack
+        subtotal={computed.subtotal}
+        discountAmount={computed.discountAmount}
+        discountReason={invoice.discount?.reason}
+        couponCode={invoice.couponCode}
+        couponDiscount={computed.couponDiscount}
+        tip={computed.tip}
+        total={computed.total}
+        amountPaid={computed.amountPaid}
+        amountRefunded={computed.amountRefunded}
+        balanceDue={computed.balanceDue}
+      />
+
+      <PaymentsHistory payments={payments} refunds={invoice.refunds ?? []} />
+
+      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Notes
+          </span>
+          {(notes || terms) && (
+            <p className="whitespace-pre-wrap text-sm text-muted-foreground">{notes || "—"}</p>
+          )}
+          <div className="no-print">
+            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Terms
+          </span>
+          <div className="no-print">
+            <Textarea value={terms} onChange={(e) => setTerms(e.target.value)} rows={2} />
+          </div>
+        </div>
+      </div>
+      {(notes !== (invoice.notes ?? "") || terms !== (invoice.terms ?? "")) && (
+        <div className="no-print mt-2">
+          <button
+            onClick={() => onSaveNotes(notes, terms)}
+            className="min-h-9 rounded-md border border-input px-3 text-xs font-medium hover:bg-accent"
+          >
+            Save Notes
+          </button>
+        </div>
+      )}
+
+      {justCharged && (
+        <div className="no-print mt-6 rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-800/40 dark:bg-green-900/20 space-y-3">
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-green-700 dark:text-green-400">
+            <Star className="h-4 w-4" /> Payment recorded
+          </p>
+          <p className="text-xs text-green-700 dark:text-green-300">
+            Ask {invoice.customerName.split(" ")[0]} for a Google review?
+          </p>
+          {invoice.phone && notificationSettingsData.googleReviewLink ? (
+            <a
+              href={buildWALink(
+                invoice.phone,
+                fillTemplate(notificationSettingsData.reviewRequestTemplate, {
+                  customerName: invoice.customerName.split(" ")[0],
+                  vehicle: chargedExtra?.vehicleModel ?? "",
+                  plate: chargedExtra?.plate ?? "",
+                  serviceName: invoice.lines[0]?.name ?? "",
+                  daysSinceVisit: "",
+                  reviewLink: notificationSettingsData.googleReviewLink,
+                }),
+              )}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={onRecordReview}
+              className="flex w-full items-center justify-center gap-2 rounded-md bg-green-600 py-2.5 text-sm font-medium text-white hover:bg-green-700"
+            >
+              <MessageCircle className="h-4 w-4" /> Send Review Request via WhatsApp
+            </a>
+          ) : !notificationSettingsData.googleReviewLink ? (
+            <p className="text-xs text-amber-600">
+              Set your Google Review link in Notifications → Templates.
+            </p>
+          ) : null}
+
+          {chargedExtra?.email &&
+          notificationSettingsData.receiptEmailEnabled &&
+          emailConfigured ? (
+            <button
+              onClick={onSendReceipt}
+              disabled={sendingReceipt}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-green-600 py-2.5 text-sm font-medium text-green-700 hover:bg-green-100 disabled:opacity-60 dark:text-green-400 dark:hover:bg-green-900/20"
+            >
+              <Mail className="h-4 w-4" /> {sendingReceipt ? "Sending…" : "Email Receipt"}
+            </button>
+          ) : !chargedExtra?.email ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              No email on file — can't send a receipt.
+            </p>
+          ) : !notificationSettingsData.receiptEmailEnabled ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Receipt email is off — enable it in Settings → Notifications.
+            </p>
+          ) : (
+            <p className="mt-2 text-xs text-amber-600">
+              Receipt email isn't configured on the server yet.
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="no-print mt-6 flex flex-wrap gap-2 border-t border-border pt-6">
+        <button
+          onClick={() => downloadInvoicePDF(invoice)}
+          className="inline-flex min-h-10 items-center gap-1.5 rounded-md border border-input px-3 text-sm font-medium hover:bg-accent"
+        >
+          <FileDown className="h-4 w-4" /> Download PDF
+        </button>
+        <button
+          onClick={() => window.print()}
+          className="inline-flex min-h-10 items-center gap-1.5 rounded-md border border-input px-3 text-sm font-medium hover:bg-accent"
+        >
+          <Printer className="h-4 w-4" /> Print
+        </button>
+        {canCollect && (
+          <button
+            onClick={onCollect}
+            className="min-h-10 rounded-md border border-input px-3 text-sm font-medium hover:bg-accent"
+          >
+            Collect Payment
+          </button>
+        )}
+        {canRefund && (
+          <button
+            onClick={onRefund}
+            className="min-h-10 rounded-md border border-input px-3 text-sm font-medium hover:bg-accent"
+          >
+            Refund
+          </button>
+        )}
+        {invoice.status !== "Void" && (
+          <button
+            disabled={!canVoid}
+            title={canVoid ? undefined : "Money already collected, use Refund instead"}
+            onClick={onVoid}
+            className="min-h-10 rounded-md border border-input px-3 text-sm font-medium hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Void
+          </button>
+        )}
+        <button
+          onClick={onBack}
+          className="ml-auto inline-flex min-h-10 items-center gap-1.5 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:opacity-90"
+        >
+          <Plus className="h-4 w-4" /> New Sale
+        </button>
+      </div>
     </div>
   );
 }

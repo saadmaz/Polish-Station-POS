@@ -239,8 +239,19 @@ service cloud.firestore {
     match /invoices/{invoiceId} {
       allow read: if hasModule("pos") && (isManagerOrAbove() || role() in ["Cashier", "Advisor"]);
 
+      // PRE-EXISTING BUG, fixed here: this originally required status ==
+      // "Issued" on create, but store.tsx's addInvoice has always been able
+      // to create a brand-new invoice already "Partially Paid" (a
+      // split-tender sale whose first payment doesn't cover the total) or
+      // already "Paid" (fully tendered, or a zero-total sale covered
+      // entirely by loyalty points) -- see computeInvoice's status
+      // derivation. The old check silently rejected every one of those
+      // checkouts in production (PERMISSION_DENIED, surfaced to the
+      // cashier as a generic "check your connection" toast) since this
+      // rule was tightened. "Void"/"Refunded" are intentionally excluded:
+      // no write path ever creates a new invoice in either state.
       allow create: if hasModule("pos") && (isManagerOrAbove() || role() in ["Cashier", "Advisor"])
-                    && request.resource.data.status == "Issued"
+                    && request.resource.data.status in ["Issued", "Partially Paid", "Paid"]
                     && request.resource.data.total is number && request.resource.data.total >= 0
                     && request.resource.data.subtotal is number && request.resource.data.subtotal >= 0;
 
