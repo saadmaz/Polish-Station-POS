@@ -391,6 +391,12 @@ function DetailsStep({
         </div>
       </div>
 
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (validate()) onSubmit();
+        }}
+      >
       <div className="space-y-4">
         <div>
           <label htmlFor="bk-name" className="mb-1.5 block text-sm font-medium text-gray-700">
@@ -497,15 +503,14 @@ function DetailsStep({
       )}
 
       <button
+        type="submit"
         disabled={submitting}
-        onClick={() => {
-          if (validate()) onSubmit();
-        }}
         className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 font-semibold text-primary-foreground transition-all hover:bg-primary/90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60"
       >
         {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
         {submitting ? "Booking…" : "Confirm Booking"}
       </button>
+      </form>
       <p className="mt-3 text-center text-xs text-muted-foreground">
         Our team will confirm your appointment via WhatsApp or phone.
       </p>

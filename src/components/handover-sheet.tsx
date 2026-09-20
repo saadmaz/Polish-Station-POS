@@ -145,7 +145,13 @@ export function HandoverSheet({ open, onOpenChange, job }: HandoverSheetProps) {
           <SheetDescription>Review with the customer before marking delivered.</SheetDescription>
         </SheetHeader>
 
-        <div className="flex flex-1 flex-col gap-4 py-4">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!confirming) void handleConfirm();
+          }}
+          className="flex flex-1 flex-col gap-4 py-4"
+        >
           {signedInspection ? (
             <>
               <div className="rounded-md border border-warning/40 bg-warning/10 p-3">
@@ -248,14 +254,13 @@ export function HandoverSheet({ open, onOpenChange, job }: HandoverSheetProps) {
           </div>
 
           <button
-            type="button"
+            type="submit"
             disabled={confirming || !allPhotosCaptured}
-            onClick={() => void handleConfirm()}
             className="mt-auto w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90 disabled:opacity-60"
           >
             {confirming ? "Completing…" : "Confirm Delivery"}
           </button>
-        </div>
+        </form>
       </SheetContent>
     </Sheet>
   );

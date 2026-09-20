@@ -694,7 +694,13 @@ function StaffDialog({
             : "Change role, colour, and module access. Username can't be changed here."}
         </p>
 
-        <div className="space-y-3">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (canSave) void save();
+          }}
+          className="space-y-3"
+        >
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Display name">
               <input
@@ -785,24 +791,25 @@ function StaffDialog({
               </div>
             )}
           </Field>
-        </div>
 
-        <div className="mt-5 flex gap-2">
-          <button
-            onClick={save}
-            disabled={!canSave}
-            className="flex flex-1 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
-          >
-            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-            {mode === "create" ? "Create user" : "Save changes"}
-          </button>
-          <button
-            onClick={onClose}
-            className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
-          >
-            Cancel
-          </button>
-        </div>
+          <div className="mt-5 flex gap-2">
+            <button
+              type="submit"
+              disabled={!canSave}
+              className="flex flex-1 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+            >
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+              {mode === "create" ? "Create user" : "Save changes"}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
       </Modal>
     </>
   );
@@ -858,32 +865,40 @@ function ResetPinDialog({
           Set a temporary 4-digit PIN for <strong>{row.name}</strong>. They'll be forced to choose a
           new one the next time they sign in.
         </p>
-        <input
-          type="text"
-          inputMode="numeric"
-          maxLength={4}
-          value={pin}
-          onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
-          placeholder="••••"
-          className="mb-4 w-full rounded-md border border-input bg-background px-3 py-2 text-center font-mono text-xl tracking-[0.5em] outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-          autoFocus
-        />
-        <div className="flex gap-2">
-          <button
-            onClick={submit}
-            disabled={pin.length !== 4 || busy}
-            className="flex flex-1 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
-          >
-            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-            Reset PIN
-          </button>
-          <button
-            onClick={onClose}
-            className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
-          >
-            Cancel
-          </button>
-        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (pin.length === 4 && !busy) void submit();
+          }}
+        >
+          <input
+            type="text"
+            inputMode="numeric"
+            maxLength={4}
+            value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+            placeholder="••••"
+            className="mb-4 w-full rounded-md border border-input bg-background px-3 py-2 text-center font-mono text-xl tracking-[0.5em] outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            autoFocus
+          />
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={pin.length !== 4 || busy}
+              className="flex flex-1 items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+            >
+              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+              Reset PIN
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 rounded-md border border-border px-4 py-2 text-sm font-medium hover:bg-muted"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
       </Modal>
     </>
   );

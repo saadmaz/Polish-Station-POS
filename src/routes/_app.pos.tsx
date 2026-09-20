@@ -824,7 +824,13 @@ function POS() {
                   </div>
 
                   {newCustomerOpen && (
-                    <div className="space-y-2 rounded-md border border-dashed border-border p-3">
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleCreateCustomer();
+                      }}
+                      className="space-y-2 rounded-md border border-dashed border-border p-3"
+                    >
                       <div className="grid grid-cols-2 gap-2">
                         <input
                           className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
@@ -868,12 +874,12 @@ function POS() {
                         />
                       </div>
                       <button
-                        onClick={handleCreateCustomer}
+                        type="submit"
                         className="min-h-9 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90"
                       >
                         Create & Bill
                       </button>
-                    </div>
+                    </form>
                   )}
 
                   {manualBillingOpen && (
@@ -937,7 +943,13 @@ function POS() {
                   </button>
                 </div>
               ) : discountOpen ? (
-                <div className="space-y-2 rounded-md border border-dashed border-border p-3">
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    applyDiscount();
+                  }}
+                  className="space-y-2 rounded-md border border-dashed border-border p-3"
+                >
                   <div className="flex gap-2">
                     <select
                       value={discountType}
@@ -964,19 +976,20 @@ function POS() {
                   </div>
                   <div className="flex gap-2">
                     <button
-                      onClick={applyDiscount}
+                      type="submit"
                       className="min-h-9 rounded-md bg-primary px-3 text-xs font-semibold text-primary-foreground"
                     >
                       Apply discount
                     </button>
                     <button
+                      type="button"
                       onClick={() => setDiscountOpen(false)}
                       className="min-h-9 rounded-md border border-input px-3 text-xs"
                     >
                       Cancel
                     </button>
                   </div>
-                </div>
+                </form>
               ) : (
                 <button
                   onClick={() => setDiscountOpen(true)}

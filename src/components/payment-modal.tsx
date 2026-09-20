@@ -255,7 +255,13 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
             </button>
           </>
         ) : (
-          <div className="space-y-4">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!saving) void handleRefund();
+            }}
+            className="space-y-4"
+          >
             <div className="text-xs text-muted-foreground">
               Refundable up to {formatCurrency(refundable)}
             </div>
@@ -303,13 +309,13 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
               />
             </label>
             <button
-              onClick={handleRefund}
+              type="submit"
               disabled={saving}
               className="min-h-11 w-full rounded-md bg-primary py-2.5 text-sm font-bold uppercase tracking-wider text-primary-foreground hover:opacity-95 disabled:opacity-50"
             >
               Refund {formatCurrency(refundAmount)}
             </button>
-          </div>
+          </form>
         )}
       </div>
     </div>

@@ -276,7 +276,19 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
           </div>
 
           {isIntakeStep && (
-            <div className="space-y-3 rounded-md border border-border bg-card p-3">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                // Same action as the "Next" button below, not
+                // handleCompleteInspection — this step's own form has no
+                // submit button of its own for Enter to target, and
+                // "Complete Inspection" isn't even rendered until the
+                // review step, so there's no risk of Enter here skipping
+                // straight to finishing the inspection.
+                setStepIndex((i) => Math.min(STEPS.length - 1, i + 1));
+              }}
+              className="space-y-3 rounded-md border border-border bg-card p-3"
+            >
               <div className="space-y-1.5">
                 <label className="text-sm font-medium">Odometer (km)</label>
                 <input
@@ -330,7 +342,7 @@ export function InspectionSheet({ open, onOpenChange, job, inspection }: Inspect
                   </p>
                 )}
               </div>
-            </div>
+            </form>
           )}
 
           {isDamageStep && (

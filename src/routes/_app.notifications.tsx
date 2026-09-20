@@ -255,7 +255,13 @@ function TemplatesTab() {
   };
 
   return (
-    <div className="space-y-6">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        save();
+      }}
+      className="space-y-6"
+    >
       {/* Settings */}
       <div className="rounded-lg border border-border bg-card p-5">
         <h3 className="font-semibold mb-4 flex items-center gap-2">
@@ -343,7 +349,7 @@ function TemplatesTab() {
 
       <div className="flex justify-end">
         <button
-          onClick={save}
+          type="submit"
           className={cn(
             "flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium transition-colors",
             saved
@@ -362,7 +368,7 @@ function TemplatesTab() {
           )}
         </button>
       </div>
-    </div>
+    </form>
   );
 }
 

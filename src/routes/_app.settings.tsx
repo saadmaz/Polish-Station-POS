@@ -163,6 +163,12 @@ function BusinessPanel() {
   return (
     <>
       <SectionTitle title="Business" desc="Shared across all devices, used on invoices and PDFs." />
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (dirty) save();
+        }}
+      >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {(
           [
@@ -191,17 +197,22 @@ function BusinessPanel() {
       <div className="mt-6 flex items-center gap-2 justify-end">
         {saved && <span className="text-xs text-success font-medium">Saved ✓</span>}
         {dirty && <span className="text-xs text-warning font-medium">Unsaved changes</span>}
-        <button onClick={reset} className="rounded-md border border-input px-4 py-2 text-sm">
+        <button
+          type="button"
+          onClick={reset}
+          className="rounded-md border border-input px-4 py-2 text-sm"
+        >
           Reset
         </button>
         <button
-          onClick={save}
+          type="submit"
           disabled={!dirty}
           className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red disabled:opacity-50"
         >
           Save Changes
         </button>
       </div>
+      </form>
     </>
   );
 }
@@ -258,7 +269,13 @@ function CatalogPanel() {
       <SectionTitle title="Services Catalog" desc="Add, edit and price the services on offer." />
 
       {(adding || editing) && (
-        <div className="mb-5 rounded-lg border border-border bg-muted/30 p-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            saveForm();
+          }}
+          className="mb-5 rounded-lg border border-border bg-muted/30 p-4 grid grid-cols-1 gap-3 sm:grid-cols-2"
+        >
           <label className="block sm:col-span-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Service Name
@@ -313,19 +330,20 @@ function CatalogPanel() {
           </label>
           <div className="sm:col-span-2 flex gap-2 justify-end">
             <button
+              type="button"
               onClick={closeForm}
               className="rounded-md border border-input px-4 py-2 text-sm"
             >
               Cancel
             </button>
             <button
-              onClick={saveForm}
+              type="submit"
               className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-red"
             >
               {editing ? "Save Changes" : "Add Service"}
             </button>
           </div>
-        </div>
+        </form>
       )}
 
       {/* Mobile: stacked cards */}

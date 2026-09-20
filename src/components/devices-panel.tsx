@@ -104,7 +104,13 @@ export function DevicesPanel() {
       </div>
 
       {canManage && (
-        <div className="mb-5 flex flex-col gap-2 rounded-lg border border-dashed border-input p-4 sm:flex-row sm:items-end">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!busy && label.trim()) void enrollThisTill();
+          }}
+          className="mb-5 flex flex-col gap-2 rounded-lg border border-dashed border-input p-4 sm:flex-row sm:items-end"
+        >
           <label className="flex-1 block">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {enrolledHere ? "Enroll another till" : "Enroll this till"}
@@ -117,14 +123,14 @@ export function DevicesPanel() {
             />
           </label>
           <button
-            onClick={enrollThisTill}
+            type="submit"
             disabled={busy || !label.trim()}
             className="inline-flex items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground shadow-red hover:bg-primary/90 disabled:opacity-40"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
             Enroll
           </button>
-        </div>
+        </form>
       )}
 
       {!enrolledHere && (

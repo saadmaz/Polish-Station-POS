@@ -212,7 +212,12 @@ function AdjustWidget({ item }: { item: InventoryItem }) {
         value={delta}
         onChange={(e) => setDelta(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") apply(1);
+          // No Enter shortcut here on purpose: this widget has two equally
+          // valid actions (+/-) and no way to know which one Enter should
+          // mean, so guessing (the old code always applied +) was the actual
+          // bug — a staff member entering a quantity to *subtract* stock and
+          // hitting Enter would silently add it instead. Escape is safe
+          // either way (always means "cancel"), so that one stays.
           if (e.key === "Escape") setOpen(false);
         }}
         placeholder="qty"
