@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { db, auth as firebaseAuth } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { SESSION_TIMEOUT_MS, LOCKOUT_THRESHOLD, LOCKOUT_BASE_MS } from "@/lib/security-constants";
 import {
   formatSessionTimeout,
@@ -953,12 +954,16 @@ function IconBtn({
 }
 
 function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  const containerRef = useFocusTrap<HTMLDivElement>(true, onClose);
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onClick={onClose}
     >
       <div
+        ref={containerRef}
+        role="dialog"
+        aria-modal="true"
         className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-background p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >

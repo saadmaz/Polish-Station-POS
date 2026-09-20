@@ -23,7 +23,7 @@ import { BookingSheet } from "@/components/booking-sheet";
 import { StatusChip, statusVariant } from "@/components/status-chip";
 import { PageHeader } from "@/components/page-header";
 import { useConfirm } from "@/hooks/use-confirm";
-import { cn } from "@/lib/utils";
+import { cn, onActivateKey } from "@/lib/utils";
 import type { Booking, BookingStatus } from "@/lib/db";
 
 export const Route = createFileRoute("/_app/bookings")({
@@ -389,8 +389,13 @@ function Bookings() {
                 return (
                   <div
                     key={b.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${b.customerName}, ${b.serviceName}`}
+                    aria-expanded={isActive}
+                    onKeyDown={onActivateKey(() => setActiveCard(isActive ? null : b.id))}
                     className={cn(
-                      "absolute rounded-md border-l-[3px] bg-card px-2 py-1.5 cursor-pointer overflow-hidden hover:shadow-card transition-shadow",
+                      "absolute rounded-md border-l-[3px] bg-card px-2 py-1.5 cursor-pointer outline-none overflow-hidden hover:shadow-card focus-visible:ring-1 focus-visible:ring-ring transition-shadow",
                       b.status === "Cancelled" && "opacity-40",
                     )}
                     style={{
@@ -490,6 +495,15 @@ function Bookings() {
         <div
           className="rounded-xl border border-border bg-card shadow-card overflow-hidden"
           onClick={() => setActiveCard(null)}
+          onKeyDown={(e) => {
+            // Keyboard equivalent of the click-outside-to-close behavior
+            // above — Escape dismisses the active card the same way a
+            // click anywhere else in this panel does. Doesn't need its own
+            // tabIndex: this only needs to fire while focus is somewhere
+            // inside the panel (the active card's own controls), and
+            // keydown bubbles up to here regardless of nesting depth.
+            if (e.key === "Escape") setActiveCard(null);
+          }}
         >
           {/* Date nav */}
           <div className="flex items-center justify-between px-5 py-3 border-b border-border">
@@ -586,8 +600,15 @@ function Bookings() {
                   return (
                     <div
                       key={date}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${formatDate(date)}, ${dayBookings.length} booking${dayBookings.length === 1 ? "" : "s"}`}
+                      onKeyDown={onActivateKey(() => {
+                        setCurrentDate(date);
+                        setView("day");
+                      })}
                       className={cn(
-                        "min-h-[112px] border-border p-1.5 cursor-pointer hover:bg-muted/30",
+                        "min-h-[112px] border-border p-1.5 cursor-pointer outline-none hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
                         !isLastCol && "border-r",
                         !isLastRow && "border-b",
                         !isCurrentMonth && "bg-muted/20",
@@ -613,6 +634,13 @@ function Bookings() {
                         {visible.map((b) => (
                           <div
                             key={b.id}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={onActivateKey(() => {
+                              setCurrentDate(date);
+                              setView("day");
+                              setActiveCard(b.id);
+                            })}
                             onClick={(e) => {
                               e.stopPropagation();
                               setCurrentDate(date);
@@ -621,7 +649,7 @@ function Bookings() {
                             }}
                             title={`${b.time} · ${b.customerName} · ${b.serviceName}`}
                             className={cn(
-                              "truncate rounded border-l-[3px] bg-card px-1 py-0.5 text-[10px] font-medium hover:shadow-card",
+                              "truncate rounded border-l-[3px] bg-card px-1 py-0.5 text-[10px] font-medium outline-none hover:shadow-card focus-visible:ring-1 focus-visible:ring-ring",
                               b.status === "Cancelled" && "opacity-40",
                             )}
                             style={{ borderLeftColor: CAT_COLORS[b.category] ?? "var(--primary)" }}
@@ -772,7 +800,15 @@ function Bookings() {
                           return (
                             <div
                               key={b.id}
-                              className="absolute rounded-md border-l-[3px] bg-card px-1.5 py-1 cursor-pointer overflow-hidden hover:shadow-card"
+                              role="button"
+                              tabIndex={0}
+                              aria-label={`${b.customerName}, ${b.serviceName}, ${b.time}`}
+                              onKeyDown={onActivateKey(() => {
+                                setActiveCard(b.id === activeCard ? null : b.id);
+                                setCurrentDate(date);
+                                setView("day");
+                              })}
+                              className="absolute rounded-md border-l-[3px] bg-card px-1.5 py-1 cursor-pointer outline-none overflow-hidden hover:shadow-card focus-visible:ring-1 focus-visible:ring-ring"
                               style={{
                                 top: startPx,
                                 height: heightPx,

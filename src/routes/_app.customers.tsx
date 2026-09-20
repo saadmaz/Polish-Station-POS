@@ -27,7 +27,7 @@ import {
 } from "lucide-react";
 import type { Customer, Vehicle, Coupon, CouponType } from "@/lib/db";
 import { calcTier, isCouponValid } from "@/lib/db";
-import { cn } from "@/lib/utils";
+import { cn, onActivateKey } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/customers")({
   head: () => ({ meta: [{ title: "Customers · Polish Station OS" }] }),
@@ -320,7 +320,14 @@ function CustomerRow({
   return (
     <>
       {StepUpDialog}
-      <tr className="hover:bg-muted/40 cursor-pointer" onClick={() => setExpanded((v) => !v)}>
+      <tr
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onKeyDown={onActivateKey(() => setExpanded((v) => !v))}
+        className="cursor-pointer outline-none hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+        onClick={() => setExpanded((v) => !v)}
+      >
         <td className="px-5 py-3">
           <div className="flex items-center gap-2.5">
             <div className="grid h-8 w-8 place-items-center rounded-full bg-primary/10 text-xs font-bold text-primary">
@@ -932,7 +939,7 @@ function Customers() {
 
       <div className="rounded-xl border border-border bg-card shadow-card">
         <div className="flex flex-col gap-3 p-4 border-b border-border sm:flex-row sm:items-center">
-          <div className="flex flex-1 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm">
+          <div className="flex flex-1 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-ring">
             <Search className="h-4 w-4 text-muted-foreground shrink-0" />
             <input
               className="flex-1 bg-transparent outline-none"

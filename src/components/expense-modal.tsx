@@ -3,6 +3,7 @@ import { X, ArrowUpRight, ArrowDownLeft } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { formatCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 
 interface ExpenseModalProps {
   open: boolean;
@@ -19,6 +20,7 @@ export function ExpenseModal({ open, onClose }: ExpenseModalProps) {
   const [paidTo, setPaidTo] = useState("");
   const [description, setDescription] = useState("");
   const [saving, setSaving] = useState(false);
+  const containerRef = useFocusTrap<HTMLDivElement>(open, onClose);
 
   if (!open) return null;
 
@@ -50,7 +52,13 @@ export function ExpenseModal({ open, onClose }: ExpenseModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md rounded-2xl bg-card border border-border shadow-elevated p-6 mx-4">
+      <div
+        ref={containerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Cash Out / Deposit"
+        className="relative z-10 w-full max-w-md rounded-2xl bg-card border border-border shadow-elevated p-6 mx-4"
+      >
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-display text-lg font-bold">Cash Out / Deposit</h2>
           <button

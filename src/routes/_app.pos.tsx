@@ -827,7 +827,7 @@ function POS() {
                     <div className="space-y-2 rounded-md border border-dashed border-border p-3">
                       <div className="grid grid-cols-2 gap-2">
                         <input
-                          className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none"
+                          className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                           placeholder="Name (optional)"
                           value={newCustomerForm.name}
                           onChange={(e) =>
@@ -835,7 +835,7 @@ function POS() {
                           }
                         />
                         <input
-                          className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none"
+                          className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                           placeholder="Phone"
                           value={newCustomerForm.phone}
                           onChange={(e) =>
@@ -843,7 +843,7 @@ function POS() {
                           }
                         />
                         <input
-                          className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none"
+                          className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                           placeholder="Email"
                           value={newCustomerForm.email}
                           onChange={(e) =>
@@ -851,7 +851,7 @@ function POS() {
                           }
                         />
                         <input
-                          className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none"
+                          className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                           placeholder="Vehicle model"
                           value={newCustomerForm.model}
                           onChange={(e) =>
@@ -859,7 +859,7 @@ function POS() {
                           }
                         />
                         <input
-                          className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none"
+                          className="min-h-9 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                           placeholder="Address"
                           value={newCustomerForm.address}
                           onChange={(e) =>
@@ -942,7 +942,7 @@ function POS() {
                     <select
                       value={discountType}
                       onChange={(e) => setDiscountType(e.target.value as InvoiceDiscount["type"])}
-                      className="min-h-9 rounded-md border border-input bg-background px-2 text-sm focus:outline-none"
+                      className="min-h-9 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     >
                       <option value="percent">%</option>
                       <option value="fixed">LKR</option>
@@ -952,14 +952,14 @@ function POS() {
                       min={0}
                       value={discountValue}
                       onChange={(e) => setDiscountValue(Number(e.target.value))}
-                      className="min-h-9 w-28 rounded-md border border-input bg-background px-2 text-right text-sm tabular-nums focus:outline-none"
+                      className="min-h-9 w-28 rounded-md border border-input bg-background px-2 text-right text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                     <input
                       type="text"
                       placeholder="Reason (optional)"
                       value={discountReason}
                       onChange={(e) => setDiscountReason(e.target.value)}
-                      className="min-h-9 flex-1 rounded-md border border-input bg-background px-2 text-sm focus:outline-none"
+                      className="min-h-9 flex-1 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                     />
                   </div>
                   <div className="flex gap-2">
@@ -1002,7 +1002,7 @@ function POS() {
               ) : (
                 <div className="flex gap-2">
                   <input
-                    className="min-h-9 flex-1 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm uppercase placeholder:text-muted-foreground placeholder:normal-case focus:outline-none"
+                    className="min-h-9 flex-1 rounded-md border border-input bg-background px-2.5 py-1.5 text-sm uppercase placeholder:text-muted-foreground placeholder:normal-case focus:outline-none focus:ring-2 focus:ring-ring"
                     placeholder="Coupon code"
                     value={couponInput}
                     onChange={(e) => setCouponInput(e.target.value)}
@@ -1026,7 +1026,7 @@ function POS() {
                     type="number"
                     min={0}
                     max={pointsBalance}
-                    className="min-h-9 w-24 rounded-md border border-input bg-background px-2 py-1.5 text-right text-sm tabular-nums focus:outline-none"
+                    className="min-h-9 w-24 rounded-md border border-input bg-background px-2 py-1.5 text-right text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring"
                     value={pointsRedeemed}
                     onChange={(e) =>
                       setPointsToRedeem(

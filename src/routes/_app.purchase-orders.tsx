@@ -21,7 +21,7 @@ import { downloadPOPDF } from "@/lib/pdf";
 import { formatCurrency } from "@/lib/currency";
 import { formatDate } from "@/lib/date-format";
 import { useConfirm } from "@/hooks/use-confirm";
-import { cn } from "@/lib/utils";
+import { cn, onActivateKey } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/purchase-orders")({
   component: PurchaseOrdersPage,
@@ -648,8 +648,12 @@ function PORow({ po }: { po: PurchaseOrder }) {
     <>
       {ConfirmDialog}
       <tr
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onKeyDown={onActivateKey(() => setOpen((o) => !o))}
         className={cn(
-          "border-t border-border transition-colors hover:bg-muted/30 cursor-pointer",
+          "border-t border-border outline-none transition-colors hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring cursor-pointer",
           open && "bg-muted/20",
         )}
         onClick={() => setOpen((o) => !o)}

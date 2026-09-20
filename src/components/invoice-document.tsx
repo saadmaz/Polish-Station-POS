@@ -335,7 +335,7 @@ export function LineItemsTable({
             <div className="flex items-start justify-between gap-2">
               {editable ? (
                 <input
-                  className="min-h-9 w-full min-w-0 bg-transparent text-sm font-medium focus:outline-none"
+                  className="min-h-9 w-full min-w-0 bg-transparent text-sm font-medium focus:outline-none focus:ring-2 focus:ring-ring focus:ring-inset rounded"
                   value={l.name}
                   onChange={(e) => onUpdateLine?.(l.key, "name", e.target.value)}
                 />
@@ -362,7 +362,7 @@ export function LineItemsTable({
                   <input
                     type="number"
                     min={1}
-                    className="mt-0.5 min-h-9 w-full rounded bg-muted px-2 py-1 text-right font-mono text-sm tabular-nums focus:outline-none"
+                    className="mt-0.5 min-h-9 w-full rounded bg-muted px-2 py-1 text-right font-mono text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring focus:ring-inset"
                     value={l.qty}
                     onChange={(e) => onUpdateLine?.(l.key, "qty", Number(e.target.value))}
                   />
@@ -380,7 +380,7 @@ export function LineItemsTable({
                   <input
                     type="number"
                     min={0}
-                    className="mt-0.5 min-h-9 w-full rounded bg-muted px-2 py-1 text-right font-mono text-sm tabular-nums focus:outline-none"
+                    className="mt-0.5 min-h-9 w-full rounded bg-muted px-2 py-1 text-right font-mono text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring focus:ring-inset"
                     value={l.unitPrice}
                     onChange={(e) => onUpdateLine?.(l.key, "unitPrice", Number(e.target.value))}
                   />
@@ -398,7 +398,7 @@ export function LineItemsTable({
                   <input
                     type="number"
                     min={0}
-                    className="mt-0.5 min-h-9 w-full rounded bg-muted px-2 py-1 text-right font-mono text-sm tabular-nums text-primary focus:outline-none"
+                    className="mt-0.5 min-h-9 w-full rounded bg-muted px-2 py-1 text-right font-mono text-sm tabular-nums text-primary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-inset"
                     value={l.discount}
                     onChange={(e) => onUpdateLine?.(l.key, "discount", Number(e.target.value))}
                   />
@@ -449,7 +449,7 @@ export function LineItemsTable({
               <td className="px-2 py-2">
                 {editable ? (
                   <input
-                    className="w-full min-h-9 bg-transparent text-sm focus:outline-none"
+                    className="w-full min-h-9 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-ring focus:ring-inset rounded"
                     value={l.name}
                     onChange={(e) => onUpdateLine?.(l.key, "name", e.target.value)}
                   />
@@ -462,7 +462,7 @@ export function LineItemsTable({
                   <input
                     type="number"
                     min={1}
-                    className="w-14 min-h-9 rounded bg-muted px-2 py-1 text-right font-mono text-sm tabular-nums focus:outline-none"
+                    className="w-14 min-h-9 rounded bg-muted px-2 py-1 text-right font-mono text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring focus:ring-inset"
                     value={l.qty}
                     onChange={(e) => onUpdateLine?.(l.key, "qty", Number(e.target.value))}
                   />
@@ -477,7 +477,7 @@ export function LineItemsTable({
                   <input
                     type="number"
                     min={0}
-                    className="w-24 min-h-9 rounded bg-muted px-2 py-1 text-right font-mono text-sm tabular-nums focus:outline-none"
+                    className="w-24 min-h-9 rounded bg-muted px-2 py-1 text-right font-mono text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-ring focus:ring-inset"
                     value={l.unitPrice}
                     onChange={(e) => onUpdateLine?.(l.key, "unitPrice", Number(e.target.value))}
                   />
@@ -490,7 +490,7 @@ export function LineItemsTable({
                   <input
                     type="number"
                     min={0}
-                    className="w-24 min-h-9 rounded bg-muted px-2 py-1 text-right font-mono text-sm tabular-nums text-primary focus:outline-none"
+                    className="w-24 min-h-9 rounded bg-muted px-2 py-1 text-right font-mono text-sm tabular-nums text-primary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-inset"
                     value={l.discount}
                     onChange={(e) => onUpdateLine?.(l.key, "discount", Number(e.target.value))}
                   />

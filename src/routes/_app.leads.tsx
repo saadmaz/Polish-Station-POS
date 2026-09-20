@@ -102,7 +102,7 @@ import {
 } from "@/lib/lead";
 import { normalizePhone } from "@/lib/phone";
 import { toWAPhone, buildWALink, fillTemplate } from "@/lib/notifications";
-import { cn } from "@/lib/utils";
+import { cn, onActivateKey } from "@/lib/utils";
 
 const VEHICLE_BODY_TYPES: { value: VehicleBodyType; label: string }[] = [
   { value: "sedan", label: "Sedan" },
@@ -1773,7 +1773,13 @@ function LeadCard({
   onToggleSelect: () => void;
 }) {
   return (
-    <div className="p-4" onClick={onOpen}>
+    <div
+      className="p-4 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+      role="button"
+      tabIndex={0}
+      onKeyDown={onActivateKey(onOpen)}
+      onClick={onOpen}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-start gap-2">
           <input
@@ -1879,36 +1885,44 @@ function DateRangeFilter({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium",
-            hasValue
-              ? "border-primary/40 bg-primary/5 text-primary"
-              : "border-input text-muted-foreground hover:bg-accent",
-          )}
-        >
-          <CalendarRange className="h-3.5 w-3.5" />
-          {hasValue
-            ? `${label}: ${from ? formatShortDate(from) : "…"} – ${to ? formatShortDate(to) : "…"}`
-            : label}
-          {hasValue && (
-            <span
-              role="button"
-              tabIndex={-1}
-              onClick={(e) => {
-                e.stopPropagation();
-                onChange(undefined, undefined);
-              }}
-              className="-mr-0.5 ml-0.5 rounded-full p-0.5 hover:bg-primary/10"
-              aria-label={`Clear ${label.toLowerCase()} date filter`}
-            >
-              <XCircle className="h-3.5 w-3.5" />
-            </span>
-          )}
-        </button>
-      </PopoverTrigger>
+      {/* The clear-filter control used to be a `<span role="button">` nested
+          inside this trigger `<button>` — a focusable element inside a
+          button is invalid HTML and produces confusing/inconsistent tab
+          behavior, so it's a sibling `<button>` sharing this wrapper's
+          border/background instead, not a nested one. */}
+      <div
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium",
+          hasValue
+            ? "border-primary/40 bg-primary/5 text-primary"
+            : "border-input text-muted-foreground",
+        )}
+      >
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className={cn(
+              "inline-flex items-center gap-1.5",
+              !hasValue && "hover:text-foreground",
+            )}
+          >
+            <CalendarRange className="h-3.5 w-3.5" />
+            {hasValue
+              ? `${label}: ${from ? formatShortDate(from) : "…"} – ${to ? formatShortDate(to) : "…"}`
+              : label}
+          </button>
+        </PopoverTrigger>
+        {hasValue && (
+          <button
+            type="button"
+            onClick={() => onChange(undefined, undefined)}
+            className="-mr-0.5 ml-0.5 rounded-full p-0.5 hover:bg-primary/10"
+            aria-label={`Clear ${label.toLowerCase()} date filter`}
+          >
+            <XCircle className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
       <PopoverContent className="w-auto p-0" align="start">
         <CalendarPicker
           mode="range"
@@ -2325,7 +2339,7 @@ function Leads() {
         <div className="rounded-xl border border-border bg-card shadow-card">
           <div className="flex flex-col gap-3 p-4 border-b border-border">
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-              <div className="flex flex-1 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm sm:min-w-50">
+              <div className="flex flex-1 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-ring sm:min-w-50">
                 <Search className="h-4 w-4 text-muted-foreground shrink-0" />
                 <input
                   className="flex-1 bg-transparent outline-none"
@@ -2579,8 +2593,11 @@ function Leads() {
                     {filtered.map((l) => (
                       <tr
                         key={l.id}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={onActivateKey(() => setDetailLead(l))}
                         onClick={() => setDetailLead(l)}
-                        className="h-16 cursor-pointer align-middle hover:bg-muted/40"
+                        className="h-16 cursor-pointer align-middle outline-none hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
                       >
                         <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                           <input

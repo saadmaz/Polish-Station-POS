@@ -21,7 +21,7 @@ import { newId } from "@/lib/db";
 import { formatCurrency } from "@/lib/currency";
 import { useConfirm } from "@/hooks/use-confirm";
 import { formatDate } from "@/lib/date-format";
-import { cn } from "@/lib/utils";
+import { cn, onActivateKey } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/equipment")({
   component: EquipmentPage,
@@ -665,8 +665,12 @@ function EquipmentRow({ eq }: { eq: Equipment }) {
     <>
       {s.ConfirmDialog}
       <tr
+        role="button"
+        tabIndex={0}
+        aria-expanded={s.open}
+        onKeyDown={onActivateKey(() => s.setOpen((o) => !o))}
         className={cn(
-          "border-t border-border transition-colors hover:bg-muted/30 cursor-pointer",
+          "border-t border-border outline-none transition-colors hover:bg-muted/30 focus-visible:bg-muted/30 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring cursor-pointer",
           s.open && "bg-muted/20",
         )}
         onClick={() => s.setOpen((o) => !o)}

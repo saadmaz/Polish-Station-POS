@@ -20,6 +20,7 @@
 // can come back later without touching that shape.
 import { useCallback, useRef, useState } from "react";
 import { useConfirm } from "@/hooks/use-confirm";
+import { onActivateKey } from "@/lib/utils";
 import type { BodyType } from "@/lib/job";
 import {
   DAMAGE_MARKER_TYPES,
@@ -49,6 +50,7 @@ interface DamageDiagramProps {
 export function DamageDiagram({ bodyType, markers, onMarkersChange }: DamageDiagramProps) {
   const [view, setView] = useState<DamageMarkerView>("front");
   const [selectedSeq, setSelectedSeq] = useState<number | null>(null);
+  const [focusedSeq, setFocusedSeq] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const { confirm, ConfirmDialog } = useConfirm();
 
@@ -94,10 +96,8 @@ export function DamageDiagram({ bodyType, markers, onMarkersChange }: DamageDiag
     return panelEl?.id;
   }
 
-  function placeNewMarker(clientX: number, clientY: number) {
-    const { x, y } = clientToNormalized(clientX, clientY);
+  function placeNewMarkerAt(x: number, y: number, panelId?: string) {
     const seq = markers.length > 0 ? Math.max(...markers.map((m) => m.seq)) + 1 : 1;
-    const panelId = resolvePanelId(clientX, clientY);
     const marker: DamageMarker = {
       seq,
       view,
@@ -132,7 +132,24 @@ export function DamageDiagram({ bodyType, markers, onMarkersChange }: DamageDiag
     backgroundPointerDown.current = null;
     if (!start) return;
     if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > DRAG_THRESHOLD_PX) return; // treat as a pan/scroll, not a tap
-    placeNewMarker(e.clientX, e.clientY);
+    const { x, y } = clientToNormalized(e.clientX, e.clientY);
+    placeNewMarkerAt(x, y, resolvePanelId(e.clientX, e.clientY));
+  }
+
+  // Keyboard-reachable equivalent of tap-to-place, for users who can't
+  // perform the pointer gesture above — drops a marker at the view's
+  // center (panel id resolved from the screen point that center maps to,
+  // same lookup the pointer path uses).
+  function handleAddMarkerViaKeyboard() {
+    const svg = svgRef.current;
+    if (!svg) {
+      placeNewMarkerAt(0.5, 0.5);
+      return;
+    }
+    const rect = svg.getBoundingClientRect();
+    const clientX = rect.left + rect.width / 2;
+    const clientY = rect.top + rect.height / 2;
+    placeNewMarkerAt(0.5, 0.5, resolvePanelId(clientX, clientY));
   }
 
   function handleMarkerPointerDown(e: React.PointerEvent, seq: number) {
@@ -171,6 +188,42 @@ export function DamageDiagram({ bodyType, markers, onMarkersChange }: DamageDiag
     e.stopPropagation();
   }
 
+  const NUDGE_STEP = 0.01;
+  const NUDGE_STEP_LARGE = 0.05;
+
+  // Keyboard equivalent of the pointer gesture set on a marker: Enter/Space
+  // opens the same editor a tap would, arrow keys reposition it the way a
+  // drag would (Shift for a bigger step), Delete/Backspace goes through the
+  // same confirm-gated removal a long-press does.
+  function handleMarkerKeyDown(e: React.KeyboardEvent, m: DamageMarker) {
+    switch (e.key) {
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        setSelectedSeq(m.seq);
+        break;
+      case "Delete":
+      case "Backspace":
+        e.preventDefault();
+        void handleLongPress(m.seq);
+        break;
+      case "ArrowUp":
+      case "ArrowDown":
+      case "ArrowLeft":
+      case "ArrowRight": {
+        e.preventDefault();
+        const step = e.shiftKey ? NUDGE_STEP_LARGE : NUDGE_STEP;
+        const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+        const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
+        updateMarker(m.seq, {
+          x: Math.min(1, Math.max(0, m.x + dx)),
+          y: Math.min(1, Math.max(0, m.y + dy)),
+        });
+        break;
+      }
+    }
+  }
+
   async function handleLongPress(seq: number) {
     if (pointerState.current) pointerState.current.longPressTimer = null;
     const marker = markers.find((m) => m.seq === seq);
@@ -188,26 +241,37 @@ export function DamageDiagram({ bodyType, markers, onMarkersChange }: DamageDiag
     <div className="space-y-4">
       {ConfirmDialog}
 
-      <div className="flex flex-wrap gap-1.5">
-        {VIEWS.map((v) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() => setView(v)}
-            className={`rounded-md border px-3 py-1.5 text-xs font-medium capitalize ${
-              v === view
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-input bg-background hover:bg-accent"
-            }`}
-          >
-            {v}
-            {markers.some((m) => m.view === v) && (
-              <span className="ml-1.5 rounded-full bg-muted-foreground/20 px-1.5 text-[10px]">
-                {markers.filter((m) => m.view === v).length}
-              </span>
-            )}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-1.5">
+        <div className="flex flex-wrap gap-1.5">
+          {VIEWS.map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setView(v)}
+              className={`rounded-md border px-3 py-1.5 text-xs font-medium capitalize ${
+                v === view
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-input bg-background hover:bg-accent"
+              }`}
+            >
+              {v}
+              {markers.some((m) => m.view === v) && (
+                <span className="ml-1.5 rounded-full bg-muted-foreground/20 px-1.5 text-[10px]">
+                  {markers.filter((m) => m.view === v).length}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+        {/* Keyboard-reachable equivalent of tap-to-place — the diagram's
+            pointer gesture has no keyboard path otherwise. */}
+        <button
+          type="button"
+          onClick={handleAddMarkerViaKeyboard}
+          className="rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium hover:bg-accent"
+        >
+          + Add marker
+        </button>
       </div>
 
       <div className="relative touch-none select-none rounded-xl border border-border bg-card">
@@ -239,8 +303,23 @@ export function DamageDiagram({ bodyType, markers, onMarkersChange }: DamageDiag
                 onPointerDown={(e) => handleMarkerPointerDown(e, m.seq)}
                 onPointerMove={handleMarkerPointerMove}
                 onPointerUp={(e) => handleMarkerPointerUp(e, m.seq)}
-                className="cursor-grab active:cursor-grabbing"
+                tabIndex={0}
+                role="button"
+                aria-label={`${MARKER_TYPE_LABELS[m.type]} marker ${m.seq}, ${SEVERITY_LABELS[m.severity]}${m.panelId ? ", " + panelLabel(m.panelId) : ""}. Press Enter to edit, arrow keys to move, Delete to remove.`}
+                onKeyDown={(e) => handleMarkerKeyDown(e, m)}
+                onFocus={() => setFocusedSeq(m.seq)}
+                onBlur={() => setFocusedSeq((s) => (s === m.seq ? null : s))}
+                className="cursor-grab outline-none active:cursor-grabbing"
               >
+                {focusedSeq === m.seq && (
+                  <circle
+                    r={r + markerStrokeWidth * 3}
+                    fill="none"
+                    stroke="var(--ring)"
+                    strokeWidth={markerStrokeWidth}
+                    strokeDasharray={`${markerStrokeWidth * 2} ${markerStrokeWidth * 1.5}`}
+                  />
+                )}
                 {shape === "circle" ? (
                   <circle
                     r={r}
@@ -272,7 +351,8 @@ export function DamageDiagram({ bodyType, markers, onMarkersChange }: DamageDiag
           })}
         </svg>
         <p className="border-t border-border px-3 py-1.5 text-center text-[11px] text-muted-foreground">
-          Tap to place a marker · drag to move · long-press to delete
+          Tap to place a marker · drag to move · long-press to delete · or Tab to a marker and use
+          Enter/arrow keys/Delete
         </p>
       </div>
 
@@ -405,7 +485,10 @@ function DamageMarkerTable({
           <div
             key={m.seq}
             onClick={() => onSelect(m.seq)}
-            className="cursor-pointer px-3 py-2.5 hover:bg-accent/50"
+            role="button"
+            tabIndex={0}
+            onKeyDown={onActivateKey(() => onSelect(m.seq))}
+            className="cursor-pointer px-3 py-2.5 outline-none hover:bg-accent/50 focus-visible:bg-accent/50 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
           >
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs font-bold text-muted-foreground">#{m.seq}</span>
@@ -439,7 +522,10 @@ function DamageMarkerTable({
             <tr
               key={m.seq}
               onClick={() => onSelect(m.seq)}
-              className="cursor-pointer border-b border-border last:border-0 hover:bg-accent/50"
+              role="button"
+              tabIndex={0}
+              onKeyDown={onActivateKey(() => onSelect(m.seq))}
+              className="cursor-pointer border-b border-border outline-none last:border-0 hover:bg-accent/50 focus-visible:bg-accent/50 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
             >
               <td className="px-3 py-2 font-mono">{m.seq}</td>
               <td className="px-3 py-2 capitalize">{m.view}</td>

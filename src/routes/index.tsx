@@ -28,6 +28,7 @@ function Login() {
   const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [shake, setShake] = useState(false);
+  const [trapFocused, setTrapFocused] = useState(false);
   const [locked, setLocked] = useState(0); // countdown seconds
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState<Date | null>(null);
@@ -235,7 +236,13 @@ function Login() {
                   </span>
                 </button>
 
-                {/* Hidden keyboard trap: lets a physical keyboard drive the PIN pad */}
+                {/* Hidden keyboard trap: lets a physical keyboard drive the PIN pad.
+                    It's invisible by design (sr-only) and never in the Tab
+                    sequence (tabIndex=-1, only ever focused programmatically),
+                    so a keyboard user who reaches this screen has focus land
+                    here with nothing on screen to show it — the visible PIN
+                    dots button below stands in for it, picking up a focus
+                    ring whenever this hidden input actually has focus. */}
                 <input
                   ref={trapRef}
                   type="tel"
@@ -244,6 +251,8 @@ function Login() {
                   tabIndex={-1}
                   onKeyDown={handleKeyDown}
                   onChange={() => {}}
+                  onFocus={() => setTrapFocused(true)}
+                  onBlur={() => setTrapFocused(false)}
                   value=""
                   className="sr-only"
                 />
@@ -254,8 +263,16 @@ function Login() {
                   onClick={() => trapRef.current?.focus()}
                   aria-label="PIN entry"
                   className={cn(
-                    "mb-6 flex w-full justify-center gap-4 cursor-default",
+                    "mb-6 flex w-full justify-center gap-4 rounded-lg cursor-default outline-none",
+                    "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                     shake && "animate-shake",
+                    // Tabbing straight to this button is covered by
+                    // focus-visible above; this covers the other path,
+                    // where focus actually lands on the *hidden* trap input
+                    // (on click, or the auto-focus-after-staff-pick effect)
+                    // and this button has no native focus of its own to
+                    // trigger focus-visible with.
+                    trapFocused && "ring-2 ring-ring ring-offset-2 ring-offset-background",
                   )}
                 >
                   {Array.from({ length: PIN_LEN }).map((_, i) => (

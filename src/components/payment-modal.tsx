@@ -10,6 +10,7 @@ import { useAuth } from "@/lib/auth";
 import { getAmountPaid, getAmountRefunded, type Invoice, type PaymentMethod } from "@/lib/db";
 import { formatCurrency } from "@/lib/currency";
 import { useConfirm } from "@/hooks/use-confirm";
+import { useFocusTrap } from "@/hooks/use-focus-trap";
 import { cn } from "@/lib/utils";
 
 export interface TenderLine {
@@ -80,7 +81,7 @@ export function TenderLineEditor({
               <select
                 value={l.method}
                 onChange={(e) => updateLine(l.key, "method", e.target.value)}
-                className="min-h-9 rounded-md border border-input bg-background px-2 py-1.5 text-xs focus:outline-none"
+                className="min-h-9 rounded-md border border-input bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="Cash">Cash</option>
                 <option value="Card">Card</option>
@@ -94,14 +95,14 @@ export function TenderLineEditor({
                   const n = Number(e.target.value);
                   updateLine(l.key, "amount", Number.isFinite(n) ? Math.max(0, n) : 0);
                 }}
-                className="min-h-9 w-24 flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-right text-sm font-mono focus:outline-none sm:w-28 sm:flex-none"
+                className="min-h-9 w-24 flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-right text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring sm:w-28 sm:flex-none"
               />
               <input
                 type="text"
                 placeholder="Ref (optional)"
                 value={l.reference}
                 onChange={(e) => updateLine(l.key, "reference", e.target.value)}
-                className="min-h-9 min-w-24 flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs focus:outline-none"
+                className="min-h-9 min-w-24 flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
               />
               <button
                 type="button"
@@ -157,6 +158,7 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
   const [refundReason, setRefundReason] = useState("");
   const [saving, setSaving] = useState(false);
   const { confirm, ConfirmDialog } = useConfirm();
+  const containerRef = useFocusTrap<HTMLDivElement>(true, onClose);
 
   function handleCollect() {
     const tendered = lines.filter((l) => l.amount > 0);
@@ -217,7 +219,13 @@ export function PaymentModal({ invoice, mode, onClose }: PaymentModalProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {ConfirmDialog}
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-card border border-border shadow-elevated p-6 mx-4">
+      <div
+        ref={containerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${mode === "collect" ? "Collect Payment" : "Refund"} · ${invoice.id}`}
+        className="relative z-10 w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-card border border-border shadow-elevated p-6 mx-4"
+      >
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-display text-lg font-bold">
             {mode === "collect" ? "Collect Payment" : "Refund"} · {invoice.id}

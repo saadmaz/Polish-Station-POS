@@ -264,7 +264,7 @@ function CatalogPanel() {
               Service Name
             </span>
             <input
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
             />

@@ -98,7 +98,7 @@ function InquiryPage() {
 
       <div className="rounded-xl border border-border bg-card shadow-card">
         <div className="flex items-center gap-2 p-4 border-b border-border">
-          <div className="flex flex-1 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm">
+          <div className="flex flex-1 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-ring">
             <Search className="h-4 w-4 text-muted-foreground shrink-0" />
             <input
               className="flex-1 bg-transparent outline-none"

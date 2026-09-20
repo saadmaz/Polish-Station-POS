@@ -8,6 +8,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { useStore } from "@/lib/store";
 import { useStaffList } from "@/lib/use-staff-list";
+import { onActivateKey } from "@/lib/utils";
 import { useConfirm } from "@/hooks/use-confirm";
 import { PageHeader } from "@/components/page-header";
 import { StatusChip, statusVariant } from "@/components/status-chip";
@@ -301,7 +302,14 @@ function JobRow({ job, onEdit }: { job: Job; onEdit: () => void }) {
 
   return (
     <>
-      <tr className="hover:bg-muted/40 cursor-pointer" onClick={() => setExpanded((v) => !v)}>
+      <tr
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onKeyDown={onActivateKey(() => setExpanded((v) => !v))}
+        className="cursor-pointer outline-none hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+        onClick={() => setExpanded((v) => !v)}
+      >
         <td className="px-5 py-3">
           <div className="font-mono text-xs font-semibold">{job.id}</div>
           <div className="text-[11px] text-muted-foreground">{job.customerName}</div>
@@ -447,7 +455,7 @@ function Jobs() {
 
       <div className="rounded-xl border border-border bg-card shadow-card">
         <div className="flex flex-col gap-3 p-4 border-b border-border sm:flex-row sm:items-center">
-          <div className="flex flex-1 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm">
+          <div className="flex flex-1 items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-ring">
             <Search className="h-4 w-4 text-muted-foreground shrink-0" />
             <input
               className="flex-1 bg-transparent outline-none"
