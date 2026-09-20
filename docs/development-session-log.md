@@ -2,13 +2,13 @@
 
 A record of Claude Code sessions worked on this repo, reconstructed from local session transcripts and git history.
 
-**Coverage:** Session transcripts are only available from **2026-08-16** onward. Git history goes back further, to **2026-06-17** (132 commits before 2026-08-16), but no session-level detail exists for that earlier period.
+**Coverage:** Session transcripts were available from **2026-08-16** onward at the time entries 1-25 were written. Local transcripts have a rolling retention window — the four earliest sessions (2026-08-16 → 08-18, entries 1-4) have since aged out of local storage and can no longer be independently re-verified, though they're kept below since they were captured while still available. Git history goes back further, to **2026-06-17** (132 commits before 2026-08-16), but no session-level detail ever existed for that earlier period.
 
 **Timezone:** All times are Sri Lanka local time (+05:30), matching commit timestamps.
 
-**Method:** Each session's "time spent" is *active* time — the sum of gaps between logged messages, excluding any gap longer than 15 minutes (treated as idle/away). Several sessions ran concurrently (parallel terminals on the same repo, notably on 2026-08-28 and 2026-08-30 → 09-06); where a session's own commits landed under a parallel session's window instead, that's noted in the entry.
+**Method:** Each session's "time spent" is *active* time — the sum of gaps between logged messages, excluding any gap longer than 15 minutes (treated as idle/away). Several sessions ran concurrently (parallel terminals on the same repo, notably on 2026-08-28, 2026-08-30 → 09-06, and 2026-09-19 → 09-20); where a session's own commits landed under a parallel session's window instead, that's noted in the entry.
 
-**Total active time across all sessions:** ≈58.7 hours, spread over 2026-08-16 to 2026-09-15 (30 calendar days).
+**Total active time across all sessions:** ≈70.0 hours, spread over 2026-08-16 to 2026-09-20 (36 calendar days). No commits or sessions on 2026-09-16 or 09-17, or the daytime of 09-18 before 17:27 — gap/off days.
 
 ---
 
@@ -108,6 +108,22 @@ A record of Claude Code sessions worked on this repo, reconstructed from local s
 **Short:** Rebuilt the vehicle damage diagram with real commissioned artwork.
 **Long:** Following an illustrator brief (functional diagram, must survive a printed marker/photocopy), added per-panel segmentation for sedans, refined geometry and rounded-corner rendering to avoid seams (app + PDF), swapped in new front/left/rear/right/top illustrations, and redesigned the inspection summary PDF (dropped sign-off row and QR code).
 
-## 25. 2026-09-15 — 11:35 — ongoing
-**Short:** Asked for time-spent tracking, then a per-session breakdown.
-**Long:** Asked how much time was spent across all chats with dates/times; computed it from local session transcripts and git history, then reformatted it into this per-session date/time/short/long report and saved it to `docs/`.
+## 25. 2026-09-15 — 11:35 (resumed 2026-09-20) — 15 min active
+**Short:** Asked for time-spent tracking, then a per-session breakdown, then extended it through today.
+**Long:** Asked how much time was spent across all chats with dates/times; computed it from local session transcripts and git history, reformatted it into a per-session date/time/short/long report, and saved it to `docs/`. This same session thread was resumed five days later (2026-09-20) to extend the log through the current date.
+
+## 26. 2026-09-18 — 17:27 — 301 min
+**Short:** Simplified inspection sign-off and overhauled the inspection report PDF.
+**Long:** Opened with a review request against a pasted spec. Removed the signature/acknowledgment requirement from the inspection process (draft transitions straight to signed); added a transient-retry layer to step-up authentication for reliability; added a month view to bookings, a date range filter for received/requested leads, and multi-service intake in the JobSheet; unified damage-diagram artwork handling and dropped legacy vector outlines for non-sedan body types; and did a large pass on the inspection report PDF — merged the systems-check/inventory sections, conditionally rendered the customer-priority and photo-appendix sections, added job details to the Quote section, added the `sharp` library for Node-based image processing, added baseline icons, and fixed diagram marker alignment/scale/spacing repeatedly for visual clarity; linked the inspection report from the Job Detail panel.
+
+## 27. 2026-09-19 — 14:10 — 233 min
+**Short:** Rebuilt POS checkout into an invoice-grade document and renamed documents by plate.
+**Long:** Following a detailed spec, centralized invoice arithmetic (`computeInvoice`) and status derivation with a draft-total helper; allowed invoices to be created already Partially Paid or Paid; rebuilt checkout as a single-column, print-ready invoice document and finished the print stylesheet (Phase 3); switched every generated document to be named by vehicle plate instead of the bare record id, and fixed legacy non-"INV-" id double-labeling; simplified plate entry (ask once, moved first) and made customer name optional; added an "All Inspection Reports" browser; ran a broad UI/UX pass for responsive layouts, color contrast, and keyboard navigation. Merged two PRs (pos-invoice-document-ui, plate-prefixed-document-naming).
+
+## 28. 2026-09-19 — 23:51 (runs to 09-20) — 134 min active
+**Short:** Audited the whole app for UI/UX defects, then fixed what it found.
+**Long:** Ran a full inventory-only UI/UX defect audit across responsive layout, color contrast, keyboard navigation, and related categories (no file changes), producing `UI_UX_AUDIT.md`. Then acted on the findings: refactored color tokens for accessibility/consistency, added a focus trap for modals, and wrapped forms so Enter key submits properly.
+
+## 29. 2026-09-20 — 11:54 — 6 min
+**Short:** Reviewed the UI/UX audit findings.
+**Long:** Brief session reading through `UI_UX_AUDIT.md`, the report generated by the previous audit session, before acting on it.
